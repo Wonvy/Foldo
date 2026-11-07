@@ -9,7 +9,14 @@ rust-version.workspace = true
 chrono = "0.4.45"
 dirs = "7.0.0"
 filetime = "0.2.29"
+gethostname = "1.1.0"
 globset = "0.4.19"
+imagesize = "0.15"
+infer = "0.22"
+lofty = "0.25"
+lopdf = "0.47"
+nom-exif = "3.8"
+quick-xml = "0.42"
 regex = "1.13.1"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
@@ -18,6 +25,13 @@ serde_yaml_ng = "0.10.0"
 thiserror = "2.0.21"
 trash = "5.2.9"
 walkdir = "2.5.0"
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+plist = "1"
+
+[target."cfg(unix)".dependencies]
+xattr = "1"

@@ -1,57 +1,142 @@
 // 与 Rust 端（src-tauri/src/commands.rs）对应的类型和调用封装。
 import { invoke } from "@tauri-apps/api/core";
 
-export type RulesFile = {
+// ---------- 配置（与 foldo-core 的 config.rs 对应） ----------
+
+export type OneOrMany<T> = T | T[];
+
+/** 一个条件：只有一个键的对象。键是字段名（如 `image.width`）或条件组（all / any / none / not）。 */
+export type ConditionDef = Record<string, unknown>;
+
+export type OnConflict = "rename" | "skip" | "overwrite";
+export type DestDef = string | { to: string; on_conflict?: OnConflict };
+
+export type ActionDef =
+  | { move: DestDef }
+  | { copy: DestDef }
+  | { rename: DestDef }
+  | "trash"
+  | "keep";
+
+export type RuleDef = {
+  name: string;
+  enabled?: boolean;
+  locations?: OneOrMany<string>;
+  recursive?: boolean;
+  include_hidden?: boolean;
+  match?: "all" | "any";
+  conditions?: ConditionDef[];
+  when?: ConditionDef;
+  except?: ConditionDef[];
+  actions: ActionDef[];
+};
+
+export type FolderDef = { path: string };
+
+export type RuleFile = {
+  version: number;
+  folders?: FolderDef[];
+  protect?: string[];
+  settings?: { buffer?: string };
+  rules?: RuleDef[];
+};
+
+export type ConfigView = {
+  /** 用户主目录，用于把路径显示成 ~/… */
+  home: string;
   path: string;
   display_path: string;
   exists: boolean;
-  text: string;
+  config: RuleFile | null;
+  error: string | null;
 };
 
-export type RuleInfo = {
-  name: string;
-  enabled: boolean;
-  locations: string[];
-  recursive: boolean;
-  actions: number;
+export type Category = { id: string; name: string; aliases: string[]; extensions: string[] };
+
+export type FieldType = "text" | "number" | "size" | "date" | "enum" | "bool";
+export type FieldDef = {
+  key: string;
+  label: string;
+  group: string;
+  type: FieldType;
+  unit: string | null;
+  desc: string;
+  options: string[];
+};
+export type VarDef = { key: string; label: string; group: string; desc: string };
+export type FieldsView = { fields: FieldDef[]; vars: VarDef[] };
+export type AttrView = { key: string; label: string; group: string; unit: string | null; value: string | null };
+export type Explain = { ok: boolean; error?: string; children?: Explain[] };
+export type TestView = {
+  matched: boolean;
+  conditions: Explain[];
+  when: Explain | null;
+  exceptions: Explain[];
+  destination: string | null;
+  reason: string | null;
 };
 
-export type RulesSummary = { rules: RuleInfo[] };
+// ---------- 扫描与执行 ----------
 
 export type OpKind = "move" | "copy" | "rename" | "trash";
 
 export type OpView = {
   group: number;
+  origin: string;
+  origin_name: string;
+  origin_display: string;
   rule: string;
+  reason: string;
+  category: string | null;
   kind: OpKind;
   src: string;
-  dst: string | null;
   src_display: string;
+  dst: string | null;
   dst_display: string | null;
+  dst_dir: string | null;
+  dst_dir_display: string | null;
   note: string | null;
+};
+
+export type SkipKind =
+  | "protected"
+  | "credential"
+  | "shortcut"
+  | "system"
+  | "hidden"
+  | "partial"
+  | "buffer"
+  | "in_use"
+  | "folder"
+  | "no_match"
+  | "conflict"
+  | "invalid";
+
+export type SkipView = {
+  path: string;
+  name: string;
+  display: string;
+  kind: SkipKind;
+  label: string;
+  reason: string;
+  rule: string | null;
 };
 
 export type PlanView = {
   plan_id: number;
   groups: number;
   ops: OpView[];
-  skipped: { rule: string; display: string; reason: string }[];
+  skipped: SkipView[];
   warnings: string[];
   scanned: number;
   matched: number;
   in_place: number;
 };
 
-export type Failure = { path: string; error: string };
+export type Problem = { path: string; name: string; error: string };
+export type ExecView = { batch_id: number; done: number; skipped: Problem[]; failed: Problem[] };
 
-export type ExecView = { batch_id: number; done: number; failed: Failure[] };
-
-export type UndoView = {
-  batch_id: number;
-  restored: number;
-  failed: Failure[];
-  in_trash: string[];
-};
+// ---------- 历史 ----------
 
 export type Batch = {
   id: number;
@@ -67,6 +152,7 @@ export type OpRecord = {
   seq: number;
   rule: string | null;
   kind: string;
+  name: string;
   src: string;
   dst: string | null;
   src_display: string;
@@ -75,17 +161,60 @@ export type OpRecord = {
   error: string | null;
 };
 
+export type UndoCheck = {
+  kind: string;
+  name: string;
+  src_display: string;
+  dst_display: string | null;
+  outcome: "restore" | "in_trash" | "blocked";
+  reason: string | null;
+};
+
+export type UndoView = { batch_id: number; restored: number; failed: Problem[]; in_trash: string[] };
+
+export type RuleHit = { index: number; name: string; enabled: boolean; matched: boolean; in_scope: boolean };
+export type DebugView = {
+  path: string;
+  name: string;
+  display: string;
+  category: string | null;
+  excluded: string | null;
+  rules: RuleHit[];
+  winner: number | null;
+  action: string | null;
+  destination: string | null;
+  reason: string | null;
+};
+
+export type FolderSuggestion = { path: string; display: string; label: string };
+
 export const api = {
-  loadRules: () => invoke<RulesFile>("load_rules"),
-  createExampleRules: () => invoke<RulesFile>("create_example_rules"),
-  validateRules: (text: string) => invoke<RulesSummary>("validate_rules", { text }),
-  saveRules: (text: string) => invoke<RulesSummary>("save_rules", { text }),
-  makePlan: (text: string, rule: string | null) => invoke<PlanView>("make_plan", { text, rule }),
+  getConfig: () => invoke<ConfigView>("get_config"),
+  saveConfig: (config: RuleFile) => invoke<ConfigView>("save_config", { config }),
+  addProtect: (entry: string) => invoke<ConfigView>("add_protect", { entry }),
+  getYaml: () => invoke<string>("get_yaml"),
+  saveYaml: (text: string) => invoke<ConfigView>("save_yaml", { text }),
+  categories: () => invoke<Category[]>("categories"),
+  suggestedFolders: () => invoke<FolderSuggestion[]>("suggested_folders"),
+  scan: () => invoke<PlanView>("scan"),
+  scanPaths: (paths: string[]) => invoke<PlanView>("scan_paths", { paths }),
+  tryRule: (rule: RuleDef, paths: string[] | null) => invoke<PlanView>("try_rule", { rule, paths }),
+  retarget: (planId: number, group: number, dir: string) =>
+    invoke<PlanView>("retarget", { planId, group, dir }),
   executePlan: (planId: number, groups: number[]) =>
     invoke<ExecView>("execute_plan", { planId, groups }),
   history: (limit = 100) => invoke<Batch[]>("history", { limit }),
   batchOps: (id: number) => invoke<OpRecord[]>("batch_ops", { id }),
+  undoPreview: (id: number) => invoke<UndoCheck[]>("undo_preview", { id }),
   undo: (id: number) => invoke<UndoView>("undo", { id }),
+  fields: () => invoke<FieldsView>("fields"),
+  inspect: (path: string) => invoke<AttrView[]>("inspect", { path }),
+  testRule: (rule: RuleDef, path: string) => invoke<TestView>("test_rule", { rule, path }),
+  debugFile: (path: string) => invoke<DebugView>("debug_file", { path }),
+  toggleFloat: () => invoke<boolean>("toggle_float"),
+  floatVisible: () => invoke<boolean>("float_visible"),
+  floatResize: (width: number, height: number) => invoke<void>("float_resize", { width, height }),
+  showMain: () => invoke<void>("show_main"),
   reveal: (path: string) => invoke<void>("reveal", { path }),
 };
 
@@ -95,20 +224,27 @@ export function errorText(e: unknown): string {
   return JSON.stringify(e);
 }
 
-export const KIND_LABEL: Record<string, string> = {
-  move: "移动",
-  copy: "复制",
-  rename: "改名",
-  trash: "回收站",
-  mkdir: "新建文件夹",
-};
+/** 路径最后一段（用作文件夹的短名称）。 */
+export function baseName(p: string): string {
+  const parts = p.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] ?? p;
+}
 
 export const STATUS_LABEL: Record<string, string> = {
   running: "执行中断",
   pending: "未完成",
   done: "完成",
   failed: "失败",
+  skipped: "已跳过",
   partial: "部分完成",
   undone: "已撤销",
   partially_undone: "部分撤销",
+};
+
+export const KIND_LABEL: Record<string, string> = {
+  move: "移动",
+  copy: "复制",
+  rename: "改名",
+  trash: "移到回收站",
+  mkdir: "新建文件夹",
 };

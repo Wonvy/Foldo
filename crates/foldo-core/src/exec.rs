@@ -1,17 +1,27 @@
-//! 按计划执行操作，并逐条写入操作日志。单个操作失败不会中断整个批次。
+//! 按计划执行操作，并逐条写入操作日志。单个操作出问题不会中断整个批次。
+//!
+//! 结果分三类：成功；跳过（执行时才出现的新冲突，如目标位置刚出现同名文件、源文件已被移走）；
+//! 失败（权限不足、磁盘错误等）。同一个文件的动作链中有一步没完成，后面的步骤一律跳过。
 
 use crate::error::Result;
 use crate::fsops::{self, exists};
 use crate::journal::{Journal, KIND_MKDIR, status};
 use crate::paths::is_case_only_change;
 use crate::plan::{Op, OpKind, Plan};
+use std::collections::HashSet;
 use std::path::Path;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ExecReport {
     pub batch_id: i64,
     pub done: usize,
+    pub skipped: Vec<(Op, String)>,
     pub failed: Vec<(Op, String)>,
+}
+
+enum Problem {
+    Skip(String),
+    Fail(String),
 }
 
 /// 执行计划。`source` 记录这次执行从哪里触发（如 `cli`、`gui`、`watch`）。
@@ -19,12 +29,18 @@ pub fn execute(plan: &Plan, journal: &Journal, source: &str) -> Result<ExecRepor
     let batch = journal.begin_batch(source)?;
     let mut report = ExecReport {
         batch_id: batch,
-        done: 0,
-        failed: Vec::new(),
+        ..Default::default()
     };
+    let mut broken_groups: HashSet<usize> = HashSet::new();
     let mut seq: i64 = 0;
 
     for op in &plan.ops {
+        if broken_groups.contains(&op.group) {
+            report
+                .skipped
+                .push((op.clone(), "同一文件的前一步没有完成".into()));
+            continue;
+        }
         if let Some(dst) = &op.dst {
             match fsops::ensure_parent(dst) {
                 Ok(created) => {
@@ -36,9 +52,10 @@ pub fn execute(plan: &Plan, journal: &Journal, source: &str) -> Result<ExecRepor
                     }
                 }
                 Err(e) => {
+                    broken_groups.insert(op.group);
                     report
                         .failed
-                        .push((op.clone(), format!("无法创建目标文件夹: {e}")));
+                        .push((op.clone(), format!("无法创建目标文件夹：{e}")));
                     continue;
                 }
             }
@@ -60,7 +77,13 @@ pub fn execute(plan: &Plan, journal: &Journal, source: &str) -> Result<ExecRepor
                 journal.finish_op(id, status::DONE, None)?;
                 report.done += 1;
             }
-            Err(e) => {
+            Err(Problem::Skip(e)) => {
+                broken_groups.insert(op.group);
+                journal.finish_op(id, status::SKIPPED, Some(&e))?;
+                report.skipped.push((op.clone(), e));
+            }
+            Err(Problem::Fail(e)) => {
+                broken_groups.insert(op.group);
                 journal.finish_op(id, status::FAILED, Some(&e))?;
                 report.failed.push((op.clone(), e));
             }
@@ -76,31 +99,38 @@ pub fn execute(plan: &Plan, journal: &Journal, source: &str) -> Result<ExecRepor
     Ok(report)
 }
 
-fn apply(op: &Op) -> Result<(), String> {
+fn apply(op: &Op) -> Result<(), Problem> {
     let src = &op.src;
     if !exists(src) {
-        return Err("源文件已不存在".into());
+        return Err(Problem::Skip("源文件已不在原位置".into()));
     }
+    let fail = |e: std::io::Error| Problem::Fail(e.to_string());
     match op.kind {
-        OpKind::Trash => fsops::trash(src),
+        OpKind::Trash => fsops::trash(src).map_err(Problem::Fail),
         OpKind::Move | OpKind::Rename => {
             let dst = dst_of(op)?;
             // 计划生成后目标位置可能又出现了文件，绝不覆盖。
             if exists(dst) && !is_case_only_change(src, dst) {
-                return Err("目标位置已有文件，为避免覆盖已跳过".into());
+                return Err(Problem::Skip(
+                    "目标位置出现了同名文件，为避免覆盖已跳过".into(),
+                ));
             }
-            fsops::move_file(src, dst).map_err(|e| e.to_string())
+            fsops::move_file(src, dst).map_err(fail)
         }
         OpKind::Copy => {
             let dst = dst_of(op)?;
             if exists(dst) {
-                return Err("目标位置已有文件，为避免覆盖已跳过".into());
+                return Err(Problem::Skip(
+                    "目标位置出现了同名文件，为避免覆盖已跳过".into(),
+                ));
             }
-            fsops::copy_file(src, dst).map_err(|e| e.to_string())
+            fsops::copy_file(src, dst).map_err(fail)
         }
     }
 }
 
-fn dst_of(op: &Op) -> Result<&Path, String> {
-    op.dst.as_deref().ok_or_else(|| "缺少目标路径".to_string())
+fn dst_of(op: &Op) -> Result<&Path, Problem> {
+    op.dst
+        .as_deref()
+        .ok_or_else(|| Problem::Fail("缺少目标路径".into()))
 }

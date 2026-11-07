@@ -12,6 +12,8 @@ pub mod status {
     pub const PENDING: &str = "pending";
     pub const DONE: &str = "done";
     pub const FAILED: &str = "failed";
+    /// 执行时遇到新冲突而跳过的单个操作
+    pub const SKIPPED: &str = "skipped";
     pub const PARTIAL: &str = "partial";
     pub const UNDONE: &str = "undone";
     pub const PARTIALLY_UNDONE: &str = "partially_undone";

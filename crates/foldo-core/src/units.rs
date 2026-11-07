@@ -1,6 +1,7 @@
 //! 规则里的大小（`50KB`）和时长（`3d`、`1d12h`）解析。
 
-use serde::{Deserialize, Deserializer, de};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+use std::fmt;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -103,9 +104,73 @@ impl<'de> Deserialize<'de> for Span {
     }
 }
 
+/// 写回时用能整除的最大单位：`10MB`、`512KiB`、`1500`。
+impl fmt::Display for ByteSize {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let n = self.0;
+        const UNITS: &[(u64, &str)] = &[
+            (1_000_000_000_000, "TB"),
+            (1 << 40, "TiB"),
+            (1_000_000_000, "GB"),
+            (1 << 30, "GiB"),
+            (1_000_000, "MB"),
+            (1 << 20, "MiB"),
+            (1_000, "KB"),
+            (1 << 10, "KiB"),
+        ];
+        for &(size, unit) in UNITS {
+            if n >= size && n.is_multiple_of(size) {
+                return write!(f, "{}{unit}", n / size);
+            }
+        }
+        write!(f, "{n}")
+    }
+}
+
+/// 写回时用能整除的最大单位：`2w`、`3d`、`36h`、`90m`、`45s`。
+impl fmt::Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self.0.as_secs();
+        const UNITS: &[(u64, &str)] = &[(7 * 86_400, "w"), (86_400, "d"), (3_600, "h"), (60, "m")];
+        for &(size, unit) in UNITS {
+            if s >= size && s.is_multiple_of(size) {
+                return write!(f, "{}{unit}", s / size);
+            }
+        }
+        write!(f, "{s}s")
+    }
+}
+
+impl Serialize for ByteSize {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        if self.0.is_multiple_of(1000) || self.0.is_multiple_of(1024) {
+            s.serialize_str(&self.to_string())
+        } else {
+            s.serialize_u64(self.0)
+        }
+    }
+}
+
+impl Serialize for Span {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn display_roundtrip() {
+        for s in ["10MB", "512KiB", "3GB", "1500"] {
+            assert_eq!(s.parse::<ByteSize>().unwrap().to_string(), s);
+        }
+        for s in ["2w", "3d", "36h", "90m", "45s"] {
+            assert_eq!(s.parse::<Span>().unwrap().to_string(), s);
+        }
+        assert_eq!("1d12h".parse::<Span>().unwrap().to_string(), "36h");
+    }
 
     #[test]
     fn sizes() {

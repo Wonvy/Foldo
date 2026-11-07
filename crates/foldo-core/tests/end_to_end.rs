@@ -336,7 +336,9 @@ fn executor_never_overwrites_files_that_appear_after_planning() {
     let journal = Journal::open_in_memory().unwrap();
     let report = execute(&plan, &journal, "test").unwrap();
     assert_eq!(report.done, 0);
-    assert_eq!(report.failed.len(), 1);
+    // 执行时才出现的冲突算“跳过”，不算“失败”
+    assert_eq!(report.skipped.len(), 1);
+    assert!(report.failed.is_empty());
     assert_eq!(fs::read_to_string(&src).unwrap(), "mine");
     assert_eq!(
         fs::read_to_string(e.out.join("late.txt")).unwrap(),
@@ -414,7 +416,10 @@ fn example_rules_file_is_valid() {
     let text = include_str!("../../../examples/rules.yaml");
     let rs = RuleSet::from_yaml(text).unwrap();
     assert_eq!(rs.rules.len(), 5);
+    assert_eq!(rs.folders.len(), 2);
     assert!(!rs.get("清理旧的小压缩包").unwrap().enabled);
+    // 没写 locations 的规则作用于全部整理文件夹
+    assert_eq!(rs.get("发票归档").unwrap().locations.len(), 2);
 }
 
 #[test]

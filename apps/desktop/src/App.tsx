@@ -1,85 +1,185 @@
-import { useEffect, useState } from "react";
-import { api, errorText, type RulesFile } from "./api";
-import RulesPage from "./pages/RulesPage";
-import PreviewPage from "./pages/PreviewPage";
+import { Clock, FolderTree, Monitor, Moon, PictureInPicture2, Settings, ShieldCheck, Sparkles, Sun, Upload, WandSparkles } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { api } from "./api";
 import HistoryPage from "./pages/HistoryPage";
-import { Icon } from "./components";
+import RulesPage from "./pages/RulesPage";
+import ScopePage from "./pages/ScopePage";
+import SettingsPage from "./pages/SettingsPage";
+import TidyPage from "./pages/TidyPage";
+import { StoreProvider, useStore } from "./store";
+import { applyTheme, loadTheme, type ThemePref } from "./theme";
 
-type Page = "rules" | "preview" | "history";
-
-const NAV: { id: Page; label: string; icon: Parameters<typeof Icon>[0]["name"] }[] = [
-  { id: "rules", label: "规则", icon: "rules" },
-  { id: "preview", label: "预览与执行", icon: "play" },
-  { id: "history", label: "历史", icon: "history" },
-];
+type Page = "tidy" | "rules" | "scope" | "history" | "settings";
 
 export default function App() {
-  const [page, setPage] = useState<Page>("rules");
-  const [file, setFile] = useState<RulesFile | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  // 编辑器中的规则文本，以及最近一次保存到磁盘的版本
-  const [text, setText] = useState("");
-  const [savedText, setSavedText] = useState("");
+  return (
+    <StoreProvider>
+      <Shell />
+    </StoreProvider>
+  );
+}
 
-  const applyFile = (f: RulesFile) => {
-    setFile(f);
-    setText(f.text);
-    setSavedText(f.text);
-  };
+const THEME_NEXT: Record<ThemePref, ThemePref> = { system: "light", light: "dark", dark: "system" };
+const THEME_ICON: Record<ThemePref, ReactNode> = {
+  system: <Monitor size={16} />,
+  light: <Sun size={16} />,
+  dark: <Moon size={16} />,
+};
+const THEME_LABEL: Record<ThemePref, string> = { system: "跟随系统", light: "浅色", dark: "深色" };
 
+function Shell() {
+  const { config, loadError } = useStore();
+  const [page, setPage] = useState<Page>("tidy");
+  const [theme, setTheme] = useState<ThemePref>(loadTheme);
+  const [dragging, setDragging] = useState(false);
+  const [dropped, setDropped] = useState<{ paths: string[]; n: number } | null>(null);
+  const [rulesDrop, setRulesDrop] = useState<{ paths: string[]; n: number } | null>(null);
+  const [floatOn, setFloatOn] = useState(false);
+  const pageRef = useRef<Page>("tidy");
+  pageRef.current = page;
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [newRule, setNewRule] = useState(0);
+
+  useEffect(() => applyTheme(theme), [theme]);
+
+  // 悬浮窗是否开着（关闭悬浮窗时也会同步，见下方的轮询）
   useEffect(() => {
-    api.loadRules().then(applyFile).catch((e) => setLoadError(errorText(e)));
+    const check = () => api.floatVisible().then(setFloatOn).catch(() => {});
+    check();
+    const t = setInterval(check, 2000);
+    return () => clearInterval(t);
   }, []);
 
-  const dirty = text !== savedText;
+  // 把文件拖进窗口：像 DropIt 一样，按规则处理这些文件
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      try {
+        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+        const un = await getCurrentWebview().onDragDropEvent((e) => {
+          const p = e.payload;
+          if (p.type === "enter" || p.type === "over") setDragging(true);
+          else if (p.type === "leave") setDragging(false);
+          else if (p.type === "drop") {
+            setDragging(false);
+            if (p.paths.length) {
+              // 在规则页拖入：用来调试规则；其他页面：按规则整理这些文件
+              if (pageRef.current === "rules") {
+                setRulesDrop({ paths: p.paths, n: Date.now() });
+              } else {
+                setPage("tidy");
+                setDropped({ paths: p.paths, n: Date.now() });
+              }
+            }
+          }
+        });
+        if (disposed) un();
+        else unlisten = un;
+      } catch {
+        /* 浏览器预览中没有拖放事件 */
+      }
+    })();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  const ruleCount = config.rules?.length ?? 0;
+  const nav: { id: Page; label: string; icon: ReactNode; count?: number }[] = [
+    { id: "tidy", label: "整理", icon: <Sparkles size={17} /> },
+    { id: "rules", label: "规则", icon: <WandSparkles size={17} />, count: ruleCount || undefined },
+    { id: "scope", label: "范围与保护", icon: <ShieldCheck size={17} /> },
+    { id: "history", label: "历史", icon: <Clock size={17} /> },
+    { id: "settings", label: "设置", icon: <Settings size={17} /> },
+  ];
 
   return (
     <div className="app">
       <nav className="sidebar">
         <div className="brand">
-          <span className="brand-mark" aria-hidden>
-            <Icon name="folder" />
+          <span className="brand-mark">
+            <FolderTree size={16} />
           </span>
-          Foldo
+          <span className="label">Foldo</span>
         </div>
-        {NAV.map((n) => (
+        {nav.map((n) => (
           <button
             key={n.id}
             className={`nav-item ${page === n.id ? "active" : ""}`}
             onClick={() => setPage(n.id)}
+            title={n.label}
           >
-            <Icon name={n.icon} />
-            <span>{n.label}</span>
-            {n.id === "rules" && dirty && <span className="dot" title="有未保存的修改" />}
+            {n.icon}
+            <span className="label">{n.label}</span>
+            {n.count !== undefined && <span className="count">{n.count}</span>}
           </button>
         ))}
+        <div className="sidebar-foot">
+          <button
+            className={`icon-btn ${floatOn ? "active" : ""}`}
+            title={floatOn ? "关闭悬浮窗" : "打开悬浮窗（把文件拖上去就能整理）"}
+            onClick={() => api.toggleFloat().then(setFloatOn).catch(() => {})}
+          >
+            <PictureInPicture2 size={16} />
+          </button>
+          <button
+            className="icon-btn"
+            title={`主题：${THEME_LABEL[theme]}（点击切换）`}
+            onClick={() => setTheme(THEME_NEXT[theme])}
+          >
+            {THEME_ICON[theme]}
+          </button>
+          <span className="muted label" style={{ fontSize: 12 }}>
+            v0.1
+          </span>
+        </div>
       </nav>
 
       <main className="content">
-        {loadError && <div className="banner error">读取规则文件失败：{loadError}</div>}
-        {!file && !loadError && <div className="empty">正在加载…</div>}
-        {file && (
-          <>
-            <div hidden={page !== "rules"} className="page">
-              <RulesPage
-                file={file}
-                text={text}
-                dirty={dirty}
-                onChange={setText}
-                onSaved={(t) => setSavedText(t)}
-                onCreated={applyFile}
-                onRevert={() => setText(savedText)}
-              />
-            </div>
-            <div hidden={page !== "preview"} className="page">
-              <PreviewPage text={text} dirty={dirty} active={page === "preview"} />
-            </div>
-            <div hidden={page !== "history"} className="page">
-              <HistoryPage active={page === "history"} />
-            </div>
-          </>
-        )}
+        {loadError && <div className="banner error" style={{ margin: 24 }}>读取配置失败：{loadError}</div>}
+        <div hidden={page !== "tidy"}>
+          <TidyPage
+            dropped={dropped}
+            onNewRule={() => {
+              setPage("rules");
+              setNewRule((n) => n + 1);
+            }}
+          />
+        </div>
+        <div hidden={page !== "rules"}>
+          <RulesPage
+            newRequest={newRule}
+            dropped={rulesDrop}
+            onOpenAdvanced={() => {
+              setShowAdvanced(true);
+              setPage("settings");
+            }}
+          />
+        </div>
+        <div hidden={page !== "scope"}>
+          <ScopePage />
+        </div>
+        <div hidden={page !== "history"}>
+          <HistoryPage active={page === "history"} />
+        </div>
+        <div hidden={page !== "settings"}>
+          <SettingsPage theme={theme} onTheme={setTheme} showAdvanced={showAdvanced} onShowAdvanced={setShowAdvanced} />
+        </div>
       </main>
+
+      {dragging && (
+        <div className="drop-overlay">
+          <div className="box">
+            <Upload size={28} color="var(--accent)" />
+            <h2 style={{ marginTop: 10 }}>{page === "rules" ? "松开以调试规则" : "松开即可整理这些文件"}</h2>
+            <p className="muted" style={{ marginTop: 4 }}>
+              {page === "rules" ? "看它会被哪条规则处理，不会改动文件" : "按你的规则给出整理建议，确认后再执行"}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

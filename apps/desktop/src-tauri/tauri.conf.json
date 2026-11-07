@@ -16,12 +16,14 @@
         "width": 1120,
         "height": 740,
         "minWidth": 880,
-        "minHeight": 560
+        "minHeight": 560,
+        "label": "main"
       }
     ],
     "security": {
       "csp": "default-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
@@ -38,7 +40,10 @@
     ],
     "windows": {
       "nsis": {
-        "languages": ["SimpChinese", "English"],
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
         "displayLanguageSelector": false
       }
     }

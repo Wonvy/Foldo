@@ -1,51 +1,61 @@
-# Foldo 规则文件
+# Foldo 配置文件
 #
-# 规则按从上到下的顺序生效，每个文件只会被第一条命中的规则处理。
-# 修改后可以先运行 `foldo plan` 预览，确认无误再运行 `foldo run`。
+# 只有下面的规则会移动文件；没有规则命中的文件保持原位。
+# 规则从上到下判断，第一条命中的生效。可以在图形界面的“规则”页新建和编辑，也可以直接改这个文件。
+#
+# 判断顺序：固定保留与排除 → 规则（从上到下）。
 
 version: 1
+
+# 要整理的文件夹。只整理第一层的散落文件，已有的文件夹作为整体保留。
+folders:
+  - path: ~/Downloads
+  - path: ~/Desktop
+
+# 固定保留：这些文件或文件夹永远不会被移动。可以写路径，也可以写文件名通配符。
+protect:
+  - "*.lic"
+
+settings:
+  buffer: 10m # 10 分钟内新增或修改的文件暂不整理
 
 rules:
   - name: 截图改名归档
     locations: ["~/Desktop"]
     conditions:
-      - extension: [png, jpg]
+      - category: 图片
       - name: { regex: '^(Screenshot|Screen Shot|截屏|屏幕快照)' }
     actions:
       - rename: "截图_{modified:%Y%m%d_%H%M%S}.{ext|lower}"
       - move: "~/Pictures/Screenshots/"
 
+  - name: 发票归档
+    conditions:
+      - name: { contains: 发票 }
+    except:
+      - category: 压缩包
+    actions:
+      - move: "~/Documents/发票/{modified:%Y}/"
+
+  - name: 图片归档
+    conditions:
+      - category: 图片
+    actions:
+      - move: "图片/" # 相对路径：放在规则所在整理文件夹下的“图片”文件夹
+
   - name: 安装包归档
     locations: ["~/Downloads"]
     conditions:
-      - extension: [dmg, pkg, exe, msi, deb, rpm, appimage]
-      - created: { older_than: 1d }
+      - category: 安装包
+      - modified: { older_than: 1d }
     actions:
-      - move: "安装包/"            # 相对路径：相对于规则的扫描位置，即 ~/Downloads/安装包/
-
-  - name: 图片按年月归档
-    locations: ["~/Downloads", "~/Desktop"]
-    conditions:
-      - extension: [jpg, jpeg, png, gif, heic, webp]
-    actions:
-      - move:
-          to: "~/Pictures/Foldo/{created:%Y}/{created:%m}/"
-          on_conflict: rename      # rename（默认）| skip | overwrite
-
-  - name: 文档归类
-    locations: ["~/Downloads"]
-    match: any                     # 满足任一条件即可
-    conditions:
-      - extension: [pdf, doc, docx, xls, xlsx, ppt, pptx]
-      - name: { contains: "发票" }
-    actions:
-      - move: "~/Documents/Foldo/{ext|lower}/"
+      - move: "安装包/"
 
   - name: 清理旧的小压缩包
-    enabled: false                 # 默认关闭，确认后再打开
+    enabled: false # 默认关闭，确认后再打开
     locations: ["~/Downloads"]
     conditions:
-      - extension: zip
+      - category: 压缩包
       - modified: { older_than: 30d }
       - size: { lt: 10MB }
     actions:

@@ -1,115 +1,117 @@
-//! 扫描一个位置下的文件，跳过隐藏文件、未下载完的文件和系统杂项文件。
+//! 扫描一个位置。每个项目要么成为候选文件，要么带着原因被跳过——不会被悄悄丢掉。
 
 use crate::fileinfo::{FileInfo, is_hidden};
+use crate::meta::FileCtx;
 use crate::paths::display;
-use std::path::Path;
-use walkdir::{DirEntry, WalkDir};
+use crate::protect::{Protect, SkipKind, builtin_exclusion, is_partial_or_system_dir};
+use std::fs::Metadata;
+use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
-/// 下载中的临时文件后缀（Chrome、Firefox、Safari、Edge、Opera 等）。
-const PARTIAL_SUFFIXES: &[&str] = &[
-    ".crdownload",
-    ".part",
-    ".partial",
-    ".download",
-    ".opdownload",
-];
-
-/// 系统自动生成的杂项文件。
-const JUNK_NAMES: &[&str] = &[".DS_Store", ".localized", "Thumbs.db", "desktop.ini"];
-
-/// 是否一定要跳过（不管规则怎么写）。
-pub fn is_ignored_name(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    JUNK_NAMES.iter().any(|j| j.eq_ignore_ascii_case(name))
-        || PARTIAL_SUFFIXES.iter().any(|s| lower.ends_with(s))
-        // Office 打开文档时生成的锁文件
-        || name.starts_with("~$")
-}
-
+#[derive(Debug, Default)]
 pub struct ScanResult {
-    pub files: Vec<FileInfo>,
+    pub files: Vec<FileCtx>,
+    pub skipped: Vec<(PathBuf, SkipKind, String)>,
     pub warnings: Vec<String>,
 }
 
-pub fn scan(root: &Path, recursive: bool, include_hidden: bool) -> ScanResult {
-    let mut files = Vec::new();
-    let mut warnings = Vec::new();
+/// 判断单个文件是否需要跳过（扫描目录和处理拖入的文件共用）。
+pub fn classify_file(
+    path: &Path,
+    name: &str,
+    md: &Metadata,
+    include_hidden: bool,
+    protect: &Protect,
+) -> Option<(SkipKind, String)> {
+    if let Some(reason) = protect.check(path, name) {
+        return Some((SkipKind::Protected, reason));
+    }
+    if let Some(hit) = builtin_exclusion(path, name) {
+        return Some(hit);
+    }
+    if !include_hidden && is_hidden(name, md) {
+        return Some((SkipKind::Hidden, "隐藏文件".into()));
+    }
+    None
+}
 
-    let keep_dir = |e: &DirEntry| -> bool {
-        if e.depth() == 0 || !e.file_type().is_dir() {
-            return true;
-        }
-        let name = e.file_name().to_string_lossy();
-        if is_ignored_name(&name) {
-            return false;
-        }
-        if include_hidden {
-            return true;
-        }
-        let hidden = e
-            .metadata()
-            .map(|m| is_hidden(&name, &m))
-            .unwrap_or_else(|_| name.starts_with('.'));
-        !hidden
-    };
-
-    let walker = WalkDir::new(root)
+/// 扫描 `root`。不递归时，第一层的文件夹作为整体保留；递归时进入子文件夹，
+/// 但固定保留、隐藏、系统和下载中的文件夹不进入。
+pub fn scan(root: &Path, recursive: bool, include_hidden: bool, protect: &Protect) -> ScanResult {
+    let mut res = ScanResult::default();
+    let mut it = WalkDir::new(root)
         .min_depth(1)
         .max_depth(if recursive { usize::MAX } else { 1 })
         .follow_links(false)
-        .sort_by_file_name();
+        .sort_by_file_name()
+        .into_iter();
 
-    for entry in walker.into_iter().filter_entry(keep_dir) {
+    while let Some(entry) = it.next() {
         let entry = match entry {
             Ok(e) => e,
             Err(err) => {
                 let at = err.path().map(display).unwrap_or_default();
-                warnings.push(format!("无法读取 {at}: {err}"));
+                res.warnings.push(format!("无法读取 {at}: {err}"));
                 continue;
             }
         };
+        let path = entry.path();
+        if path.to_str().is_none() {
+            res.warnings.push(format!(
+                "跳过文件名不是 UTF-8 编码的项目: {}",
+                path.display()
+            ));
+            if entry.file_type().is_dir() {
+                it.skip_current_dir();
+            }
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let md = match entry.metadata() {
+            Ok(m) => m,
+            Err(err) => {
+                res.warnings
+                    .push(format!("无法读取 {}: {err}", display(path)));
+                continue;
+            }
+        };
+
+        if entry.file_type().is_dir() {
+            let skip = if let Some(reason) = protect.check(path, &name) {
+                Some((SkipKind::Protected, reason))
+            } else if let Some(kind) = is_partial_or_system_dir(&name) {
+                Some((kind, kind.label().to_string()))
+            } else if !include_hidden && is_hidden(&name, &md) {
+                Some((SkipKind::Hidden, "隐藏文件夹".into()))
+            } else if !recursive {
+                Some((
+                    SkipKind::Folder,
+                    "已有文件夹作为整体保留，不拆分内部文件".into(),
+                ))
+            } else {
+                None
+            };
+            if let Some((kind, reason)) = skip {
+                res.skipped.push((entry.into_path(), kind, reason));
+                if recursive {
+                    it.skip_current_dir();
+                }
+            }
+            continue;
+        }
+
         // 不跟随符号链接，只处理普通文件。
         if !entry.file_type().is_file() {
             continue;
         }
-        if entry.path().to_str().is_none() {
-            warnings.push(format!(
-                "跳过文件名不是 UTF-8 编码的文件: {}",
-                entry.path().display()
-            ));
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if is_ignored_name(&name) {
-            continue;
-        }
-        let md = match entry.metadata() {
-            Ok(m) => m,
-            Err(err) => {
-                warnings.push(format!("无法读取 {}: {err}", display(entry.path())));
-                continue;
+        match classify_file(path, &name, &md, include_hidden, protect) {
+            Some((kind, reason)) => res.skipped.push((entry.into_path(), kind, reason)),
+            None => {
+                let hidden = is_hidden(&name, &md);
+                res.files
+                    .push(FileInfo::new(entry.into_path(), &md, hidden).into());
             }
-        };
-        let hidden = is_hidden(&name, &md);
-        if hidden && !include_hidden {
-            continue;
         }
-        files.push(FileInfo::new(entry.into_path(), &md, hidden));
     }
-
-    ScanResult { files, warnings }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ignored_names() {
-        assert!(is_ignored_name(".DS_Store"));
-        assert!(is_ignored_name("movie.mp4.crdownload"));
-        assert!(is_ignored_name("setup.dmg.download"));
-        assert!(is_ignored_name("~$report.docx"));
-        assert!(!is_ignored_name("report.docx"));
-    }
+    res
 }

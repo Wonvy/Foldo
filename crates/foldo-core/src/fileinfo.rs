@@ -16,6 +16,7 @@ pub struct FileInfo {
     pub modified: Option<DateTime<Local>>,
     pub accessed: Option<DateTime<Local>>,
     pub hidden: bool,
+    pub readonly: bool,
 }
 
 impl FileInfo {
@@ -30,6 +31,7 @@ impl FileInfo {
             modified: md.modified().ok().map(DateTime::from),
             accessed: md.accessed().ok().map(DateTime::from),
             hidden,
+            readonly: md.permissions().readonly(),
             path,
         }
     }

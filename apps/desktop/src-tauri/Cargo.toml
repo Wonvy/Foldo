@@ -11,7 +11,11 @@ publish = false
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+chrono = "0.4"
+dirs = "7"
 foldo-core = { path = "../../../crates/foldo-core" }
 serde = { version = "1", features = ["derive"] }
-tauri = { version = "2", features = [] }
+serde_json = "1.0.154"
+tauri = { version = "2", features = ["macos-private-api"] }
+tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"

@@ -2,7 +2,9 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use foldo_core::journal::status;
 use foldo_core::paths::{default_data_dir, default_rules_path, display};
-use foldo_core::{EXAMPLE_RULES, Journal, OpKind, Plan, RuleSet, build_plan, execute, undo_batch};
+use foldo_core::{
+    EXAMPLE_RULES, Journal, OpKind, Plan, RuleSet, SkipKind, build_plan, execute, undo_batch,
+};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
@@ -56,6 +58,14 @@ enum Cmd {
     History {
         #[arg(short, long, default_value_t = 20)]
         limit: usize,
+    },
+    /// 查看一个文件的全部属性（写规则时参考字段名和取值）
+    Inspect {
+        /// 文件路径
+        path: PathBuf,
+        /// 同时列出读不到的字段
+        #[arg(long)]
+        all: bool,
     },
     /// 撤销一次执行（默认撤销最近一次）
     Undo {
@@ -112,11 +122,15 @@ fn run() -> Result<()> {
             let journal = Journal::open_in(&data_dir)?;
             let report = execute(&plan, &journal, "cli")?;
             println!(
-                "\n✓ 批次 #{}：完成 {} 项，失败 {} 项。",
+                "\n✓ 批次 #{}：完成 {} 项，跳过 {} 项，失败 {} 项。",
                 report.batch_id,
                 report.done,
+                report.skipped.len(),
                 report.failed.len()
             );
+            for (op, err) in &report.skipped {
+                println!("  ↷ {}  ({err})", display(&op.src));
+            }
             for (op, err) in &report.failed {
                 println!("  ✗ {}  ({err})", display(&op.src));
             }
@@ -130,6 +144,7 @@ fn run() -> Result<()> {
         }
         Cmd::History { limit } => history(&data_dir, limit),
         Cmd::Undo { batch, yes } => undo(&data_dir, batch, yes),
+        Cmd::Inspect { path, all } => inspect(&path, all),
     }
 }
 
@@ -225,11 +240,30 @@ fn print_plan(plan: &Plan) {
             .unwrap_or_default();
         println!("  {}  {src} → {target}{note}", label(op.kind));
     }
-    if !plan.skipped.is_empty() {
-        println!("\n跳过 {} 个文件：", plan.skipped.len());
-        for s in &plan.skipped {
+    // 需要用户留意的跳过逐条列出，其余按原因汇总
+    let notable: Vec<_> = plan
+        .skipped
+        .iter()
+        .filter(|s| {
+            matches!(
+                s.kind,
+                SkipKind::Conflict | SkipKind::Invalid | SkipKind::InUse
+            )
+        })
+        .collect();
+    if !notable.is_empty() {
+        println!("\n需要留意（{} 个）：", notable.len());
+        for s in notable {
             println!("  - {}  ({})", display(&s.path), s.reason);
         }
+    }
+    let summary: Vec<String> = plan
+        .skip_summary()
+        .into_iter()
+        .map(|(k, n)| format!("{} {n}", k.label()))
+        .collect();
+    if !summary.is_empty() {
+        println!("\n保持原位：{}", summary.join("，"));
     }
     println!(
         "\n扫描 {} 个文件，命中 {} 个，已在目标位置 {} 个，计划 {} 项操作。",
@@ -315,6 +349,52 @@ fn undo(data_dir: &Path, batch: Option<i64>, yes: bool) -> Result<()> {
         bail!("有 {} 项无法撤销", report.failed.len());
     }
     Ok(())
+}
+
+fn inspect(path: &Path, all: bool) -> Result<()> {
+    use foldo_core::fields::{self, Value};
+    let file = foldo_core::meta::FileCtx::from_path(path)
+        .with_context(|| format!("无法读取 {}", display(path)))?;
+    println!("{}", display(path));
+    let mut group = "";
+    for (def, value) in fields::inspect(&file) {
+        if value.is_none() && !all {
+            continue;
+        }
+        if def.group != group {
+            group = def.group;
+            println!("\n{group}");
+        }
+        let shown = match &value {
+            Some(Value::Size(b)) => format!("{b} 字节（{}）", human_size(*b)),
+            Some(v) => format!(
+                "{}{}",
+                v.display(),
+                def.unit
+                    .filter(|u| !u.contains('/'))
+                    .map(|u| format!(" {u}"))
+                    .unwrap_or_default()
+            ),
+            None => "—".into(),
+        };
+        println!("  {:<20} {:<10} {shown}", def.key, def.label);
+    }
+    Ok(())
+}
+
+fn human_size(n: u64) -> String {
+    let mut v = n as f64;
+    for unit in ["B", "KB", "MB", "GB", "TB"] {
+        if v < 1000.0 || unit == "TB" {
+            return if unit == "B" {
+                format!("{n} B")
+            } else {
+                format!("{v:.1} {unit}")
+            };
+        }
+        v /= 1000.0;
+    }
+    unreachable!()
 }
 
 fn confirm(prompt: &str) -> Result<bool> {

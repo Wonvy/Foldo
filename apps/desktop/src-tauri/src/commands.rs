@@ -1,13 +1,28 @@
 //! 前端可调用的命令。所有命令都是 async，在后台线程执行，扫描大目录时不会卡住界面。
 //! 返回给前端的路径同时带上 `*_display`（主目录缩写成 ~），方便直接展示。
 
+use chrono::Local;
+use foldo_core::categories::{CATEGORIES, Category};
+use foldo_core::condition::{Explain, MatchCtx, explain};
+use foldo_core::config::{RuleDef, RuleFile, SettingsDef};
 use foldo_core::journal::{BatchSummary, OpRecord};
+use foldo_core::meta::FileCtx;
 use foldo_core::paths::{default_data_dir, default_rules_path, display};
-use foldo_core::{EXAMPLE_RULES, Journal, Plan, RuleSet, build_plan, execute, undo_batch};
+use foldo_core::scan::classify_file;
+use foldo_core::units::Span;
+use foldo_core::{
+    Journal, OpKind, Plan, RuleSet, SkipKind, UndoOutcome, build_plan, build_plan_for_paths,
+    execute, load_rule_file, preview_undo, undo_batch,
+};
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
+
+/// 同时保留的预览数量。
+const MAX_PLANS: usize = 8;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;
@@ -19,9 +34,10 @@ fn err(e: impl std::fmt::Display) -> String {
 #[derive(Default)]
 pub struct AppState {
     journal: Mutex<Option<Journal>>,
-    /// 最近一次生成的计划。执行时必须带上对应的 plan_id，防止执行过期的预览。
-    last_plan: Mutex<Option<(u64, Plan)>>,
-    plan_seq: Mutex<u64>,
+    /// 最近生成的几份计划（主窗口和悬浮窗各自的预览互不覆盖）。
+    /// 执行时必须带上对应的 plan_id，防止执行过期的预览。
+    plans: Mutex<VecDeque<(u64, Plan)>>,
+    plan_seq: AtomicU64,
 }
 
 impl AppState {
@@ -32,117 +48,205 @@ impl AppState {
         }
         f(guard.as_ref().expect("journal 已初始化")).map_err(err)
     }
+
+    fn store_plan(&self, plan: Plan) -> CmdResult<PlanView> {
+        let id = self.plan_seq.fetch_add(1, Ordering::Relaxed) + 1;
+        let view = plan_view(id, &plan);
+        let mut plans = self.plans.lock().map_err(err)?;
+        plans.push_back((id, plan));
+        while plans.len() > MAX_PLANS {
+            plans.pop_front();
+        }
+        Ok(view)
+    }
 }
 
-// ---------- 规则文件 ----------
+fn path_string(p: &Path) -> String {
+    p.to_string_lossy().into_owned()
+}
+
+fn file_name(p: &Path) -> String {
+    p.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+// ---------- 配置 ----------
+
+const HEADER: &str = "# Foldo 配置文件（由图形界面维护，也可以在“设置 → 高级”里直接编辑）\n\
+# 判断顺序：固定保留与排除 → 规则（从上到下，第一条命中的生效）→ 内置类型分类\n\n";
 
 #[derive(Serialize)]
-pub struct RulesFile {
+pub struct ConfigView {
+    /// 用户主目录，前端用来把路径显示成 ~/…
+    home: String,
     path: String,
     display_path: String,
     exists: bool,
-    text: String,
+    config: Option<RuleFile>,
+    /// 文件存在但有错误时的说明（需要到高级模式修正）。
+    error: Option<String>,
 }
 
-fn read_rules_file(path: &Path) -> CmdResult<RulesFile> {
-    let exists = path.exists();
-    let text = if exists {
-        std::fs::read_to_string(path).map_err(err)?
-    } else {
-        String::new()
-    };
-    Ok(RulesFile {
-        path: path.to_string_lossy().into_owned(),
-        display_path: display(path),
-        exists,
-        text: text.strip_prefix('\u{feff}').unwrap_or(&text).to_string(),
-    })
-}
-
-#[tauri::command]
-pub async fn load_rules() -> CmdResult<RulesFile> {
-    read_rules_file(&default_rules_path())
-}
-
-#[tauri::command]
-pub async fn create_example_rules() -> CmdResult<RulesFile> {
+fn read_config() -> ConfigView {
     let path = default_rules_path();
-    if !path.exists() {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(err)?;
+    let mut view = ConfigView {
+        home: dirs::home_dir()
+            .map(|h| path_string(&h))
+            .unwrap_or_default(),
+        path: path_string(&path),
+        display_path: display(&path),
+        exists: path.exists(),
+        config: None,
+        error: None,
+    };
+    if view.exists {
+        match load_rule_file(&path) {
+            Ok(file) => {
+                if let Err(e) = RuleSet::from_file(file.clone()) {
+                    view.error = Some(e.to_string());
+                }
+                view.config = Some(file);
+            }
+            Err(e) => view.error = Some(e.to_string()),
         }
-        std::fs::write(&path, EXAMPLE_RULES).map_err(err)?;
     }
-    read_rules_file(&path)
+    view
 }
 
-#[derive(Serialize)]
-pub struct RuleInfo {
-    name: String,
-    enabled: bool,
-    locations: Vec<String>,
-    recursive: bool,
-    actions: usize,
-}
-
-#[derive(Serialize)]
-pub struct RulesSummary {
-    rules: Vec<RuleInfo>,
-}
-
-fn summarize(rules: &RuleSet) -> RulesSummary {
-    RulesSummary {
-        rules: rules
-            .rules
-            .iter()
-            .map(|r| RuleInfo {
-                name: r.name.clone(),
-                enabled: r.enabled,
-                locations: r.locations.iter().map(|l| display(l)).collect(),
-                recursive: r.recursive,
-                actions: r.actions.len(),
-            })
-            .collect(),
-    }
-}
-
-#[tauri::command]
-pub async fn validate_rules(text: String) -> CmdResult<RulesSummary> {
-    let rules = RuleSet::from_yaml(&text).map_err(err)?;
-    Ok(summarize(&rules))
-}
-
-/// 只保存通过校验的规则，保证磁盘上的规则文件始终可用（以后的自动监听会依赖它）。
-#[tauri::command]
-pub async fn save_rules(text: String) -> CmdResult<RulesSummary> {
-    let rules = RuleSet::from_yaml(&text).map_err(|e| format!("规则有错误，未保存：{e}"))?;
+fn write_config(file: &RuleFile) -> CmdResult<()> {
+    RuleSet::from_file(file.clone()).map_err(err)?;
+    let yaml = file.to_yaml().map_err(err)?;
     let path = default_rules_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(err)?;
     }
-    std::fs::write(&path, &text).map_err(err)?;
-    Ok(summarize(&rules))
+    std::fs::write(&path, format!("{HEADER}{yaml}")).map_err(err)
 }
 
-// ---------- 预览与执行 ----------
+fn current_config() -> CmdResult<RuleFile> {
+    let view = read_config();
+    match (view.config, view.error) {
+        (Some(c), None) => Ok(c),
+        (_, Some(e)) => Err(format!("配置文件有错误，请先在“设置 → 高级”中修正：{e}")),
+        (None, None) => Ok(RuleFile {
+            version: 1,
+            folders: vec![],
+            protect: vec![],
+            settings: SettingsDef {
+                buffer: Some(Span(Duration::from_secs(600))),
+            },
+            rules: vec![],
+        }),
+    }
+}
+
+#[tauri::command]
+pub async fn get_config() -> CmdResult<ConfigView> {
+    Ok(read_config())
+}
+
+/// 保存整份配置（先校验，通过才写入）。
+#[tauri::command]
+pub async fn save_config(config: RuleFile) -> CmdResult<ConfigView> {
+    write_config(&config)?;
+    Ok(read_config())
+}
+
+/// 把一个文件、文件夹或通配符加入固定保留。
+#[tauri::command]
+pub async fn add_protect(entry: String) -> CmdResult<ConfigView> {
+    let mut config = current_config()?;
+    if !config.protect.iter().any(|p| p == &entry) {
+        config.protect.push(entry);
+    }
+    write_config(&config)?;
+    Ok(read_config())
+}
+
+#[tauri::command]
+pub async fn get_yaml() -> CmdResult<String> {
+    let path = default_rules_path();
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&path).map_err(err)
+}
+
+/// 高级模式：直接保存 YAML 源码（通过校验才写入）。
+#[tauri::command]
+pub async fn save_yaml(text: String) -> CmdResult<ConfigView> {
+    RuleSet::from_yaml(&text).map_err(|e| format!("有错误，未保存：{e}"))?;
+    let path = default_rules_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(err)?;
+    }
+    std::fs::write(&path, text).map_err(err)?;
+    Ok(read_config())
+}
+
+#[tauri::command]
+pub async fn categories() -> CmdResult<Vec<&'static Category>> {
+    Ok(CATEGORIES.iter().collect())
+}
+
+#[derive(Serialize)]
+pub struct FolderSuggestion {
+    path: String,
+    display: String,
+    label: &'static str,
+}
+
+/// 首次使用时推荐的文件夹（存在的才列出）。
+#[tauri::command]
+pub async fn suggested_folders() -> CmdResult<Vec<FolderSuggestion>> {
+    let candidates = [
+        (dirs::download_dir(), "下载"),
+        (dirs::desktop_dir(), "桌面"),
+        (dirs::document_dir(), "文稿"),
+    ];
+    Ok(candidates
+        .into_iter()
+        .filter_map(|(p, label)| p.filter(|p| p.is_dir()).map(|p| (p, label)))
+        .map(|(p, label)| FolderSuggestion {
+            path: path_string(&p),
+            display: display(&p),
+            label,
+        })
+        .collect())
+}
+
+// ---------- 扫描与执行 ----------
 
 #[derive(Serialize)]
 pub struct OpView {
     group: usize,
+    origin: String,
+    origin_name: String,
+    origin_display: String,
     rule: String,
-    kind: foldo_core::OpKind,
+    reason: String,
+    category: Option<String>,
+    kind: OpKind,
     src: String,
-    dst: Option<String>,
     src_display: String,
+    dst: Option<String>,
     dst_display: Option<String>,
+    /// 目标所在文件夹（展示“放到哪里”）。
+    dst_dir: Option<String>,
+    dst_dir_display: Option<String>,
     note: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct SkipView {
-    rule: String,
+    path: String,
+    name: String,
     display: String,
+    kind: SkipKind,
+    label: &'static str,
     reason: String,
+    rule: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -157,64 +261,121 @@ pub struct PlanView {
     in_place: usize,
 }
 
-fn path_string(p: &Path) -> String {
-    p.to_string_lossy().into_owned()
-}
-
-#[tauri::command]
-pub async fn make_plan(
-    state: State<'_, AppState>,
-    text: String,
-    rule: Option<String>,
-) -> CmdResult<PlanView> {
-    let rules = RuleSet::from_yaml(&text).map_err(err)?;
-    let plan = build_plan(&rules, rule.as_deref()).map_err(err)?;
-
-    let view = PlanView {
-        plan_id: 0,
+fn plan_view(id: u64, plan: &Plan) -> PlanView {
+    PlanView {
+        plan_id: id,
         groups: plan.group_count(),
         ops: plan
             .ops
             .iter()
-            .map(|o| OpView {
-                group: o.group,
-                rule: o.rule.clone(),
-                kind: o.kind,
-                src: path_string(&o.src),
-                dst: o.dst.as_deref().map(path_string),
-                src_display: display(&o.src),
-                dst_display: o.dst.as_deref().map(display),
-                note: o.note.clone(),
+            .map(|o| {
+                let dst_dir = o.dst.as_deref().and_then(Path::parent);
+                OpView {
+                    group: o.group,
+                    origin: path_string(&o.origin),
+                    origin_name: file_name(&o.origin),
+                    origin_display: display(&o.origin),
+                    rule: o.rule.clone(),
+                    reason: o.reason.clone(),
+                    category: o.category.clone(),
+                    kind: o.kind,
+                    src: path_string(&o.src),
+                    src_display: display(&o.src),
+                    dst: o.dst.as_deref().map(path_string),
+                    dst_display: o.dst.as_deref().map(display),
+                    dst_dir: dst_dir.map(path_string),
+                    dst_dir_display: dst_dir.map(display),
+                    note: o.note.clone(),
+                }
             })
             .collect(),
         skipped: plan
             .skipped
             .iter()
             .map(|s| SkipView {
-                rule: s.rule.clone(),
+                path: path_string(&s.path),
+                name: file_name(&s.path),
                 display: display(&s.path),
+                kind: s.kind,
+                label: s.kind.label(),
                 reason: s.reason.clone(),
+                rule: s.rule.clone(),
             })
             .collect(),
         warnings: plan.warnings.clone(),
         scanned: plan.scanned,
         matched: plan.matched,
         in_place: plan.in_place,
-    };
+    }
+}
 
-    let mut seq = state.plan_seq.lock().map_err(err)?;
-    *seq += 1;
-    let id = *seq;
-    *state.last_plan.lock().map_err(err)? = Some((id, plan));
-    Ok(PlanView {
-        plan_id: id,
-        ..view
-    })
+fn load_set() -> CmdResult<RuleSet> {
+    RuleSet::from_file(current_config()?).map_err(err)
+}
+
+/// 按已保存的配置扫描整理文件夹。
+#[tauri::command]
+pub async fn scan(state: State<'_, AppState>) -> CmdResult<PlanView> {
+    let set = load_set()?;
+    if set.folders.is_empty() && set.rules.is_empty() {
+        return Err("还没有选择要整理的文件夹".into());
+    }
+    let plan = build_plan(&set, None).map_err(err)?;
+    state.store_plan(plan)
+}
+
+/// 处理拖入窗口的文件和文件夹。
+#[tauri::command]
+pub async fn scan_paths(state: State<'_, AppState>, paths: Vec<String>) -> CmdResult<PlanView> {
+    let set = load_set()?;
+    let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+    state.store_plan(build_plan_for_paths(&set, &paths, Local::now()))
+}
+
+/// 试运行一条尚未保存的规则：看看它会命中哪些文件。
+/// `paths` 不为空时只在这些文件上试（拖入的文件），否则在规则的适用范围内扫描。
+#[tauri::command]
+pub async fn try_rule(
+    state: State<'_, AppState>,
+    rule: RuleDef,
+    paths: Option<Vec<String>>,
+) -> CmdResult<PlanView> {
+    let mut config = current_config()?;
+    let name = rule.name.clone();
+    config.rules = vec![rule];
+    let set = RuleSet::from_file(config).map_err(err)?;
+    let plan = match paths.filter(|p| !p.is_empty()) {
+        Some(paths) => {
+            let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+            build_plan_for_paths(&set, &paths, Local::now())
+        }
+        None => build_plan(&set, Some(&name)).map_err(err)?,
+    };
+    state.store_plan(plan)
+}
+
+/// 预览里把某一项改到别的文件夹（只影响这一次）。
+#[tauri::command]
+pub async fn retarget(
+    state: State<'_, AppState>,
+    plan_id: u64,
+    group: usize,
+    dir: String,
+) -> CmdResult<PlanView> {
+    let mut plans = state.plans.lock().map_err(err)?;
+    match plans.iter_mut().find(|(id, _)| *id == plan_id) {
+        Some((id, plan)) => {
+            plan.retarget_group(group, Path::new(&dir))?;
+            Ok(plan_view(*id, plan))
+        }
+        None => Err("预览已过期，请重新扫描".into()),
+    }
 }
 
 #[derive(Serialize)]
-pub struct Failure {
+pub struct Problem {
     path: String,
+    name: String,
     error: String,
 }
 
@@ -222,7 +383,8 @@ pub struct Failure {
 pub struct ExecView {
     batch_id: i64,
     done: usize,
-    failed: Vec<Failure>,
+    skipped: Vec<Problem>,
+    failed: Vec<Problem>,
 }
 
 #[tauri::command]
@@ -232,13 +394,10 @@ pub async fn execute_plan(
     groups: Vec<usize>,
 ) -> CmdResult<ExecView> {
     let plan = {
-        let mut last = state.last_plan.lock().map_err(err)?;
-        match last.take() {
-            Some((id, plan)) if id == plan_id => plan,
-            other => {
-                *last = other;
-                return Err("预览已过期，请重新生成预览".into());
-            }
+        let mut plans = state.plans.lock().map_err(err)?;
+        match plans.iter().position(|(id, _)| *id == plan_id) {
+            Some(i) => plans.remove(i).expect("位置有效").1,
+            None => return Err("预览已过期，请重新扫描".into()),
         }
     };
     let selected: HashSet<usize> = groups.into_iter().collect();
@@ -247,17 +406,20 @@ pub async fn execute_plan(
         return Err("没有选中任何文件".into());
     }
     let report = state.with_journal(|j| execute(&subset, j, "gui"))?;
+    let problems = |list: Vec<(foldo_core::Op, String)>| {
+        list.into_iter()
+            .map(|(op, e)| Problem {
+                path: display(&op.origin),
+                name: file_name(&op.origin),
+                error: e,
+            })
+            .collect()
+    };
     Ok(ExecView {
         batch_id: report.batch_id,
         done: report.done,
-        failed: report
-            .failed
-            .into_iter()
-            .map(|(op, e)| Failure {
-                path: display(&op.src),
-                error: e,
-            })
-            .collect(),
+        skipped: problems(report.skipped),
+        failed: problems(report.failed),
     })
 }
 
@@ -272,6 +434,7 @@ pub async fn history(state: State<'_, AppState>, limit: usize) -> CmdResult<Vec<
 pub struct OpRecordView {
     #[serde(flatten)]
     record: OpRecord,
+    name: String,
     src_display: String,
     dst_display: Option<String>,
 }
@@ -282,6 +445,7 @@ pub async fn batch_ops(state: State<'_, AppState>, id: i64) -> CmdResult<Vec<OpR
     Ok(ops
         .into_iter()
         .map(|r| OpRecordView {
+            name: file_name(&r.src),
             src_display: display(&r.src),
             dst_display: r.dst.as_deref().map(display),
             record: r,
@@ -290,10 +454,36 @@ pub async fn batch_ops(state: State<'_, AppState>, id: i64) -> CmdResult<Vec<OpR
 }
 
 #[derive(Serialize)]
+pub struct UndoCheckView {
+    kind: String,
+    name: String,
+    src_display: String,
+    dst_display: Option<String>,
+    outcome: UndoOutcome,
+    reason: Option<String>,
+}
+
+#[tauri::command]
+pub async fn undo_preview(state: State<'_, AppState>, id: i64) -> CmdResult<Vec<UndoCheckView>> {
+    let checks = state.with_journal(|j| preview_undo(j, id))?;
+    Ok(checks
+        .into_iter()
+        .map(|c| UndoCheckView {
+            name: file_name(&c.src),
+            src_display: display(&c.src),
+            dst_display: c.dst.as_deref().map(display),
+            kind: c.kind,
+            outcome: c.outcome,
+            reason: c.reason,
+        })
+        .collect())
+}
+
+#[derive(Serialize)]
 pub struct UndoView {
     batch_id: i64,
     restored: usize,
-    failed: Vec<Failure>,
+    failed: Vec<Problem>,
     in_trash: Vec<String>,
 }
 
@@ -306,13 +496,305 @@ pub async fn undo(state: State<'_, AppState>, id: i64) -> CmdResult<UndoView> {
         failed: report
             .failed
             .into_iter()
-            .map(|(p, e)| Failure {
+            .map(|(p, e)| Problem {
+                name: file_name(&p),
                 path: display(&p),
                 error: e,
             })
             .collect(),
         in_trash: report.in_trash.iter().map(|p| display(p)).collect(),
     })
+}
+
+// ---------- 文件 ----------
+
+// ---------- 字段、属性与规则测试 ----------
+
+#[derive(Serialize)]
+pub struct FieldsView {
+    fields: Vec<&'static foldo_core::fields::FieldDef>,
+    vars: &'static [foldo_core::template::VarDef],
+}
+
+/// 字段注册表与特殊变量（界面的字段选择器和“插入变量”菜单用）。
+#[tauri::command]
+pub async fn fields() -> CmdResult<FieldsView> {
+    Ok(FieldsView {
+        fields: foldo_core::fields::FIELDS.iter().collect(),
+        vars: foldo_core::template::SPECIAL_VARS,
+    })
+}
+
+#[derive(Serialize)]
+pub struct AttrView {
+    key: &'static str,
+    label: &'static str,
+    group: &'static str,
+    unit: Option<&'static str>,
+    value: Option<String>,
+}
+
+fn attr_value(v: foldo_core::fields::Value) -> String {
+    use foldo_core::fields::Value;
+    match v {
+        Value::Size(b) => format!("{} 字节", b),
+        other => other.display(),
+    }
+}
+
+/// 一个文件的全部属性（读不到的值为空）。
+#[tauri::command]
+pub async fn inspect(path: String) -> CmdResult<Vec<AttrView>> {
+    let file = FileCtx::from_path(&path).map_err(err)?;
+    Ok(foldo_core::fields::inspect(&file)
+        .into_iter()
+        .map(|(d, v)| AttrView {
+            key: d.key,
+            label: d.label,
+            group: d.group,
+            unit: d.unit,
+            value: v.map(attr_value),
+        })
+        .collect())
+}
+
+#[derive(Serialize)]
+pub struct TestView {
+    /// 规则最终是否会处理这个文件。
+    matched: bool,
+    /// `conditions` 列表中每一项的结果（旧写法）。
+    conditions: Vec<Explain>,
+    /// `when` 条件树的结果。
+    when: Option<Explain>,
+    /// 每条例外的结果；任何一条成立，规则就不处理这个文件。
+    exceptions: Vec<Explain>,
+    /// 会被放到哪里（或改成什么名字）。
+    destination: Option<String>,
+    /// 没有被处理时的原因。
+    reason: Option<String>,
+}
+
+/// 用一个真实文件测试规则：每个条件是否成立、最终会被放到哪里。只读，不改动文件。
+#[tauri::command]
+pub async fn test_rule(rule: RuleDef, path: String) -> CmdResult<TestView> {
+    let file = FileCtx::from_path(&path).map_err(err)?;
+    let now = Local::now();
+    let mut ctx = MatchCtx::new(now);
+    let conditions: Vec<Explain> = rule
+        .conditions
+        .iter()
+        .map(|c| explain(c, &file, &mut ctx))
+        .collect();
+    let when = rule.when.as_ref().map(|w| explain(w, &file, &mut ctx));
+    let exceptions: Vec<Explain> = rule
+        .exceptions
+        .iter()
+        .map(|c| explain(c, &file, &mut MatchCtx::new(now)))
+        .collect();
+
+    // 用这条规则单独处理这个文件，得到目标位置或跳过原因
+    let mut config = current_config()?;
+    let name = "__测试__".to_string();
+    config.rules = vec![RuleDef {
+        name: name.clone(),
+        enabled: true,
+        ..rule
+    }];
+    let set = RuleSet::from_file(config).map_err(err)?;
+    let plan = build_plan_for_paths(&set, &[PathBuf::from(&path)], now);
+    let destination = plan.ops.iter().rev().find_map(|o| match o.kind {
+        OpKind::Trash => Some("系统回收站".to_string()),
+        _ => o.dst.as_deref().map(display),
+    });
+    let reason = if destination.is_some() {
+        None
+    } else {
+        plan.skipped.first().map(|s| s.reason.clone())
+    };
+    Ok(TestView {
+        matched: destination.is_some()
+            || plan
+                .skipped
+                .iter()
+                .any(|s| s.rule.as_deref() == Some(&name)),
+        conditions,
+        when,
+        exceptions,
+        destination,
+        reason,
+    })
+}
+
+// ---------- 规则调试：一个文件会被哪条规则处理 ----------
+
+#[derive(Serialize)]
+pub struct RuleHit {
+    index: usize,
+    name: String,
+    enabled: bool,
+    /// 条件满足（且没有命中例外）
+    matched: bool,
+    /// 文件在这条规则的生效范围内
+    in_scope: bool,
+}
+
+#[derive(Serialize)]
+pub struct DebugView {
+    path: String,
+    name: String,
+    display: String,
+    category: Option<String>,
+    /// 被保护或排除的原因（此时任何规则都不会处理它）
+    excluded: Option<String>,
+    rules: Vec<RuleHit>,
+    /// 最终处理它的规则（第几条，从 0 开始）
+    winner: Option<usize>,
+    /// 处理方式：移动 / 复制 / 改名 / 移到回收站 / 保持原位
+    action: Option<String>,
+    destination: Option<String>,
+    reason: Option<String>,
+}
+
+/// 调试：拖入的文件会被哪条规则处理、每条规则是否满足。只读，不改动文件。
+/// 判断方式与拖入文件整理一致（只看启用的规则、不受生效范围限制），同时标出是否在范围内供参考。
+#[tauri::command]
+pub async fn debug_file(path: String) -> CmdResult<DebugView> {
+    let p = PathBuf::from(&path);
+    let set = RuleSet::from_file(current_config()?).map_err(err)?;
+    let md = std::fs::symlink_metadata(&p).map_err(err)?;
+    let mut view = DebugView {
+        name: file_name(&p),
+        display: display(&p),
+        path: path.clone(),
+        category: None,
+        excluded: None,
+        rules: vec![],
+        winner: None,
+        action: None,
+        destination: None,
+        reason: None,
+    };
+    if md.is_dir() {
+        view.excluded = Some("文件夹作为整体保留，不拆分内部文件".into());
+        return Ok(view);
+    }
+    if let Some((_, reason)) = classify_file(&p, &view.name, &md, false, &set.protect) {
+        view.excluded = Some(reason);
+    }
+    let file = FileCtx::from_path(&p).map_err(err)?;
+    view.category = file.category().map(|c| c.name.to_string());
+    let now = Local::now();
+    let parent = p.parent().map(Path::to_path_buf).unwrap_or_default();
+    view.rules = set
+        .rules
+        .iter()
+        .enumerate()
+        .map(|(index, r)| {
+            let mut ctx = MatchCtx::new(now);
+            let matched = r.condition.matches(&file, &mut ctx)
+                && !r
+                    .exception
+                    .as_ref()
+                    .is_some_and(|e| e.matches(&file, &mut MatchCtx::new(now)));
+            let in_scope = r
+                .locations
+                .iter()
+                .any(|l| parent == *l || (r.recursive && p.starts_with(l)));
+            RuleHit {
+                index,
+                name: r.name.clone(),
+                enabled: r.enabled,
+                matched,
+                in_scope,
+            }
+        })
+        .collect();
+
+    let plan = build_plan_for_paths(&set, std::slice::from_ref(&p), now);
+    let rule_name = plan
+        .ops
+        .first()
+        .map(|o| o.rule.clone())
+        .or_else(|| plan.skipped.first().and_then(|s| s.rule.clone()));
+    view.winner = rule_name.and_then(|n| set.rules.iter().position(|r| r.name == n));
+    if let Some(last) = plan.ops.last() {
+        view.action = Some(
+            match last.kind {
+                OpKind::Move => "移动到",
+                OpKind::Copy => "复制到",
+                OpKind::Rename => "改名为",
+                OpKind::Trash => "移到回收站",
+            }
+            .into(),
+        );
+        view.destination = last.dst.as_deref().map(display);
+    } else if let Some(s) = plan.skipped.first() {
+        if view.winner.is_some() && s.kind == foldo_core::SkipKind::Protected {
+            view.action = Some("保持原位".into());
+        }
+        view.reason = Some(s.reason.clone());
+    }
+    Ok(view)
+}
+
+// ---------- 悬浮窗 ----------
+
+const FLOAT: &str = "float";
+
+/// 打开或关闭悬浮窗，返回操作后是否显示。
+#[tauri::command]
+pub async fn toggle_float(app: tauri::AppHandle) -> CmdResult<bool> {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window(FLOAT) {
+        w.close().map_err(err)?;
+        return Ok(false);
+    }
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        FLOAT,
+        tauri::WebviewUrl::App("index.html#float".into()),
+    )
+    .title("Foldo")
+    .inner_size(84.0, 84.0)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .visible_on_all_workspaces(true)
+    .build()
+    .map_err(err)?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn float_visible(app: tauri::AppHandle) -> CmdResult<bool> {
+    use tauri::Manager;
+    Ok(app.get_webview_window(FLOAT).is_some())
+}
+
+/// 悬浮窗改变大小（展开 / 收起结果面板）。
+#[tauri::command]
+pub async fn float_resize(app: tauri::AppHandle, width: f64, height: f64) -> CmdResult<()> {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window(FLOAT) {
+        w.set_size(tauri::LogicalSize::new(width, height))
+            .map_err(err)?;
+    }
+    Ok(())
+}
+
+/// 从悬浮窗打开主窗口。
+#[tauri::command]
+pub async fn show_main(app: tauri::AppHandle) -> CmdResult<()> {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window("main") {
+        w.unminimize().map_err(err)?;
+        w.show().map_err(err)?;
+        w.set_focus().map_err(err)?;
+    }
+    Ok(())
 }
 
 /// 在 Finder / 资源管理器中显示文件。文件已不存在时退而显示它所在的文件夹。
