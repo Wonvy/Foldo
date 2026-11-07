@@ -9,10 +9,19 @@ pub fn expand_home(s: &str) -> PathBuf {
             return home;
         }
         if let Some(rest) = s.strip_prefix("~/").or_else(|| s.strip_prefix("~\\")) {
-            return home.join(rest);
+            return home.join(native_separators(rest).as_ref());
         }
     }
-    PathBuf::from(s)
+    PathBuf::from(native_separators(s).as_ref())
+}
+
+/// Windows 上把 `/` 统一成 `\\`，避免同一个路径因为分隔符写法不同而对不上。
+fn native_separators(s: &str) -> std::borrow::Cow<'_, str> {
+    if cfg!(windows) && s.contains('/') {
+        s.replace('/', "\\").into()
+    } else {
+        s.into()
+    }
 }
 
 /// 用于展示：把主目录缩写成 `~`。
@@ -30,12 +39,13 @@ pub fn display(p: &Path) -> String {
 }
 
 /// 用于判断“是不是同一个路径”的键。macOS 和 Windows 默认文件系统不区分大小写。
+/// Windows 上还会把 `/` 统一成 `\\`。
 pub fn path_key(p: &Path) -> String {
-    let s = p.to_string_lossy();
+    let s = native_separators(&p.to_string_lossy()).into_owned();
     if cfg!(any(target_os = "macos", target_os = "windows")) {
         s.to_lowercase()
     } else {
-        s.into_owned()
+        s
     }
 }
 
@@ -140,6 +150,14 @@ mod tests {
         assert_eq!(expand_home("~/Downloads"), home.join("Downloads"));
         assert_eq!(expand_home("/tmp/x"), PathBuf::from("/tmp/x"));
         assert_eq!(display(&home.join("a")), format!("~{MAIN_SEPARATOR}a"));
+    }
+
+    #[test]
+    fn mixed_separators_are_the_same_path() {
+        let home = dirs::home_dir().unwrap();
+        let a = expand_home("~/Downloads/项目A");
+        let b = home.join("Downloads").join("项目A");
+        assert_eq!(path_key(&a), path_key(&b));
     }
 
     #[cfg(unix)]

@@ -44,7 +44,18 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: 测试
-        run: cargo test --locked
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --locked 2>&1 | tee test-output.txt
+      - name: 汇报失败的测试
+        if: failure()
+        shell: bash
+        run: |
+          # 把失败的测试和断言写成检查注解，不登录也能在 API 里看到
+          grep -E "^test .* FAILED|panicked at|^  left|^ right|assertion|^error" test-output.txt | head -40 | while IFS= read -r line; do
+            echo "::error title=测试失败::${line}"
+          done || true
 
   package:
     name: 打包 (${{ matrix.name }})
