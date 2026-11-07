@@ -1,4 +1,5 @@
 // 悬浮窗（类似 DropIt）：置顶的小图标，把文件拖上去就按规则给出整理方案，确认后执行，可撤销。
+import { CheckMenuItem, Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AppWindow, ArrowRight, CircleCheck, FolderTree, RotateCcw, Trash, TriangleAlert, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
@@ -18,6 +19,7 @@ export default function FloatApp() {
   const [error, setError] = useState<string | null>(null);
   const [undone, setUndone] = useState(false);
   const [running, setRunning] = useState(false);
+  const [onTop, setOnTop] = useState(true);
   const collapseTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const expanded = phase !== "idle";
@@ -100,9 +102,55 @@ export default function FloatApp() {
     try {
       await api.undo(result.batch_id);
       setUndone(true);
+      setPhase("done");
       collapseTimer.current = setTimeout(() => setPhase("idle"), 4000);
     } catch (e) {
       setError(errorText(e));
+    }
+  };
+
+  const pickAndHandle = async () => {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const r = await open({ multiple: true, directory: false, title: "选择要整理的文件" });
+      const paths = Array.isArray(r) ? r : typeof r === "string" ? [r] : [];
+      if (paths.length) await handle(paths);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
+  // 右键菜单（系统原生菜单，收起时窗口很小也能完整显示）
+  const openMenu = async (e: MouseEvent) => {
+    e.preventDefault();
+    const canUndo = !!result && result.done > 0 && !undone;
+    try {
+      const sep = () => PredefinedMenuItem.new({ item: "Separator" });
+      const menu = await Menu.new({
+        items: [
+          await MenuItem.new({ text: "打开主窗口", action: () => void api.showMain() }),
+          await MenuItem.new({ text: "选择文件整理…", action: () => void pickAndHandle() }),
+          await MenuItem.new({ text: "撤销上次整理", enabled: canUndo, action: () => void undo() }),
+          await sep(),
+          await MenuItem.new({ text: expanded ? "收起面板" : "展开上次结果", enabled: expanded || !!plan, action: () => setPhase(expanded ? "idle" : result ? "done" : "plan") }),
+          await CheckMenuItem.new({
+            text: "始终置顶",
+            checked: onTop,
+            action: () => {
+              const v = !onTop;
+              void getCurrentWindow()
+                .setAlwaysOnTop(v)
+                .then(() => setOnTop(v))
+                .catch(() => {});
+            },
+          }),
+          await sep(),
+          await MenuItem.new({ text: "关闭悬浮窗", action: () => void api.toggleFloat() }),
+        ],
+      });
+      await menu.popup();
+    } catch {
+      /* 浏览器预览中没有原生菜单 */
     }
   };
 
@@ -115,11 +163,8 @@ export default function FloatApp() {
       className={`float-target ${small ? "small" : ""} ${hover ? "hover" : ""}`}
       onMouseDown={drag}
       onDoubleClick={() => void api.showMain()}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        void api.toggleFloat();
-      }}
-      title="把文件拖到这里整理 · 双击打开主窗口 · 右键关闭"
+      onContextMenu={openMenu}
+      title="把文件拖到这里整理 · 双击打开主窗口 · 右键更多操作"
     >
       {hover ? <Upload size={small ? 16 : 26} /> : <FolderTree size={small ? 16 : 26} />}
     </div>
@@ -128,7 +173,7 @@ export default function FloatApp() {
   if (!expanded) return <div className="float-root">{target(false)}</div>;
 
   return (
-    <div className={`float-panel ${hover ? "hover" : ""}`}>
+    <div className={`float-panel ${hover ? "hover" : ""}`} onContextMenu={openMenu}>
       <div className="float-head" onMouseDown={drag}>
         {target(true)}
         <strong className="ellipsis">

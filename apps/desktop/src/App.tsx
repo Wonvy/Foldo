@@ -27,6 +27,33 @@ const THEME_ICON: Record<ThemePref, ReactNode> = {
 };
 const THEME_LABEL: Record<ThemePref, string> = { system: "跟随系统", light: "浅色", dark: "深色" };
 
+// 侧栏宽度：可拖动分隔条调整；拖到很窄时收成只有图标
+const SIDE_MIN = 160;
+const SIDE_MAX = 320;
+const SIDE_DEFAULT = 212;
+/** 拖到这个宽度以下就收起为图标。 */
+const SIDE_COLLAPSE_AT = 120;
+const SIDE_KEY = "foldo.sidebar";
+type Side = { width: number; collapsed: boolean };
+
+function loadSide(): Side {
+  try {
+    const v = JSON.parse(localStorage.getItem(SIDE_KEY) ?? "");
+    if (typeof v?.width === "number") return { width: Math.min(SIDE_MAX, Math.max(SIDE_MIN, v.width)), collapsed: !!v.collapsed };
+  } catch {
+    /* 没有保存过或存储不可用 */
+  }
+  return { width: SIDE_DEFAULT, collapsed: false };
+}
+
+function saveSide(s: Side) {
+  try {
+    localStorage.setItem(SIDE_KEY, JSON.stringify(s));
+  } catch {
+    /* 存储不可用 */
+  }
+}
+
 function Shell() {
   const { config, loadError } = useStore();
   const [page, setPage] = useState<Page>("tidy");
@@ -35,6 +62,8 @@ function Shell() {
   const [dropped, setDropped] = useState<{ paths: string[]; n: number } | null>(null);
   const [rulesDrop, setRulesDrop] = useState<{ paths: string[]; n: number } | null>(null);
   const [floatOn, setFloatOn] = useState(false);
+  const [side, setSide] = useState<Side>(loadSide);
+  const [resizing, setResizing] = useState(false);
   const pageRef = useRef<Page>("tidy");
   pageRef.current = page;
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -86,6 +115,25 @@ function Shell() {
     };
   }, []);
 
+  // 拖动分隔条
+  useEffect(() => {
+    if (!resizing) return;
+    const move = (e: PointerEvent) => {
+      const x = e.clientX;
+      setSide((s) => (x < SIDE_COLLAPSE_AT ? { ...s, collapsed: true } : { width: Math.min(SIDE_MAX, Math.max(SIDE_MIN, x)), collapsed: false }));
+    };
+    const up = () => setResizing(false);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+  }, [resizing]);
+  useEffect(() => {
+    if (!resizing) saveSide(side);
+  }, [side, resizing]);
+
   const ruleCount = config.rules?.length ?? 0;
   const nav: { id: Page; label: string; icon: ReactNode; count?: number }[] = [
     { id: "tidy", label: "整理", icon: <Sparkles size={17} /> },
@@ -96,8 +144,8 @@ function Shell() {
   ];
 
   return (
-    <div className="app">
-      <nav className="sidebar">
+    <div className={`app ${resizing ? "resizing" : ""}`}>
+      <nav className={`sidebar ${side.collapsed ? "collapsed" : ""}`} style={side.collapsed ? undefined : { width: side.width }}>
         <div className="brand">
           <span className="brand-mark">
             <FolderTree size={16} />
@@ -136,6 +184,16 @@ function Shell() {
           </span>
         </div>
       </nav>
+      <div
+        className={`splitter ${resizing ? "active" : ""}`}
+        title="拖动调整宽度，双击切换图标模式"
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          setResizing(true);
+        }}
+        onDoubleClick={() => setSide((s) => ({ ...s, collapsed: !s.collapsed }))}
+      />
 
       <main className="content">
         {loadError && <div className="banner error" style={{ margin: 24 }}>读取配置失败：{loadError}</div>}

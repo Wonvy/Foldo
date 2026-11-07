@@ -379,3 +379,36 @@ export function describeScope(rule: RuleDef): string {
   if (!rule.locations) return "所有整理文件夹";
   return list(rule.locations).map(baseName).join("、");
 }
+
+// ---------- 列表里的标签摘要 ----------
+
+export type CondChip = { kind: "test" | "group"; group: string; text: string; title: string; not: boolean };
+export type ActionChip = { kind: ActionKind; text: string; title: string };
+
+/** 长路径只保留最后两级：~/Documents/工作/2026/发票 → …/2026/发票 */
+export function shortPath(p: string): string {
+  const t = tilde(p).replace(/[\\/]+$/, "");
+  if (t.length <= 26) return t;
+  const parts = t.split(/[\\/]/);
+  return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : t;
+}
+
+const MODE_LABEL: Record<GroupMode, string> = { all: "全部", any: "任一", none: "都不" };
+
+export function ruleChips(rule: RuleDef, fields: FieldMap): { mode: GroupMode; conds: CondChip[]; actions: ActionChip[]; exceptions: number } {
+  const form = ruleToForm(rule, fields);
+  const conds: CondChip[] = form.root.children.map((n) => {
+    if (n.kind === "test") {
+      const text = describeNode({ ...n, not: false }, fields);
+      return { kind: "test", group: fields.get(n.field)?.group ?? "基本", text, title: describeNode(n, fields), not: n.not };
+    }
+    return { kind: "group", group: "", text: `${MODE_LABEL[n.mode]}满足 ${n.children.length} 项`, title: describeNode(n, fields), not: n.not };
+  });
+  const actions: ActionChip[] = form.actions.map((a) => {
+    if (a.kind === "trash") return { kind: a.kind, text: "回收站", title: "移到回收站" };
+    if (a.kind === "keep") return { kind: a.kind, text: "保持原位", title: "保持原位" };
+    const verb = a.kind === "move" ? "移到" : a.kind === "copy" ? "复制到" : "改名为";
+    return { kind: a.kind, text: a.kind === "rename" ? a.to : shortPath(a.to), title: `${verb} ${tilde(a.to)}` };
+  });
+  return { mode: form.root.mode, conds, actions, exceptions: form.exceptions.children.length };
+}

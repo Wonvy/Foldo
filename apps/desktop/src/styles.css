@@ -1947,3 +1947,311 @@ html.float #root {
 .float-foot:empty {
   display: none;
 }
+
+/* ============ 规则列表 ============ */
+
+.rules-search {
+  width: 200px;
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rule-list.dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.rule-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 12px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: opacity 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.rule-card:hover {
+  border-color: var(--border-strong);
+}
+
+.rule-card.off .rule-main {
+  opacity: 0.45;
+}
+
+.rule-card.dim {
+  opacity: 0.35;
+}
+
+.rule-card.winner {
+  border-color: var(--ok);
+  background: color-mix(in srgb, var(--ok-soft) 70%, var(--surface));
+}
+
+.rule-card.lifted {
+  opacity: 0.5;
+  border-style: dashed;
+}
+
+.rule-card.drop-before::before,
+.rule-card.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.rule-card.drop-before::before {
+  top: -6px;
+}
+
+.rule-card.drop-after::after {
+  bottom: -6px;
+}
+
+.grip {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 32px;
+  color: var(--muted);
+  opacity: 0.35;
+  cursor: grab;
+  touch-action: none;
+}
+
+.rule-card:hover .grip {
+  opacity: 1;
+}
+
+.rule-no {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--muted);
+  font: 600 12px var(--mono);
+}
+
+.rule-card.winner .rule-no {
+  background: var(--ok);
+  color: #fff;
+}
+
+.rule-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rule-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.rule-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.cchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  max-width: 230px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.cchip svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.cchip.scope svg {
+  color: var(--muted);
+}
+
+.cchip.mode {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.cchip.neg {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.cchip.neg svg {
+  color: var(--warn);
+}
+
+.neg-mark {
+  font-weight: 700;
+}
+
+.cchip.act {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.cchip.act svg {
+  color: var(--ok);
+}
+
+.cchip.act.trash {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.cchip.act.trash svg {
+  color: var(--danger);
+}
+
+.cchip.act.keep {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+.cchip.act.keep svg {
+  color: var(--muted);
+}
+
+.flow-arrow {
+  display: inline-flex;
+  color: var(--muted);
+  margin: 0 1px;
+}
+
+.rule-side {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ============ 侧栏宽度调整 ============ */
+
+.sidebar {
+  transition: width 0.16s ease;
+}
+
+.app.resizing,
+.app.resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+.app.resizing .sidebar {
+  transition: none;
+}
+
+.splitter {
+  position: relative;
+  flex: none;
+  width: 0;
+  z-index: 10;
+}
+
+/* 实际可拖动的区域比分隔线宽，方便抓取 */
+.splitter::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 8px;
+  cursor: col-resize;
+}
+
+.splitter::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.splitter:hover::after,
+.splitter.active::after {
+  background: var(--accent);
+}
+
+/* 收起为图标（手动收起，或窗口很窄时） */
+.sidebar.collapsed {
+  width: 64px;
+  padding: 18px 10px 14px;
+}
+
+.sidebar.collapsed .label,
+.sidebar.collapsed .nav-item .count {
+  display: none;
+}
+
+.sidebar.collapsed .brand {
+  justify-content: center;
+  padding: 2px 0 18px;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar.collapsed .sidebar-foot,
+.sidebar .sidebar-foot {
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sidebar.collapsed .sidebar-foot {
+  flex-direction: column;
+  align-items: center;
+}
+
+@media (max-width: 760px) {
+  .sidebar {
+    width: 64px !important;
+  }
+
+  .sidebar .sidebar-foot {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .splitter {
+    display: none;
+  }
+}

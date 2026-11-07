@@ -1,6 +1,7 @@
 import {
-  ArrowDown,
-  ArrowUp,
+  ArrowDownToLine,
+  ArrowRight,
+  ArrowUpToLine,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
@@ -8,21 +9,39 @@ import {
   Ellipsis,
   FileDown,
   FileSearch,
+  Folder,
+  GripVertical,
+  Layers,
+  Lock,
+  PenLine,
   Pencil,
   Plus,
+  Search,
   ShieldCheck,
   Trash,
   TriangleAlert,
   WandSparkles,
   X,
+  type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { api, errorText, type DebugView, type RuleDef } from "../api";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { api, baseName, errorText, type DebugView, type RuleDef } from "../api";
+import { GroupIcon } from "../components/FieldPicker";
 import InspectDialog from "../components/InspectDialog";
 import RuleEditor from "../components/RuleEditor";
 import { FileIcon, Spinner, Switch, useMenu } from "../components/ui";
-import { describeActions, describeConditions, describeExceptions, describeScope, tilde } from "../rules";
+import { describeConditions, ruleChips, tilde, type ActionKind } from "../rules";
 import { pickFile, useStore } from "../store";
+
+const ACTION_ICON: Record<ActionKind, LucideIcon> = {
+  move: ArrowRight,
+  copy: Copy,
+  rename: PenLine,
+  trash: Trash,
+  keep: Lock,
+};
+
+const MAX_CHIPS = 3;
 
 export default function RulesPage({
   newRequest,
@@ -38,6 +57,7 @@ export default function RulesPage({
   const { config, save, view, fieldMap } = useStore();
   const rules = config.rules ?? [];
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   // undefined：没打开；null：新建；数字：编辑第几条
   const [editing, setEditing] = useState<number | null | undefined>(undefined);
   const [testDrop, setTestDrop] = useState<{ path: string; n: number } | null>(null);
@@ -95,9 +115,11 @@ export default function RulesPage({
     }
   };
 
-  const move = (i: number, d: -1 | 1) => {
+  const moveTo = (from: number, to: number) => {
+    if (from === to) return;
     const next = [...rules];
-    [next[i], next[i + d]] = [next[i + d], next[i]];
+    const [r] = next.splice(from, 1);
+    next.splice(to, 0, r);
     void update(next);
   };
 
@@ -110,18 +132,76 @@ export default function RulesPage({
     void update(next);
   };
 
-  const hitOf = (i: number) => debug?.rules[i];
+  // ---------- 拖动排序（指针事件，不依赖 HTML5 拖放，Windows 上也可靠） ----------
+  const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [drag, setDrag] = useState<{ from: number; over: number } | null>(null);
+  const startDrag = (e: ReactPointerEvent, i: number) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDrag({ from: i, over: i });
+  };
+  useEffect(() => {
+    if (!drag) return;
+    const move = (e: PointerEvent) => {
+      let over = rules.length - 1;
+      for (let i = 0; i < rowRefs.current.length; i++) {
+        const r = rowRefs.current[i]?.getBoundingClientRect();
+        if (r && e.clientY < r.top + r.height / 2) {
+          over = i;
+          break;
+        }
+      }
+      // 往下拖时，落点是“越过的那一行”
+      if (over > drag.from) over -= 1;
+      if (e.clientY > (rowRefs.current[rules.length - 1]?.getBoundingClientRect().bottom ?? 0)) over = rules.length - 1;
+      setDrag((d) => (d && d.over !== over ? { ...d, over } : d));
+    };
+    const up = () => {
+      setDrag((d) => {
+        if (d) moveTo(d.from, d.over);
+        return null;
+      });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drag?.from, rules.length]);
+
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rules
+      .map((r, i) => ({ r, i }))
+      .filter(({ r }) => !q || `${r.name} ${describeConditions(r, fieldMap)}`.toLowerCase().includes(q));
+  }, [rules, query, fieldMap]);
+  const enabledCount = rules.filter((r) => r.enabled !== false).length;
 
   return (
     <div className="page rules-page">
       <div className="page-head">
-        <div>
+        <div className="row" style={{ alignItems: "baseline", gap: 10 }}>
           <h1>规则</h1>
-          <p className="sub">从上到下判断，第一条命中的生效。把文件拖进来可以调试。</p>
+          {rules.length > 0 && (
+            <span className="muted">
+              {enabledCount}/{rules.length} 启用
+            </span>
+          )}
         </div>
-        <button className="btn primary" onClick={() => setEditing(null)}>
-          <Plus size={16} /> 新建规则
-        </button>
+        <div className="row">
+          {rules.length > 3 && (
+            <div className="search-box rules-search">
+              <Search size={14} />
+              <input placeholder="搜索规则" value={query} onChange={(e) => setQuery(e.target.value)} />
+            </div>
+          )}
+          <button className="btn primary" onClick={() => setEditing(null)}>
+            <Plus size={16} /> 新建规则
+          </button>
+        </div>
       </div>
 
       {view?.error && (
@@ -141,60 +221,106 @@ export default function RulesPage({
       )}
 
       {rules.length === 0 ? (
-        <div className="card">
-          <div className="empty" style={{ padding: "40px 16px" }}>
-            <div className="art">
-              <WandSparkles size={24} />
-            </div>
-            <h2>还没有规则</h2>
-            <button className="btn primary" style={{ marginTop: 8 }} onClick={() => setEditing(null)}>
-              <Plus size={16} /> 新建规则
-            </button>
+        <div className="empty" style={{ padding: "60px 16px" }}>
+          <div className="art">
+            <WandSparkles size={24} />
           </div>
+          <h2>还没有规则</h2>
+          <p className="muted">规则决定哪些文件放到哪里，从上到下判断，第一条命中的生效。</p>
+          <button className="btn primary" style={{ marginTop: 8 }} onClick={() => setEditing(null)}>
+            <Plus size={16} /> 新建规则
+          </button>
         </div>
       ) : (
-        <div className="card">
-          {rules.map((r, i) => {
-            const ex = describeExceptions(r, fieldMap);
+        <div className={`rule-list ${drag ? "dragging" : ""}`}>
+          {shown.map(({ r, i }) => {
             const enabled = r.enabled !== false;
-            const hit = hitOf(i);
+            const hit = debug?.rules[i];
             const winner = debug?.winner === i;
             const dim = debug && !winner && !(hit?.matched && enabled);
+            const chips = ruleChips(r, fieldMap);
+            const extra = chips.conds.length - MAX_CHIPS;
+            const dropBefore = drag && drag.over === i && drag.over < drag.from;
+            const dropAfter = drag && drag.over === i && drag.over > drag.from;
             return (
               <div
                 key={r.name}
-                className={`list-row clickable rule-row ${enabled ? "" : "off"} ${winner ? "winner" : ""} ${dim ? "dim" : ""}`}
-                onClick={() => setEditing(i)}
+                ref={(el) => {
+                  rowRefs.current[i] = el;
+                }}
+                className={[
+                  "rule-card",
+                  enabled ? "" : "off",
+                  winner ? "winner" : "",
+                  dim ? "dim" : "",
+                  drag?.from === i ? "lifted" : "",
+                  dropBefore ? "drop-before" : "",
+                  dropAfter ? "drop-after" : "",
+                ].join(" ")}
+                onClick={() => !drag && setEditing(i)}
               >
-                <span className="rule-index mono">{i + 1}</span>
-                <div className="row-main" style={{ gap: 4 }}>
-                  <div className="row-title row">
-                    {r.name}
+                <span
+                  className="grip"
+                  title={query ? "清空搜索后可拖动排序" : "拖动调整优先级"}
+                  onPointerDown={(e) => !query && startDrag(e, i)}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <GripVertical size={16} />
+                </span>
+                <span className="rule-no">{i + 1}</span>
+                <div className="rule-main">
+                  <div className="rule-name">
+                    <span className="ellipsis">{r.name}</span>
                     {winner && (
                       <span className="chip ok">
                         <CircleCheck size={12} /> 处理
                       </span>
                     )}
                     {debug && !winner && hit?.matched && enabled && <span className="chip">也满足</span>}
-                    {debug && hit?.matched && !hit.in_scope && <span className="chip warn">不在生效范围</span>}
+                    {debug && hit?.matched && !hit.in_scope && <span className="chip warn">不在范围</span>}
                   </div>
-                  <div className="rule-sentence">
-                    在 <b>{describeScope(r)}</b> 中，{describeConditions(r, fieldMap)}
-                    {ex && `（${ex}除外）`} → <b>{describeActions(r)}</b>
+                  <div className="rule-chips">
+                    {r.locations && (
+                      <span className="cchip scope" title={(Array.isArray(r.locations) ? r.locations : [r.locations]).map(tilde).join("\n")}>
+                        <Folder size={12} />
+                        {(Array.isArray(r.locations) ? r.locations : [r.locations]).map(baseName).join("、")}
+                      </span>
+                    )}
+                    {chips.mode !== "all" && chips.conds.length > 1 && <span className="cchip mode">{chips.mode === "any" ? "任一" : "都不"}</span>}
+                    {chips.conds.length === 0 && <span className="cchip">所有文件</span>}
+                    {chips.conds.slice(0, MAX_CHIPS).map((c, k) => (
+                      <span key={k} className={`cchip ${c.not ? "neg" : ""}`} title={c.title}>
+                        {c.not && <span className="neg-mark">非</span>}
+                        {c.kind === "group" ? <Layers size={12} /> : <GroupIcon group={c.group} size={12} />}
+                        <span className="ellipsis">{c.text}</span>
+                      </span>
+                    ))}
+                    {extra > 0 && (
+                      <span className="cchip" title={chips.conds.slice(MAX_CHIPS).map((c) => c.title).join("\n")}>
+                        +{extra}
+                      </span>
+                    )}
+                    {chips.exceptions > 0 && (
+                      <span className="cchip neg" title="满足例外时不处理">
+                        <ShieldCheck size={12} /> {chips.exceptions} 个例外
+                      </span>
+                    )}
+                    <span className="flow-arrow">
+                      <ArrowRight size={13} />
+                    </span>
+                    {chips.actions.map((a, k) => {
+                      const Icon = ACTION_ICON[a.kind];
+                      return (
+                        <span key={k} className={`cchip act ${a.kind}`} title={a.title}>
+                          <Icon size={12} />
+                          <span className="ellipsis">{a.text}</span>
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
-                <span onClick={(e) => e.stopPropagation()} className="row">
-                  <Switch
-                    on={enabled}
-                    label="启用"
-                    onChange={(on) => update(rules.map((x, j) => (j === i ? { ...x, enabled: on } : x)))}
-                  />
-                  <button className="icon-btn" disabled={i === 0} onClick={() => move(i, -1)} aria-label="提高优先级" title="提高优先级">
-                    <ArrowUp size={16} />
-                  </button>
-                  <button className="icon-btn" disabled={i === rules.length - 1} onClick={() => move(i, 1)} aria-label="降低优先级" title="降低优先级">
-                    <ArrowDown size={16} />
-                  </button>
+                <span className="rule-side" onClick={(e) => e.stopPropagation()}>
+                  <Switch on={enabled} label="启用" onChange={(on) => update(rules.map((x, j) => (j === i ? { ...x, enabled: on } : x)))} />
                   <button
                     className="icon-btn"
                     aria-label="更多"
@@ -202,7 +328,11 @@ export default function RulesPage({
                       menu.open(e.currentTarget, [
                         { label: "编辑", icon: <Pencil size={15} />, onClick: () => setEditing(i) },
                         { label: "复制一份", icon: <Copy size={15} />, onClick: () => duplicate(i) },
-                        "divider",
+                        ...(i > 0 ? [{ label: "移到最前", icon: <ArrowUpToLine size={15} />, onClick: () => moveTo(i, 0) }] : []),
+                        ...(i < rules.length - 1
+                          ? [{ label: "移到最后", icon: <ArrowDownToLine size={15} />, onClick: () => moveTo(i, rules.length - 1) }]
+                          : []),
+                        "divider" as const,
                         { label: "删除规则", icon: <Trash size={15} />, danger: true, onClick: () => update(rules.filter((_, j) => j !== i)) },
                       ])
                     }
@@ -213,6 +343,7 @@ export default function RulesPage({
               </div>
             );
           })}
+          {shown.length === 0 && <div className="muted" style={{ padding: 20, textAlign: "center" }}>没有匹配的规则</div>}
         </div>
       )}
 
@@ -229,7 +360,7 @@ export default function RulesPage({
               }
             }}
           >
-            <FileDown size={16} /> 把文件拖到这里，看它会被哪条规则处理
+            <FileDown size={16} /> 拖入文件，看它会被哪条规则处理
           </button>
         ) : (
           <>
