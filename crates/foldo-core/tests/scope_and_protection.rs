@@ -166,8 +166,16 @@ fn buffer_period_skips_new_files() {
     fs::write(inbox.join("new.pdf"), "").unwrap(); // 刚刚创建
     let rs = catch_all(&inbox, "settings:\n  buffer: 1h\n");
     let plan = build_plan(&rs, None).unwrap();
-    assert!(dst_of(&plan, "old.pdf").is_some());
     assert_eq!(skip_kind(&plan, "new.pdf"), Some(SkipKind::Buffer));
+    // 缓冲期看“创建和修改中较新的那个”。Linux / Windows 上无法把创建时间改到过去，
+    // 测试里的 old.pdf 创建时间仍是刚才，这时它也算新文件，跳过这条断言。
+    let created_recently = fs::metadata(inbox.join("old.pdf"))
+        .and_then(|m| m.created())
+        .map(|c| c.elapsed().unwrap_or_default() < Duration::from_secs(3600))
+        .unwrap_or(false);
+    if !created_recently {
+        assert!(dst_of(&plan, "old.pdf").is_some());
+    }
 
     let rs = catch_all(&inbox, "settings:\n  buffer: 3d\n");
     let plan = build_plan_at(&rs, None, chrono::Local::now()).unwrap();

@@ -199,29 +199,28 @@ impl Protect {
 }
 
 /// 文件是否正被其他程序占用（只在 Windows 上能可靠判断：以独占方式打开会失败）。
+#[cfg(windows)]
 pub fn is_in_use(path: &Path) -> bool {
-    #[cfg(windows)]
+    use std::os::windows::fs::OpenOptionsExt;
+    const ERROR_SHARING_VIOLATION: i32 = 32;
+    const ERROR_LOCK_VIOLATION: i32 = 33;
+    match std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(path)
     {
-        use std::os::windows::fs::OpenOptionsExt;
-        const ERROR_SHARING_VIOLATION: i32 = 32;
-        const ERROR_LOCK_VIOLATION: i32 = 33;
-        return match std::fs::OpenOptions::new()
-            .read(true)
-            .share_mode(0)
-            .open(path)
-        {
-            Ok(_) => false,
-            Err(e) => matches!(
-                e.raw_os_error(),
-                Some(ERROR_SHARING_VIOLATION) | Some(ERROR_LOCK_VIOLATION)
-            ),
-        };
+        Ok(_) => false,
+        Err(e) => matches!(
+            e.raw_os_error(),
+            Some(ERROR_SHARING_VIOLATION) | Some(ERROR_LOCK_VIOLATION)
+        ),
     }
-    #[cfg(not(windows))]
-    {
-        let _ = path;
-        false
-    }
+}
+
+/// 文件是否正被其他程序占用（macOS / Linux 没有强制锁，无法可靠判断，一律视为未占用）。
+#[cfg(not(windows))]
+pub fn is_in_use(_path: &Path) -> bool {
+    false
 }
 
 #[cfg(test)]
