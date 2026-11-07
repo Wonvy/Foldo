@@ -1,9 +1,12 @@
 [workspace]
 resolver = "3"
-members = ["crates/foldo-core", "crates/foldo-cli"]
+members = ["crates/foldo-core", "crates/foldo-cli", "apps/desktop/src-tauri"]
+# 桌面应用编译时需要先构建前端，且在 Linux 上依赖 WebKitGTK，
+# 所以 `cargo test` / `cargo clippy` 默认只覆盖核心库和 CLI。
+default-members = ["crates/foldo-core", "crates/foldo-cli"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-rust-version = "1.85"
+rust-version = "1.90"

@@ -45,7 +45,11 @@ pub fn is_case_only_change(a: &Path, b: &Path) -> bool {
 }
 
 /// 默认的规则文件路径：`<配置目录>/foldo/rules.yaml`。
+/// 设置了环境变量 `FOLDO_RULES` 时以它为准。
 pub fn default_rules_path() -> PathBuf {
+    if let Some(p) = std::env::var_os("FOLDO_RULES").filter(|v| !v.is_empty()) {
+        return PathBuf::from(p);
+    }
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("foldo")
@@ -53,7 +57,11 @@ pub fn default_rules_path() -> PathBuf {
 }
 
 /// 默认的数据目录：`<数据目录>/foldo`，存放操作日志。
+/// 设置了环境变量 `FOLDO_HOME` 时以它为准。
 pub fn default_data_dir() -> PathBuf {
+    if let Some(p) = std::env::var_os("FOLDO_HOME").filter(|v| !v.is_empty()) {
+        return PathBuf::from(p);
+    }
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("foldo")

@@ -4,7 +4,9 @@
 
 跨平台（macOS / Windows / Linux）的文件夹整理工具：用 YAML 写规则，先预览、再执行，执行过的操作可以撤销。
 
-当前是 **M1：核心引擎 + CLI**。GUI（Tauri）、实时监听和定时运行在后续里程碑中实现。
+提供图形界面（Tauri）和命令行两种用法，两者共用同一份规则文件和操作日志。
+
+当前进度：**M1 核心引擎 + CLI** 已完成；**M2 图形界面**第一阶段已完成（规则编辑与校验、预览勾选、执行、历史与撤销）。可视化规则编辑器、实时监听和定时运行在后续里程碑中实现。
 
 ## 项目结构
 
@@ -23,6 +25,9 @@ crates/
     fsops.rs      跨磁盘移动、带校验的复制、回收站
     paths.rs      ~ 展开、大小写不敏感比较、系统目录保护
   foldo-cli/    命令行，二进制名 foldo
+apps/desktop/   图形界面（Tauri 2 + React + TypeScript）
+  src/          前端页面：规则、预览与执行、历史
+  src-tauri/    Rust 端，把 foldo-core 包装成前端可调用的命令
 examples/rules.yaml  示例规则
 ```
 
@@ -33,6 +38,16 @@ examples/rules.yaml  示例规则
 | [Releases](https://github.com/Wonvy/Foldo/releases) | 正式版本 | 无需登录即可下载 |
 | [Actions](https://github.com/Wonvy/Foldo/actions/workflows/build.yml) | main 分支每次提交的构建 | 打开某次运行，在页面底部的 Artifacts 里下载；需要登录 GitHub，保留 30 天 |
 
+**图形界面安装包**
+
+| 文件 | 平台 |
+|---|---|
+| `foldo-desktop-<版本>-windows-x64-setup.exe` | Windows 10 / 11（64 位），双击安装 |
+| `foldo-desktop-<版本>-macos-arm64.dmg` | Apple 芯片 Mac |
+| `foldo-desktop-<版本>-linux-x64.deb` | Debian / Ubuntu |
+
+**命令行版**
+
 | 文件 | 平台 |
 |---|---|
 | `foldo-<版本>-windows-x64.zip` | Windows 10 / 11（64 位） |
@@ -42,7 +57,7 @@ examples/rules.yaml  示例规则
 
 每个压缩包里都有 `foldo` 程序、本说明和示例规则 `rules.example.yaml`。
 
-### 在 Windows 上试用
+### 在 Windows 上试用命令行版
 
 1. 解压 zip，在解压出来的文件夹的地址栏输入 `powershell` 并回车，就会在这个文件夹里打开 PowerShell。
 2. 新建一个测试目录，放几个文件进去，再生成一份只针对这个目录的规则（示例规则 `rules.example.yaml` 指向真实的“下载”和“桌面”文件夹，不适合拿来试）：
@@ -85,7 +100,11 @@ examples/rules.yaml  示例规则
 
 程序还没有数字签名，Windows 可能会弹出“Windows 已保护你的电脑”。点击“更多信息”→“仍要运行”即可。
 
-> 打出 Windows 安装包（.msi / .exe 安装程序）要等 M2 的 Tauri 图形界面，届时会用同一套工作流生成。
+### 在 Windows 上试用图形界面
+
+双击 `…-windows-x64-setup.exe` 安装，开始菜单里会出现 Foldo。安装程序和程序本身都还没有数字签名，同样需要点击“更多信息”→“仍要运行”。Windows 10 / 11 已自带 WebView2；如果缺失，安装程序会自动下载。
+
+第一次打开时点击“生成示例规则”，**先把规则里的位置改成测试文件夹**（例如 `~/FoldoTest/Inbox`），再到“预览与执行”里试。
 
 ### 发布新版本
 
@@ -177,6 +196,21 @@ rules:
 ## 开发
 
 ```bash
-cargo test
+cargo test                       # 核心库和命令行
 cargo clippy --all-targets
+```
+
+图形界面需要 Node.js 20 以上：
+
+```bash
+cd apps/desktop
+npm ci
+npm run tauri dev                # 开发模式，修改前端代码后自动刷新
+npx tauri build --bundles dmg    # 本机打包（Windows 上用 --bundles nsis）
+```
+
+开发时可以用环境变量让规则和日志指向测试目录，避免影响真实文件：
+
+```bash
+FOLDO_RULES=/tmp/foldo-test/rules.yaml FOLDO_HOME=/tmp/foldo-test/data npm run tauri dev
 ```

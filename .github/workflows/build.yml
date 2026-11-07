@@ -1,7 +1,8 @@
 # 测试 → 打包 → 发布
 #
 # - 每次推送 / PR：在 Windows、macOS、Linux 上运行格式检查、clippy 和测试
-# - 推送到 main 或手动触发：额外打包各平台安装包，作为 Actions 产物保留 30 天
+# - 推送到 main 或手动触发：额外打包命令行版压缩包和图形界面安装包（Windows .exe / macOS .dmg / Linux .deb），
+#   作为 Actions 产物保留 30 天
 # - 推送 v* 标签（如 v0.1.0）：额外创建 GitHub Release，并附上安装包
 
 name: Build
@@ -105,9 +106,73 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+  desktop:
+    name: 安装包 (${{ matrix.name }})
+    needs: test
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            bundles: nsis
+            output: nsis/*.exe
+            suffix: -setup.exe
+          - name: macos-arm64
+            os: macos-latest
+            bundles: dmg
+            output: dmg/*.dmg
+            suffix: .dmg
+          - name: linux-x64
+            os: ubuntu-latest
+            bundles: deb
+            output: deb/*.deb
+            suffix: .deb
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - name: 安装 Linux 系统依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: 安装前端依赖
+        working-directory: apps/desktop
+        run: npm ci
+      - name: 构建安装包
+        working-directory: apps/desktop
+        run: npx tauri build --bundles ${{ matrix.bundles }}
+      - name: 整理文件名
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then ver="$GITHUB_REF_NAME"; else ver="${GITHUB_SHA::7}"; fi
+          src=$(ls target/release/bundle/${{ matrix.output }} | head -n 1)
+          mkdir -p dist
+          dst="dist/foldo-desktop-${ver}-${{ matrix.name }}${{ matrix.suffix }}"
+          cp "$src" "$dst"
+          echo "ASSET=$dst" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ env.ASSET }}
+          archive: false
+          retention-days: 30
+          if-no-files-found: error
+
   release:
     name: 发布 Release
-    needs: package
+    needs: [package, desktop]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:

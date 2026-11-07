@@ -17,6 +17,9 @@ pub mod template;
 pub mod undo;
 pub mod units;
 
+/// 内置的示例规则，`foldo init` 和图形界面的“生成示例规则”都用它。
+pub const EXAMPLE_RULES: &str = include_str!("../../../examples/rules.yaml");
+
 pub use error::{Error, Result};
 pub use exec::{ExecReport, execute};
 pub use journal::Journal;

@@ -1,0 +1,17 @@
+[package]
+name = "foldo-desktop"
+description = "Foldo 图形界面"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+foldo-core = { path = "../../../crates/foldo-core" }
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"

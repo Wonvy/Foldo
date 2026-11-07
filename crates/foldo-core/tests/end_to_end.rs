@@ -418,6 +418,32 @@ fn example_rules_file_is_valid() {
 }
 
 #[test]
+fn executing_selected_groups_keeps_chains_together() {
+    let e = env();
+    let a = touch(&e.inbox, "IMG_1.jpg", "1");
+    let b = touch(&e.inbox, "IMG_2.jpg", "2");
+    let rs = rules(&format!(
+        "version: 1\nrules:\n  - name: t\n    locations: [{}]\n    actions:\n      - rename: 'photo_{{name}}'\n      - move: {}\n",
+        q(&e.inbox),
+        q(&e.out)
+    ));
+    let plan = build_plan(&rs, None).unwrap();
+    // 每个文件两步（改名 + 移动），同一个文件的两步属于同一分组
+    let groups: Vec<usize> = plan.ops.iter().map(|o| o.group).collect();
+    assert_eq!(groups, [0, 0, 1, 1]);
+    assert_eq!(plan.group_count(), 2);
+
+    let only_second = plan.select_groups(&[1].into_iter().collect());
+    assert_eq!(only_second.ops.len(), 2);
+    let journal = Journal::open_in_memory().unwrap();
+    let report = execute(&only_second, &journal, "test").unwrap();
+    assert_eq!(report.done, 2);
+    assert!(a.exists(), "未勾选的文件不应被处理");
+    assert!(!b.exists());
+    assert!(e.out.join("photo_IMG_2.jpg").exists());
+}
+
+#[test]
 fn rules_file_with_utf8_bom_loads() {
     let e = env();
     let path = e.inbox.join("rules.yaml");

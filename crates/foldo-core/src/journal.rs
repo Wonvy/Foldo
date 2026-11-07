@@ -4,6 +4,7 @@
 use crate::error::{Error, Result};
 use chrono::Local;
 use rusqlite::{Connection, OptionalExtension, params};
+use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 pub mod status {
@@ -46,7 +47,7 @@ pub struct Journal {
     conn: Connection,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct BatchSummary {
     pub id: i64,
     pub started_at: String,
@@ -57,7 +58,7 @@ pub struct BatchSummary {
     pub op_count: i64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct OpRecord {
     pub id: i64,
     pub seq: i64,

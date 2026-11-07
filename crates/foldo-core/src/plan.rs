@@ -39,6 +39,8 @@ impl OpKind {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Op {
+    /// 同一个文件的动作链共享一个分组号。界面上按分组勾选，保证一条链要么全做、要么全不做。
+    pub group: usize,
     pub rule: String,
     pub kind: OpKind,
     pub src: PathBuf,
@@ -71,6 +73,28 @@ pub struct Plan {
 impl Plan {
     pub fn is_empty(&self) -> bool {
         self.ops.is_empty()
+    }
+
+    /// 分组（文件）数量。
+    pub fn group_count(&self) -> usize {
+        self.ops.last().map_or(0, |o| o.group + 1)
+    }
+
+    /// 只保留选中分组的操作，用于“预览后只执行勾选的文件”。
+    pub fn select_groups(&self, groups: &HashSet<usize>) -> Plan {
+        Plan {
+            ops: self
+                .ops
+                .iter()
+                .filter(|o| groups.contains(&o.group))
+                .cloned()
+                .collect(),
+            skipped: self.skipped.clone(),
+            warnings: self.warnings.clone(),
+            scanned: self.scanned,
+            matched: self.matched,
+            in_place: self.in_place,
+        }
     }
 }
 
@@ -149,8 +173,11 @@ impl Planner {
                 self.plan.matched += 1;
                 match self.plan_file(rule, loc, &f, &ctx.captures) {
                     Outcome::Planned(ops, dsts) => {
+                        let group = self.plan.group_count();
                         self.claimed_dst.extend(dsts);
-                        self.plan.ops.extend(ops);
+                        self.plan
+                            .ops
+                            .extend(ops.into_iter().map(|op| Op { group, ..op }));
                     }
                     Outcome::InPlace => self.plan.in_place += 1,
                     Outcome::Skipped(reason) => self.plan.skipped.push(Skip {
@@ -291,6 +318,7 @@ impl Planner {
         note: Option<String>,
     ) -> Op {
         Op {
+            group: 0, // 计划汇总时再分配
             rule: rule.name.clone(),
             kind,
             src: src.to_path_buf(),

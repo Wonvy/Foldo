@@ -2,11 +2,9 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use foldo_core::journal::status;
 use foldo_core::paths::{default_data_dir, default_rules_path, display};
-use foldo_core::{Journal, OpKind, Plan, RuleSet, build_plan, execute, undo_batch};
+use foldo_core::{EXAMPLE_RULES, Journal, OpKind, Plan, RuleSet, build_plan, execute, undo_batch};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
-
-const EXAMPLE_RULES: &str = include_str!("../../../examples/rules.yaml");
 
 /// 单次操作数超过这个值时额外提醒。
 const LARGE_BATCH: usize = 500;
