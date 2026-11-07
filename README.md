@@ -1,5 +1,7 @@
 # Foldo
 
+[![Build](https://github.com/Wonvy/Foldo/actions/workflows/build.yml/badge.svg)](https://github.com/Wonvy/Foldo/actions/workflows/build.yml)
+
 跨平台（macOS / Windows / Linux）的文件夹整理工具：用 YAML 写规则，先预览、再执行，执行过的操作可以撤销。
 
 当前是 **M1：核心引擎 + CLI**。GUI（Tauri）、实时监听和定时运行在后续里程碑中实现。
@@ -24,7 +26,79 @@ crates/
 examples/rules.yaml  示例规则
 ```
 
-## 使用
+## 下载
+
+| 来源 | 内容 | 说明 |
+|---|---|---|
+| [Releases](https://github.com/Wonvy/Foldo/releases) | 正式版本 | 无需登录即可下载 |
+| [Actions](https://github.com/Wonvy/Foldo/actions/workflows/build.yml) | main 分支每次提交的构建 | 打开某次运行，在页面底部的 Artifacts 里下载；需要登录 GitHub，保留 30 天 |
+
+| 文件 | 平台 |
+|---|---|
+| `foldo-<版本>-windows-x64.zip` | Windows 10 / 11（64 位） |
+| `foldo-<版本>-macos-arm64.tar.gz` | Apple 芯片 Mac |
+| `foldo-<版本>-macos-x64.tar.gz` | Intel Mac |
+| `foldo-<版本>-linux-x64.tar.gz` | Linux（x86_64） |
+
+每个压缩包里都有 `foldo` 程序、本说明和示例规则 `rules.example.yaml`。
+
+### 在 Windows 上试用
+
+1. 解压 zip，在解压出来的文件夹的地址栏输入 `powershell` 并回车，就会在这个文件夹里打开 PowerShell。
+2. 新建一个测试目录，放几个文件进去，再生成一份只针对这个目录的规则（示例规则 `rules.example.yaml` 指向真实的“下载”和“桌面”文件夹，不适合拿来试）：
+
+   ```powershell
+   mkdir $HOME\FoldoTest\Inbox
+   "a" > $HOME\FoldoTest\Inbox\报告.pdf
+   "b" > $HOME\FoldoTest\Inbox\照片.jpg
+   "c" > $HOME\FoldoTest\Inbox\笔记.txt
+
+   @'
+   version: 1
+   rules:
+     - name: 图片归档
+       locations: ["~/FoldoTest/Inbox"]
+       conditions:
+         - extension: [jpg, png]
+       actions:
+         - move: "~/FoldoTest/图片/{modified:%Y}/{modified:%m}/"
+     - name: 文档归档
+       locations: ["~/FoldoTest/Inbox"]
+       conditions:
+         - extension: [pdf, docx]
+       actions:
+         - move: "文档/"
+   '@ | Set-Content -Encoding utf8 test-rules.yaml
+   ```
+
+3. 按顺序运行：
+
+   ```powershell
+   .\foldo.exe --rules .\test-rules.yaml check
+   .\foldo.exe --rules .\test-rules.yaml plan
+   .\foldo.exe --rules .\test-rules.yaml run
+   .\foldo.exe history
+   .\foldo.exe undo
+   ```
+
+   在资源管理器里打开 `FoldoTest`，可以看到执行后和撤销后的变化。
+
+程序还没有数字签名，Windows 可能会弹出“Windows 已保护你的电脑”。点击“更多信息”→“仍要运行”即可。
+
+> 打出 Windows 安装包（.msi / .exe 安装程序）要等 M2 的 Tauri 图形界面，届时会用同一套工作流生成。
+
+### 发布新版本
+
+修改 `Cargo.toml` 里的 `version`，提交后打标签并推送，GitHub 会自动构建并创建 Release：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+带连字符的标签（如 `v0.2.0-beta.1`）会被标记为预发布版本。
+
+## 从源码构建
 
 ```bash
 cargo build --release

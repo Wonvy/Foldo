@@ -1,0 +1,126 @@
+# 测试 → 打包 → 发布
+#
+# - 每次推送 / PR：在 Windows、macOS、Linux 上运行格式检查、clippy 和测试
+# - 推送到 main 或手动触发：额外打包各平台安装包，作为 Actions 产物保留 30 天
+# - 推送 v* 标签（如 v0.1.0）：额外创建 GitHub Release，并附上安装包
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: 测试 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: 格式检查
+        if: runner.os == 'Linux'
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: 测试
+        run: cargo test --locked
+
+  package:
+    name: 打包 (${{ matrix.name }})
+    needs: test
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: macos-x64
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - name: linux-x64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: 构建
+        run: cargo build --release --locked -p foldo-cli --target ${{ matrix.target }}
+      - name: 打包
+        shell: bash
+        run: |
+          # 标签构建用版本号命名，其他构建用提交哈希命名
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then ver="$GITHUB_REF_NAME"; else ver="${GITHUB_SHA::7}"; fi
+          pkg="foldo-${ver}-${{ matrix.name }}"
+          bin=foldo
+          if [[ "$RUNNER_OS" == "Windows" ]]; then bin=foldo.exe; fi
+
+          mkdir -p "dist/$pkg"
+          cp "target/${{ matrix.target }}/release/$bin" README.md "dist/$pkg/"
+          cp examples/rules.yaml "dist/$pkg/rules.example.yaml"
+
+          cd dist
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            7z a -tzip "$pkg.zip" "$pkg" > /dev/null
+            echo "ASSET=dist/$pkg.zip" >> "$GITHUB_ENV"
+          else
+            tar czf "$pkg.tar.gz" "$pkg"
+            echo "ASSET=dist/$pkg.tar.gz" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ env.ASSET }}
+          # 直接上传打好的压缩包，下载时不会再多套一层 zip
+          archive: false
+          retention-days: 30
+          if-no-files-found: error
+
+  release:
+    name: 发布 Release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: foldo-*
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
+          generate_release_notes: true
+          # v0.2.0-beta.1 这类带连字符的标签标记为预发布版本
+          prerelease: ${{ contains(github.ref_name, '-') }}

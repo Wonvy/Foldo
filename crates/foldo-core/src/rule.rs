@@ -49,7 +49,8 @@ impl RuleSet {
             path: path.to_path_buf(),
             err,
         })?;
-        Self::from_yaml(&text)
+        // Windows PowerShell 5 和旧版记事本保存 UTF-8 时会在开头写入 BOM
+        Self::from_yaml(text.strip_prefix('\u{feff}').unwrap_or(&text))
     }
 
     pub fn from_yaml(text: &str) -> Result<Self> {

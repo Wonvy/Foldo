@@ -416,3 +416,15 @@ fn example_rules_file_is_valid() {
     assert_eq!(rs.rules.len(), 5);
     assert!(!rs.get("清理旧的小压缩包").unwrap().enabled);
 }
+
+#[test]
+fn rules_file_with_utf8_bom_loads() {
+    let e = env();
+    let path = e.inbox.join("rules.yaml");
+    let yaml = format!(
+        "\u{feff}version: 1\nrules:\n  - name: t\n    locations: [{}]\n    actions: [trash]\n",
+        q(&e.inbox)
+    );
+    fs::write(&path, yaml).unwrap();
+    assert_eq!(RuleSet::load(&path).unwrap().rules.len(), 1);
+}

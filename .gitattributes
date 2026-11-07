@@ -1,0 +1,2 @@
+# 统一使用 LF，避免 Windows 构建机检出成 CRLF 后格式检查和 include_str! 的内容不一致
+* text=auto eol=lf
