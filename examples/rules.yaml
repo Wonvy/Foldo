@@ -1,0 +1,52 @@
+# Foldo 规则文件
+#
+# 规则按从上到下的顺序生效，每个文件只会被第一条命中的规则处理。
+# 修改后可以先运行 `foldo plan` 预览，确认无误再运行 `foldo run`。
+
+version: 1
+
+rules:
+  - name: 截图改名归档
+    locations: ["~/Desktop"]
+    conditions:
+      - extension: [png, jpg]
+      - name: { regex: '^(Screenshot|Screen Shot|截屏|屏幕快照)' }
+    actions:
+      - rename: "截图_{modified:%Y%m%d_%H%M%S}.{ext|lower}"
+      - move: "~/Pictures/Screenshots/"
+
+  - name: 安装包归档
+    locations: ["~/Downloads"]
+    conditions:
+      - extension: [dmg, pkg, exe, msi, deb, rpm, appimage]
+      - created: { older_than: 1d }
+    actions:
+      - move: "安装包/"            # 相对路径：相对于规则的扫描位置，即 ~/Downloads/安装包/
+
+  - name: 图片按年月归档
+    locations: ["~/Downloads", "~/Desktop"]
+    conditions:
+      - extension: [jpg, jpeg, png, gif, heic, webp]
+    actions:
+      - move:
+          to: "~/Pictures/Foldo/{created:%Y}/{created:%m}/"
+          on_conflict: rename      # rename（默认）| skip | overwrite
+
+  - name: 文档归类
+    locations: ["~/Downloads"]
+    match: any                     # 满足任一条件即可
+    conditions:
+      - extension: [pdf, doc, docx, xls, xlsx, ppt, pptx]
+      - name: { contains: "发票" }
+    actions:
+      - move: "~/Documents/Foldo/{ext|lower}/"
+
+  - name: 清理旧的小压缩包
+    enabled: false                 # 默认关闭，确认后再打开
+    locations: ["~/Downloads"]
+    conditions:
+      - extension: zip
+      - modified: { older_than: 30d }
+      - size: { lt: 10MB }
+    actions:
+      - trash
