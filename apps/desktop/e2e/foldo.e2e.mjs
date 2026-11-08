@@ -297,7 +297,15 @@ step("从新建规则打开正则助手子窗口，生成表达式并回填当�
   await driver.wait(async () => (await (await find(By.css(".regex-field textarea"))).getAttribute("value")) === "^IMG_[0-9]{3}\\.png$", 10_000);
   await find(By.css('.regex-token[title="前一项恰好重复 3 次"]'));
   await driver.wait(async () => (await driver.findElements(By.css(".regex-sample-row.ok"))).length === 2, 10_000);
-  await click(By.xpath('//button[contains(., "应用到条件")]'));
+  try {
+    await click(By.xpath('//button[contains(., "应用到条件")]'));
+  } catch (error) {
+    // WebKit may report the child closing before the click response arrives.
+    // Only accept that exact closure; the main-window value is still verified below.
+    if (error.name !== "NoSuchWindowError") throw error;
+    const handles = await driver.getAllWindowHandles();
+    assert.ok(handles.includes(mainWindow) && !handles.includes(lab));
+  }
   await driver.switchTo().window(mainWindow);
   await driver.wait(async () => (await (await find(By.css(".cond-row input"))).getAttribute("value")) === "^IMG_[0-9]{3}\\.png$", 10_000);
   await click(By.xpath('//button[normalize-space(.)="取消"]'));
