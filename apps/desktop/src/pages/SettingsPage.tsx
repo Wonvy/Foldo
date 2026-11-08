@@ -48,9 +48,30 @@ export default function SettingsPage({
             value={theme}
             onChange={onTheme}
             options={[
-              { value: "system", label: <><Monitor size={14} /> {t("跟随系统")}</> },
-              { value: "light", label: <><Sun size={14} /> {t("浅色")}</> },
-              { value: "dark", label: <><Moon size={14} /> {t("深色")}</> },
+              {
+                value: "system",
+                label: (
+                  <>
+                    <Monitor size={14} /> {t("跟随系统")}
+                  </>
+                ),
+              },
+              {
+                value: "light",
+                label: (
+                  <>
+                    <Sun size={14} /> {t("浅色")}
+                  </>
+                ),
+              },
+              {
+                value: "dark",
+                label: (
+                  <>
+                    <Moon size={14} /> {t("深色")}
+                  </>
+                ),
+              },
             ]}
           />
         </div>
@@ -160,7 +181,9 @@ function UpdateCard({ update, onUpdate }: { update: UpdateInfo | null; onUpdate:
     <div className="card">
       <div className="card-head">
         <h2>{t("版本与更新")}</h2>
-        <span className="muted">{t("当前版本")} {update?.current ?? version}</span>
+        <span className="muted">
+          {t("当前版本")} {update?.current ?? version}
+        </span>
       </div>
       <div className="card-body" style={{ display: "grid", gap: 10 }}>
         {update?.version ? (
@@ -171,9 +194,19 @@ function UpdateCard({ update, onUpdate }: { update: UpdateInfo | null; onUpdate:
                 {t("新版本")} <b>{update.version}</b>
                 {update.date && <span className="muted"> · {update.date}</span>}
               </span>
-              <button className="btn sm primary" disabled={!!busy} onClick={update.can_install ? install : () => api.openReleases().catch((e) => setError(errorText(e)))}>
+              <button
+                className="btn sm primary"
+                disabled={!!busy}
+                onClick={update.can_install ? install : () => api.openReleases().catch((e) => setError(errorText(e)))}
+              >
                 {busy === "install" ? <Spinner size={14} /> : <Download size={14} />}
-                {busy === "install" ? (progress !== null && progress < 100 ? t("下载中 {0}%", [progress]) : t("正在安装…")) : update.can_install ? t("下载并重启") : t("下载安装包")}
+                {busy === "install"
+                  ? progress !== null && progress < 100
+                    ? t("下载中 {0}%", [progress])
+                    : t("正在安装…")
+                  : update.can_install
+                    ? t("下载并重启")
+                    : t("下载安装包")}
               </button>
             </div>
             {update.notes && <div className="update-notes selectable">{update.notes}</div>}
@@ -192,10 +225,19 @@ function UpdateCard({ update, onUpdate }: { update: UpdateInfo | null; onUpdate:
         {error && <div className="banner error selectable">{error}</div>}
         <div className="row">
           <span className="muted" style={{ flex: 1, fontSize: 12.5 }}>
-            {update?.can_install === false ? t("当前安装方式需手动安装新版；Linux AppImage 支持应用内更新。") : t("只检查正式发布版本，不自动下载或安装。")}
+            {update?.can_install === false
+              ? t("当前安装方式需手动安装新版；Linux AppImage 支持应用内更新。")
+              : t("只检查正式发布版本，不自动下载或安装。")}
           </span>
-          {update?.version && <button className="btn sm" disabled={!!busy} onClick={check}><RefreshCw size={14} />{t("检查更新")}</button>}
-          <button className="btn ghost sm" disabled={!!busy} onClick={() => api.openReleases().catch((e) => setError(errorText(e)))}>GitHub Releases</button>
+          {update?.version && (
+            <button className="btn sm" disabled={!!busy} onClick={check}>
+              <RefreshCw size={14} />
+              {t("检查更新")}
+            </button>
+          )}
+          <button className="btn ghost sm" disabled={!!busy} onClick={() => api.openReleases().catch((e) => setError(errorText(e)))}>
+            GitHub Releases
+          </button>
         </div>
       </div>
     </div>
@@ -206,7 +248,10 @@ function AutostartRow() {
   const [on, setOn] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    api.autostartEnabled().then(setOn).catch(() => setOn(null));
+    api
+      .autostartEnabled()
+      .then(setOn)
+      .catch(() => setOn(null));
   }, []);
   const mac = navigator.userAgent.includes("Mac");
   return (
@@ -214,14 +259,20 @@ function AutostartRow() {
       <div style={{ flex: 1 }}>
         <div className="text-2">{t("开机时启动")}</div>
         <div className="muted" style={{ fontSize: 12.5 }}>
-          {error ?? t("只在{0}显示；关掉窗口后 Foldo 也会留在{1}里继续自动整理", [mac ? t("菜单栏") : t("托盘"), mac ? t("菜单栏") : t("托盘")])}
+          {error ??
+            t("只在{0}显示；关掉窗口后 Foldo 也会留在{1}里继续自动整理", [mac ? t("菜单栏") : t("托盘"), mac ? t("菜单栏") : t("托盘")])}
         </div>
       </div>
       <Switch
         label={t("开机时启动")}
         on={!!on}
         disabled={on === null}
-        onChange={(v) => api.setAutostart(v).then(setOn).catch((e) => setError(errorText(e)))}
+        onChange={(v) =>
+          api
+            .setAutostart(v)
+            .then(setOn)
+            .catch((e) => setError(errorText(e)))
+        }
       />
     </div>
   );

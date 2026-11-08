@@ -49,7 +49,11 @@ export default function GroupEditor({
         <div className="cond-group-head">
           {depth > 0 && <StatusDot ex={results?.get(node.id)} />}
           {node.not && <span className="not-badge">{t("非")}</span>}
-          <select className="pill-select" value={node.mode} onChange={(e) => onChange({ ...node, mode: e.target.value as GroupNode["mode"] })}>
+          <select
+            className="pill-select"
+            value={node.mode}
+            onChange={(e) => onChange({ ...node, mode: e.target.value as GroupNode["mode"] })}
+          >
             <option value="all">{t("全部满足")}</option>
             <option value="any">{t("任一满足")}</option>
             <option value="none">{t("都不满足")}</option>
@@ -61,7 +65,11 @@ export default function GroupEditor({
               aria-label={t("更多")}
               onClick={(e) =>
                 menu.open(e.currentTarget, [
-                  { label: node.not ? t("取消取反") : t("取反（不满足这一组时命中）"), icon: <Ban size={15} />, onClick: () => onChange({ ...node, not: !node.not }) },
+                  {
+                    label: node.not ? t("取消取反") : t("取反（不满足这一组时命中）"),
+                    icon: <Ban size={15} />,
+                    onClick: () => onChange({ ...node, not: !node.not }),
+                  },
                   "divider",
                   { label: t("删除这一组"), icon: <Trash size={15} />, danger: true, onClick: () => onRemove?.() },
                 ])
@@ -103,7 +111,9 @@ export default function GroupEditor({
         <button
           className="add-btn"
           title={t("添加一组条件，组内可以选“任一满足”等")}
-          onClick={() => onChange({ ...node, children: [...node.children, group(node.mode === "all" ? "any" : "all", [newTest(fieldMap)])] })}
+          onClick={() =>
+            onChange({ ...node, children: [...node.children, group(node.mode === "all" ? "any" : "all", [newTest(fieldMap)])] })
+          }
         >
           <Layers size={14} /> {t("条件组")}
         </button>
@@ -150,7 +160,11 @@ function TestRow({
     onChange({ ...node, field: key, op, value: defaultValue(nf, op) });
   };
   const setOp = (op: string) => {
-    const keep = (f?.type === "text" || f?.type === "enum" || f?.type === "list") && typeof node.value === "string" && !["in", "not_in", "exists", "empty"].includes(op) && !["exists", "empty"].includes(node.op);
+    const keep =
+      (f?.type === "text" || f?.type === "enum" || f?.type === "list") &&
+      typeof node.value === "string" &&
+      !["in", "not_in", "exists", "empty"].includes(op) &&
+      !["exists", "empty"].includes(node.op);
     onChange({ ...node, op, value: keep ? node.value : defaultValue(f, op) });
   };
 
@@ -181,9 +195,19 @@ function TestRow({
         aria-label={t("更多")}
         onClick={(e) =>
           menu.open(e.currentTarget, [
-            { label: node.not ? t("取消取反") : t("取反（不满足时命中）"), icon: <Ban size={15} />, onClick: () => onChange({ ...node, not: !node.not }) },
+            {
+              label: node.not ? t("取消取反") : t("取反（不满足时命中）"),
+              icon: <Ban size={15} />,
+              onClick: () => onChange({ ...node, not: !node.not }),
+            },
             ...(caseable
-              ? [{ label: node.cs ? t("不区分大小写") : t("区分大小写"), icon: <CaseSensitive size={15} />, onClick: () => onChange({ ...node, cs: !node.cs }) }]
+              ? [
+                  {
+                    label: node.cs ? t("不区分大小写") : t("区分大小写"),
+                    icon: <CaseSensitive size={15} />,
+                    onClick: () => onChange({ ...node, cs: !node.cs }),
+                  },
+                ]
               : []),
             "divider" as const,
             { label: t("删除条件"), icon: <Trash size={15} />, danger: true, onClick: onRemove },
@@ -215,8 +239,22 @@ function parseUnit(v: unknown, units: string[], fallback: string): [string, stri
   return [m[1], u ?? (m[2] ? fallback : units[0])];
 }
 
-function UnitInput({ value, onChange, units, fallback }: { value: unknown; onChange: (v: string) => void; units: { value: string; label: string }[]; fallback: string }) {
-  const [n, u] = parseUnit(value, units.map((x) => x.value), fallback);
+function UnitInput({
+  value,
+  onChange,
+  units,
+  fallback,
+}: {
+  value: unknown;
+  onChange: (v: string) => void;
+  units: { value: string; label: string }[];
+  fallback: string;
+}) {
+  const [n, u] = parseUnit(
+    value,
+    units.map((x) => x.value),
+    fallback,
+  );
   return (
     <span className="row" style={{ gap: 6 }}>
       <input className="input num" inputMode="decimal" value={n} onChange={(e) => onChange(`${e.target.value}${u}`)} />
@@ -236,7 +274,14 @@ function ListInput({ value, onChange, mono }: { value: unknown; onChange: (v: st
   const [text, setText] = useState(initial);
   useEffect(() => {
     // 外部变化（如切换字段）时同步
-    if (text.split(/[,，]/).map((s) => s.trim()).filter(Boolean).join(", ") !== initial) setText(initial);
+    if (
+      text
+        .split(/[,，]/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .join(", ") !== initial
+    )
+      setText(initial);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial]);
   return (
@@ -246,13 +291,28 @@ function ListInput({ value, onChange, mono }: { value: unknown; onChange: (v: st
       value={text}
       onChange={(e) => {
         setText(e.target.value);
-        onChange(e.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean));
+        onChange(
+          e.target.value
+            .split(/[,，]/)
+            .map((s) => s.trim())
+            .filter(Boolean),
+        );
       }}
     />
   );
 }
 
-function ValueInput({ field, op, value, onChange }: { field: FieldDef | undefined; op: string; value: unknown; onChange: (v: unknown) => void }) {
+function ValueInput({
+  field,
+  op,
+  value,
+  onChange,
+}: {
+  field: FieldDef | undefined;
+  op: string;
+  value: unknown;
+  onChange: (v: unknown) => void;
+}) {
   const ty = field?.type ?? "text";
   const boolSelect = (yes: string, no: string) => (
     <select className="input" value={value === false ? "false" : "true"} onChange={(e) => onChange(e.target.value === "true")}>
@@ -301,8 +361,21 @@ function ValueInput({ field, op, value, onChange }: { field: FieldDef | undefine
     if (op === "in" || op === "not_in") return <ListInput value={value} onChange={onChange} mono={field?.key === "ext"} />;
     const mono = op === "matches" || op === "glob";
     const placeholder =
-      op === "matches" ? t("正则，如 ^IMG_(\\d{4})") : op === "glob" ? t("通配符，如 *发票*.pdf") : field?.key === "ext" ? t("如 pdf") : t("可写 {变量}");
-    return <input className={`input grow ${mono ? "mono" : ""}`} placeholder={placeholder} value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />;
+      op === "matches"
+        ? t("正则，如 ^IMG_(\\d{4})")
+        : op === "glob"
+          ? t("通配符，如 *发票*.pdf")
+          : field?.key === "ext"
+            ? t("如 pdf")
+            : t("可写 {变量}");
+    return (
+      <input
+        className={`input grow ${mono ? "mono" : ""}`}
+        placeholder={placeholder}
+        value={String(value ?? "")}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
   }
 
   if (ty === "size") {

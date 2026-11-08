@@ -56,10 +56,11 @@ export default function FolderPanel({
   };
 
   // 每个文件夹独立排序，左侧优先。
-  const used = (f: FolderDef) => [...new Set(f.rules ?? [])].flatMap((name) => {
-    const rule = rules.find((r) => r.name === name);
-    return rule ? [rule] : [];
-  });
+  const used = (f: FolderDef) =>
+    [...new Set(f.rules ?? [])].flatMap((name) => {
+      const rule = rules.find((r) => r.name === name);
+      return rule ? [rule] : [];
+    });
 
   const addRuleMenu = (el: HTMLElement, i: number) => {
     const f = folders[i];
@@ -116,7 +117,11 @@ export default function FolderPanel({
 
   return (
     <div className="card folder-panel">
-      {error && <div className="banner error selectable" style={{ margin: 12 }}>{error}</div>}
+      {error && (
+        <div className="banner error selectable" style={{ margin: 12 }}>
+          {error}
+        </div>
+      )}
       {folders.map((f, i) => {
         const list = used(f);
         const watching = live && list.some((r) => r.enabled !== false);
@@ -135,16 +140,35 @@ export default function FolderPanel({
               </div>
             </div>
             <div className="folder-rules">
-              {list.length === 0 && <span className="muted" style={{ fontSize: 12.5 }}>{t("还没有规则，这里的文件不会被整理")}</span>}
-              {list.length > 0 && <FolderRuleList rules={list} folder={baseName(f.path)} disabled={saving || !!pending}
-                onEdit={onEditRule}
-                onRemove={(name) => setFolder(i, { rules: (f.rules ?? []).filter((n) => n !== name) })}
-                onReorder={(names) => confirmIfAuto(t("自动整理已开启：调整顺序后，「{0}」会立即按新的优先级整理。", [baseName(f.path)]), () => setFolder(i, { rules: names }))} />}
+              {list.length === 0 && (
+                <span className="muted" style={{ fontSize: 12.5 }}>
+                  {t("还没有规则，这里的文件不会被整理")}
+                </span>
+              )}
+              {list.length > 0 && (
+                <FolderRuleList
+                  rules={list}
+                  folder={baseName(f.path)}
+                  disabled={saving || !!pending}
+                  onEdit={onEditRule}
+                  onRemove={(name) => setFolder(i, { rules: (f.rules ?? []).filter((n) => n !== name) })}
+                  onReorder={(names) =>
+                    confirmIfAuto(t("自动整理已开启：调整顺序后，「{0}」会立即按新的优先级整理。", [baseName(f.path)]), () =>
+                      setFolder(i, { rules: names }),
+                    )
+                  }
+                />
+              )}
               <button className="add-btn" disabled={saving || !!pending} onClick={(e) => addRuleMenu(e.currentTarget, i)}>
                 <Plus size={14} /> {t("规则")}
               </button>
             </div>
-            <button className="icon-btn" disabled={saving || !!pending} aria-label={t("文件夹选项")} onClick={(e) => folderMenu(e.currentTarget, i)}>
+            <button
+              className="icon-btn"
+              disabled={saving || !!pending}
+              aria-label={t("文件夹选项")}
+              onClick={(e) => folderMenu(e.currentTarget, i)}
+            >
               <Ellipsis size={16} />
             </button>
           </div>
@@ -179,7 +203,8 @@ export default function FolderPanel({
           }
         >
           <p className="text-2" style={{ marginBottom: 12 }}>
-            {pending.text}{t("整理过的文件可以在“历史”里撤销。")}
+            {pending.text}
+            {t("整理过的文件可以在“历史”里撤销。")}
           </p>
         </Modal>
       )}

@@ -59,9 +59,30 @@ export default function AutoMode({ watch }: { watch: WatchStatus | null }) {
         value={mode}
         onChange={(v) => (v === "run" ? setConfirming(true) : void setMode(v))}
         options={[
-          { value: "off", label: <><Hand size={14} /> {t("手动")}</> },
-          { value: "notify", label: <><Bell size={14} /> {t("提醒")}</> },
-          { value: "run", label: <><Zap size={14} /> {t("自动")}</> },
+          {
+            value: "off",
+            label: (
+              <>
+                <Hand size={14} /> {t("手动")}
+              </>
+            ),
+          },
+          {
+            value: "notify",
+            label: (
+              <>
+                <Bell size={14} /> {t("提醒")}
+              </>
+            ),
+          },
+          {
+            value: "run",
+            label: (
+              <>
+                <Zap size={14} /> {t("自动")}
+              </>
+            ),
+          },
         ]}
       />
       {confirming && mode !== "run" && (
@@ -85,7 +106,10 @@ function ConfirmAuto({ onCancel, onConfirm }: { onCancel: () => void; onConfirm:
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api.scan().then(setPlan).catch((e) => setError(errorText(e)));
+    api
+      .scan()
+      .then(setPlan)
+      .catch((e) => setError(errorText(e)));
   }, []);
 
   // 每个文件夹实际会用到的规则（启用的）

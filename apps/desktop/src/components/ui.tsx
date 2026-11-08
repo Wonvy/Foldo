@@ -41,10 +41,7 @@ export function FileIcon({ category, size = 32 }: { category: string | null | un
   const s = (category && CATEGORY_STYLE[category]) || { icon: File, color: "#8a8a94" };
   const Icon = s.icon;
   return (
-    <span
-      className="file-icon"
-      style={{ width: size, height: size, background: `${s.color}1c`, color: s.color }}
-    >
+    <span className="file-icon" style={{ width: size, height: size, background: `${s.color}1c`, color: s.color }}>
       <Icon size={Math.round(size * 0.5)} strokeWidth={1.9} />
     </span>
   );
@@ -170,7 +167,11 @@ export function Modal({
           {icon}
           <div style={{ flex: 1, minWidth: 0 }}>
             <h2>{title}</h2>
-            {subtitle && <div className="muted ellipsis" style={{ marginTop: 2 }}>{subtitle}</div>}
+            {subtitle && (
+              <div className="muted ellipsis" style={{ marginTop: 2 }}>
+                {subtitle}
+              </div>
+            )}
           </div>
           <button className="icon-btn" onClick={onClose} aria-label={t("关闭")}>
             <X size={17} />
@@ -186,19 +187,9 @@ export function Modal({
 
 // ---------- 弹出菜单 ----------
 
-export type MenuItem =
-  | { label: string; icon?: ReactNode; onClick: () => void; danger?: boolean }
-  | "divider";
+export type MenuItem = { label: string; icon?: ReactNode; onClick: () => void; danger?: boolean } | "divider";
 
-export function Menu({
-  anchor,
-  items,
-  onClose,
-}: {
-  anchor: DOMRect;
-  items: MenuItem[];
-  onClose: () => void;
-}) {
+export function Menu({ anchor, items, onClose }: { anchor: DOMRect; items: MenuItem[]; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ top: anchor.bottom + 4, left: anchor.right - 220 });
 

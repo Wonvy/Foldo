@@ -263,9 +263,7 @@ export default function RulesPage({
             onClick={(e) =>
               menu.open(e.currentTarget, [
                 { label: t("导入规则…"), icon: <FileUp size={15} />, onClick: importRules },
-                ...(rules.length
-                  ? [{ label: t("导出全部规则…"), icon: <FileDown size={15} />, onClick: () => exportRules([]) }]
-                  : []),
+                ...(rules.length ? [{ label: t("导出全部规则…"), icon: <FileDown size={15} />, onClick: () => exportRules([]) }] : []),
               ])
             }
           >
@@ -357,7 +355,11 @@ export default function RulesPage({
                       </span>
                     )}
                     {debug && !winner && hit?.matched && enabled && <span className="chip">{t("也满足")}</span>}
-                    {debug && hit?.matched && !hit.in_scope && <span className="chip warn" title={t("这个文件所在的文件夹没有使用这条规则")}>{t("文件夹未使用")}</span>}
+                    {debug && hit?.matched && !hit.in_scope && (
+                      <span className="chip warn" title={t("这个文件所在的文件夹没有使用这条规则")}>
+                        {t("文件夹未使用")}
+                      </span>
+                    )}
                   </div>
                   <div className="rule-chips">
                     {(() => {
@@ -379,7 +381,9 @@ export default function RulesPage({
                         <Folder size={12} /> {t("文件夹")}
                       </span>
                     )}
-                    {chips.mode !== "all" && chips.conds.length > 1 && <span className="cchip mode">{chips.mode === "any" ? t("任一") : t("都不")}</span>}
+                    {chips.mode !== "all" && chips.conds.length > 1 && (
+                      <span className="cchip mode">{chips.mode === "any" ? t("任一") : t("都不")}</span>
+                    )}
                     {chips.conds.length === 0 && <span className="cchip">{t("所有文件")}</span>}
                     {chips.conds.slice(0, MAX_CHIPS).map((c, k) => (
                       <span key={k} className={`cchip ${c.not ? "neg" : ""}`} title={c.title}>
@@ -389,7 +393,13 @@ export default function RulesPage({
                       </span>
                     ))}
                     {extra > 0 && (
-                      <span className="cchip" title={chips.conds.slice(MAX_CHIPS).map((c) => c.title).join("\n")}>
+                      <span
+                        className="cchip"
+                        title={chips.conds
+                          .slice(MAX_CHIPS)
+                          .map((c) => c.title)
+                          .join("\n")}
+                      >
                         +{extra}
                       </span>
                     )}
@@ -413,7 +423,11 @@ export default function RulesPage({
                   </div>
                 </div>
                 <span className="rule-side" onClick={(e) => e.stopPropagation()}>
-                  <Switch on={enabled} label={t("启用")} onChange={(on) => update(rules.map((x, j) => (j === i ? { ...x, enabled: on } : x)))} />
+                  <Switch
+                    on={enabled}
+                    label={t("启用")}
+                    onChange={(on) => update(rules.map((x, j) => (j === i ? { ...x, enabled: on } : x)))}
+                  />
                   <button
                     className="icon-btn"
                     aria-label={t("更多")}
@@ -427,7 +441,12 @@ export default function RulesPage({
                           ? [{ label: t("移到最后"), icon: <ArrowDownToLine size={15} />, onClick: () => moveTo(i, rules.length - 1) }]
                           : []),
                         "divider" as const,
-                        { label: t("删除规则"), icon: <Trash size={15} />, danger: true, onClick: () => update(rules.filter((_, j) => j !== i)) },
+                        {
+                          label: t("删除规则"),
+                          icon: <Trash size={15} />,
+                          danger: true,
+                          onClick: () => update(rules.filter((_, j) => j !== i)),
+                        },
                       ])
                     }
                   >
@@ -437,7 +456,11 @@ export default function RulesPage({
               </div>
             );
           })}
-          {shown.length === 0 && <div className="muted" style={{ padding: 20, textAlign: "center" }}>{t("没有匹配的规则")}</div>}
+          {shown.length === 0 && (
+            <div className="muted" style={{ padding: 20, textAlign: "center" }}>
+              {t("没有匹配的规则")}
+            </div>
+          )}
         </div>
       )}
 
@@ -471,7 +494,11 @@ export default function RulesPage({
                 </>
               ) : debug && debug.winner !== null ? (
                 <>
-                  {t("第 {0} 条「{1}」· {2}", [debug.winner + 1, rules[debug.winner]?.name ?? "", debug.action ? t(debug.action) : t("处理")])}
+                  {t("第 {0} 条「{1}」· {2}", [
+                    debug.winner + 1,
+                    rules[debug.winner]?.name ?? "",
+                    debug.action ? t(debug.action) : t("处理"),
+                  ])}
                   {debug.destination && <span className="mono"> {tilde(debug.destination)}</span>}
                   {!debug.destination && debug.reason && t("：{0}", [debug.reason])}
                 </>
@@ -488,7 +515,12 @@ export default function RulesPage({
                 <span className="muted mono" style={{ fontSize: 12 }}>
                   {debugAt + 1}/{debugPaths.length}
                 </span>
-                <button className="icon-btn" disabled={debugAt === debugPaths.length - 1} onClick={() => setDebugAt(debugAt + 1)} aria-label={t("下一个")}>
+                <button
+                  className="icon-btn"
+                  disabled={debugAt === debugPaths.length - 1}
+                  onClick={() => setDebugAt(debugAt + 1)}
+                  aria-label={t("下一个")}
+                >
                   <ChevronRight size={16} />
                 </button>
               </span>

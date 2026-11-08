@@ -1,17 +1,7 @@
 // 开发预览用的模拟后端：在普通浏览器中打开 Vite 开发服务器时注入，返回逼真的示例数据。
 // 只在 import.meta.env.DEV 且不在 Tauri 中时加载（见 main.tsx），正式构建不包含这个文件。
 // 地址加 ?mock=empty 可以预览首次使用的引导页。
-import type {
-  Batch,
-  Category,
-  ConfigView,
-  OpView,
-  PlanView,
-  RuleFile,
-  SkipKind,
-  SkipView,
-  UndoCheck,
-} from "../api";
+import type { Batch, Category, ConfigView, OpView, PlanView, RuleFile, SkipKind, SkipView, UndoCheck } from "../api";
 
 const HOME = "/Users/demo";
 const DL = `${HOME}/Downloads`;
@@ -37,7 +27,6 @@ const catOf = (name: string) => {
   const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
   return CATEGORIES.find((c) => c.extensions.includes(ext)) ?? null;
 };
-
 
 type F = [string, string, string, string, string | null, string, string[]?];
 const CAT_NAMES = ["图片", "文档", "表格与演示", "压缩包", "安装包", "视频", "音频", "设计文件", "3D 模型", "代码", "字体"];
@@ -105,11 +94,31 @@ const VARS = [
   { key: "env.HOME", label: "环境变量", group: "系统", desc: "" },
 ];
 const SAMPLE_ATTRS: Record<string, string> = {
-  name: "IMG_2034.HEIC", stem: "IMG_2034", ext: "HEIC", parent: "Downloads", size: "2480132 字节", category: "图片",
-  mime: "image/heif", hidden: "否", readonly: "否", empty: "否", created: "2026-11-02 16:40:12", modified: "2026-11-02 16:40:12",
-  "modified.year": "2026", "modified.month": "11", "image.width": "4032", "image.height": "3024", "image.pixels": "12.19",
-  "image.ratio": "1.33", "image.orientation": "横", "exif.taken": "2026-11-02 16:39:58", "exif.make": "Apple",
-  "exif.model": "iPhone 16 Pro", "exif.lens": "iPhone 16 Pro back triple camera 6.765mm f/1.78", "exif.iso": "80", "exif.gps": "是",
+  name: "IMG_2034.HEIC",
+  stem: "IMG_2034",
+  ext: "HEIC",
+  parent: "Downloads",
+  size: "2480132 字节",
+  category: "图片",
+  mime: "image/heif",
+  hidden: "否",
+  readonly: "否",
+  empty: "否",
+  created: "2026-11-02 16:40:12",
+  modified: "2026-11-02 16:40:12",
+  "modified.year": "2026",
+  "modified.month": "11",
+  "image.width": "4032",
+  "image.height": "3024",
+  "image.pixels": "12.19",
+  "image.ratio": "1.33",
+  "image.orientation": "横",
+  "exif.taken": "2026-11-02 16:39:58",
+  "exif.make": "Apple",
+  "exif.model": "iPhone 16 Pro",
+  "exif.lens": "iPhone 16 Pro back triple camera 6.765mm f/1.78",
+  "exif.iso": "80",
+  "exif.gps": "是",
 };
 const explainAll = (d: unknown): unknown => {
   const [k, v] = Object.entries(d as Record<string, unknown>)[0];
@@ -121,51 +130,52 @@ const explainAll = (d: unknown): unknown => {
   return { ok: !k.startsWith("video") };
 };
 
-let config: RuleFile | null = new URLSearchParams(location.search).get("mock") === "empty"
-  ? null
-  : {
-      version: 2,
-      folders: [
-        { path: DL, rules: ["3D 模型归档", "发票归档", "文档归档", "图片归档", "旧压缩包清理"] },
-        { path: DESK, rules: ["截图改名归档", "发票归档"] },
-      ],
-      protect: ["*.lic", `${DL}/重要合同`],
-      settings: { buffer: "10m" },
-      rules: [
-        {
-          name: "截图改名归档",
-          conditions: [{ category: "图片" }, { name: { regex: "^(Screenshot|截屏)" } }],
-          actions: [{ rename: "截图_{modified:%Y%m%d_%H%M%S}.{ext|lower}" }, { move: `${HOME}/Pictures/Screenshots/` }],
-        },
-        {
-          name: "3D 模型归档",
-          conditions: [{ category: "3D 模型" }],
-          actions: [{ move: "3D 模型/" }],
-        },
-        {
-          name: "发票归档",
-          conditions: [{ name: { contains: "发票" } }],
-          except: [{ category: "压缩包" }],
-          actions: [{ move: { to: `${HOME}/Documents/发票`, on_conflict: "rename" } }],
-        },
-        {
-          name: "文档归档",
-          conditions: [{ category: "文档" }],
-          actions: [{ move: "Documents/" }],
-        },
-        {
-          name: "图片归档",
-          conditions: [{ category: "图片" }],
-          actions: [{ move: "Pictures/" }],
-        },
-        {
-          name: "旧压缩包清理",
-          enabled: false,
-          conditions: [{ category: "压缩包" }, { modified: { older_than: "30d" } }, { size: { lt: "10MB" } }],
-          actions: ["trash"],
-        },
-      ],
-    };
+let config: RuleFile | null =
+  new URLSearchParams(location.search).get("mock") === "empty"
+    ? null
+    : {
+        version: 2,
+        folders: [
+          { path: DL, rules: ["3D 模型归档", "发票归档", "文档归档", "图片归档", "旧压缩包清理"] },
+          { path: DESK, rules: ["截图改名归档", "发票归档"] },
+        ],
+        protect: ["*.lic", `${DL}/重要合同`],
+        settings: { buffer: "10m" },
+        rules: [
+          {
+            name: "截图改名归档",
+            conditions: [{ category: "图片" }, { name: { regex: "^(Screenshot|截屏)" } }],
+            actions: [{ rename: "截图_{modified:%Y%m%d_%H%M%S}.{ext|lower}" }, { move: `${HOME}/Pictures/Screenshots/` }],
+          },
+          {
+            name: "3D 模型归档",
+            conditions: [{ category: "3D 模型" }],
+            actions: [{ move: "3D 模型/" }],
+          },
+          {
+            name: "发票归档",
+            conditions: [{ name: { contains: "发票" } }],
+            except: [{ category: "压缩包" }],
+            actions: [{ move: { to: `${HOME}/Documents/发票`, on_conflict: "rename" } }],
+          },
+          {
+            name: "文档归档",
+            conditions: [{ category: "文档" }],
+            actions: [{ move: "Documents/" }],
+          },
+          {
+            name: "图片归档",
+            conditions: [{ category: "图片" }],
+            actions: [{ move: "Pictures/" }],
+          },
+          {
+            name: "旧压缩包清理",
+            enabled: false,
+            conditions: [{ category: "压缩包" }, { modified: { older_than: "30d" } }, { size: { lt: "10MB" } }],
+            actions: ["trash"],
+          },
+        ],
+      };
 
 function view(): ConfigView {
   return {
@@ -189,7 +199,13 @@ const PLANNED: Planned[] = [
   { name: "发票-2026-10-京东.pdf", from: DL, to: `${HOME}/Documents/发票`, reason: "规则「发票归档」" },
   { name: "IMG_2034.HEIC", from: DL, to: `${DL}/Pictures`, reason: "规则「图片归档」" },
   { name: "产品主图-白底.png", from: DL, to: `${DL}/Pictures`, reason: "规则「图片归档」" },
-  { name: "截屏2026-11-06 10.21.33.png", from: DESK, to: `${HOME}/Pictures/Screenshots`, reason: "规则「截图改名归档」", rename: "截图_20261106_102133.png" },
+  {
+    name: "截屏2026-11-06 10.21.33.png",
+    from: DESK,
+    to: `${HOME}/Pictures/Screenshots`,
+    reason: "规则「截图改名归档」",
+    rename: "截图_20261106_102133.png",
+  },
 ];
 
 const SKIPPED: [string, SkipKind, string][] = [
@@ -312,7 +328,10 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       ];
     case "scan":
       await sleep(450);
-      return makePlan(PLANNED, SKIPPED.map(([p, k, r]) => skip(p, k, r)));
+      return makePlan(
+        PLANNED,
+        SKIPPED.map(([p, k, r]) => skip(p, k, r)),
+      );
     case "scan_paths": {
       await sleep(300);
       const paths = args.paths as string[];
@@ -392,20 +411,23 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
         error: i === 4 ? "目标位置出现了同名文件，为避免覆盖已跳过" : null,
       }));
     case "undo_preview":
-      return PLANNED.slice(0, 6).map(
-        (p, i): UndoCheck => ({
-          kind: "move",
-          name: p.name,
-          src_display: disp(`${p.from}/${p.name}`),
-          dst_display: disp(`${p.to}/${p.name}`),
-          outcome: i === 2 ? "blocked" : "restore",
-          reason: i === 2 ? "文件已不在 ~/Downloads/3D 模型/支架装配_v3.stp，可能被移走或删除" : null,
-        }),
-      );
+      return PLANNED.slice(0, 6).map((p, i): UndoCheck => ({
+        kind: "move",
+        name: p.name,
+        src_display: disp(`${p.from}/${p.name}`),
+        dst_display: disp(`${p.to}/${p.name}`),
+        outcome: i === 2 ? "blocked" : "restore",
+        reason: i === 2 ? "文件已不在 ~/Downloads/3D 模型/支架装配_v3.stp，可能被移走或删除" : null,
+      }));
     case "undo": {
       const b = batches.find((x) => x.id === args.id);
       if (b) b.status = "partially_undone";
-      return { batch_id: args.id, restored: 5, failed: [{ path: "~/Downloads/3D 模型/支架装配_v3.stp", name: "支架装配_v3.stp", error: "文件已不在原处" }], in_trash: [] };
+      return {
+        batch_id: args.id,
+        restored: 5,
+        failed: [{ path: "~/Downloads/3D 模型/支架装配_v3.stp", name: "支架装配_v3.stp", error: "文件已不在原处" }],
+        in_trash: [],
+      };
     }
     case "fields":
       return { fields: FIELDS, vars: VARS };
@@ -435,7 +457,13 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
         display: disp(path),
         category: catOf(base(path))?.name ?? null,
         excluded: null,
-        rules: rules.map((r, index) => ({ index, name: r.name, enabled: r.enabled !== false, matched: JSON.stringify(r).includes("图片"), in_scope: true })),
+        rules: rules.map((r, index) => ({
+          index,
+          name: r.name,
+          enabled: r.enabled !== false,
+          matched: JSON.stringify(r).includes("图片"),
+          in_scope: true,
+        })),
         winner: winner >= 0 ? winner : null,
         action: winner >= 0 ? "移动到" : null,
         destination: winner >= 0 ? `${HOME}/Pictures/${base(path)}` : null,

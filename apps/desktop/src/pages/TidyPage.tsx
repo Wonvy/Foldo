@@ -124,9 +124,7 @@ export default function TidyPage({
   const [expandedExtensions, setExpandedExtensions] = useState<Set<string>>(new Set());
   const [inspectPath, setInspectPath] = useState<string | null>(null);
   const [guideDismissed, setGuideDismissed] = useState(setupDone);
-  const rulesInUse = (config.folders ?? []).some((f) =>
-    (config.rules ?? []).some((r) => r.enabled !== false && f.rules?.includes(r.name)),
-  );
+  const rulesInUse = (config.folders ?? []).some((f) => (config.rules ?? []).some((r) => r.enabled !== false && f.rules?.includes(r.name)));
   const showGuide = !rulesInUse || !guideDismissed;
   const menu = useMenu();
 
@@ -206,9 +204,7 @@ export default function TidyPage({
     for (const file of plan?.skipped ?? []) {
       if (file.kind !== "no_match") continue;
       const dot = file.name.lastIndexOf(".");
-      const extension = dot > 0 && dot < file.name.length - 1
-        ? file.name.slice(dot).toLowerCase()
-        : "";
+      const extension = dot > 0 && dot < file.name.length - 1 ? file.name.slice(dot).toLowerCase() : "";
       const group = groups.get(extension);
       if (group) group.push(file);
       else groups.set(extension, [file]);
@@ -276,23 +272,24 @@ export default function TidyPage({
   const protect = async (path: string, group?: number) => {
     try {
       setView(await api.addProtect(path));
-      setPlan((p) =>
-        p && {
-          ...p,
-          ops: p.ops.filter((o) => o.group !== group),
-          skipped: [
-            ...p.skipped.filter((s) => s.path !== path),
-            {
-              path,
-              name: baseName(path),
-              display: path,
-              kind: "protected",
-              label: t("固定保留"),
-              reason: t("在固定保留列表中"),
-              rule: null,
-            },
-          ],
-        },
+      setPlan(
+        (p) =>
+          p && {
+            ...p,
+            ops: p.ops.filter((o) => o.group !== group),
+            skipped: [
+              ...p.skipped.filter((s) => s.path !== path),
+              {
+                path,
+                name: baseName(path),
+                display: path,
+                kind: "protected",
+                label: t("固定保留"),
+                reason: t("在固定保留列表中"),
+                rule: null,
+              },
+            ],
+          },
       );
     } catch (e) {
       setError(errorText(e));
@@ -377,11 +374,7 @@ export default function TidyPage({
             <div className={`art ${result.failed.length ? "warn" : ""}`}>
               {result.failed.length ? <TriangleAlert size={26} /> : <CircleCheck size={28} />}
             </div>
-            <h2>
-              {undone
-                ? t("已撤销，恢复了 {0} 项", [undone.restored])
-                : t("整理完成：成功 {0} 项", [result.done])}
-            </h2>
+            <h2>{undone ? t("已撤销，恢复了 {0} 项", [undone.restored]) : t("整理完成：成功 {0} 项", [result.done])}</h2>
             <p className="muted">
               {result.skipped.length > 0 && t("跳过 {0} 项（执行时出现了新冲突）。", [result.skipped.length])}
               {result.failed.length > 0 && t("失败 {0} 项。", [result.failed.length])}
@@ -398,17 +391,15 @@ export default function TidyPage({
               </button>
             </div>
           </div>
-          {[...result.skipped.map((p) => ({ ...p, t: t("跳过") })), ...result.failed.map((p) => ({ ...p, t: t("失败") }))].map(
-            (p, i) => (
-              <div key={i} className="list-row">
-                <span className={`chip ${p.t === "失败" ? "danger" : "warn"}`}>{p.t}</span>
-                <div className="row-main">
-                  <div className="row-title ellipsis">{p.name}</div>
-                  <div className="row-sub">{p.error}</div>
-                </div>
+          {[...result.skipped.map((p) => ({ ...p, t: t("跳过") })), ...result.failed.map((p) => ({ ...p, t: t("失败") }))].map((p, i) => (
+            <div key={i} className="list-row">
+              <span className={`chip ${p.t === "失败" ? "danger" : "warn"}`}>{p.t}</span>
+              <div className="row-main">
+                <div className="row-title ellipsis">{p.name}</div>
+                <div className="row-sub">{p.error}</div>
               </div>
-            ),
-          )}
+            </div>
+          ))}
           {undone?.in_trash.map((p) => (
             <div key={p} className="list-row">
               <span className="chip">{t("回收站")}</span>
@@ -432,9 +423,7 @@ export default function TidyPage({
       {plan && (
         <>
           <div className="summary-line">
-            <span>
-              {t("{0} 个文件待整理", [items.length])}
-            </span>
+            <span>{t("{0} 个文件待整理", [items.length])}</span>
             {noMatch.length > 0 && (
               <button className="link" onClick={() => document.getElementById("no-match")?.scrollIntoView({ behavior: "smooth" })}>
                 {t("{0} 个没有匹配的规则", [noMatch.length])}
@@ -471,7 +460,12 @@ export default function TidyPage({
               <Checkbox
                 checked={selected.size === items.length}
                 indeterminate={selected.size > 0}
-                onChange={(on) => toggle(items.map((i) => i.group), on)}
+                onChange={(on) =>
+                  toggle(
+                    items.map((i) => i.group),
+                    on,
+                  )
+                }
                 label={t("全选")}
               />
               <span className="text-2">{t("全选")}</span>
@@ -493,15 +487,14 @@ export default function TidyPage({
             return (
               <div key={sec.key} className="card">
                 <div className="group-head">
-                  <Checkbox
-                    checked={on === groups.length}
-                    indeterminate={on > 0}
-                    onChange={(v) => toggle(groups, v)}
-                    label={sec.title}
-                  />
+                  <Checkbox checked={on === groups.length} indeterminate={on > 0} onChange={(v) => toggle(groups, v)} label={sec.title} />
                   {sec.trash ? <Trash size={16} color="var(--danger)" /> : <Folder size={16} color="var(--muted)" />}
                   <span className="title">{sec.title}</span>
-                  {sec.sub && <span className="muted ellipsis mono" style={{ flex: 1 }}>{sec.sub}</span>}
+                  {sec.sub && (
+                    <span className="muted ellipsis mono" style={{ flex: 1 }}>
+                      {sec.sub}
+                    </span>
+                  )}
                   {!sec.sub && <span className="spacer" />}
                   <span className="muted">{t("{0} 个", [sec.items.length])}</span>
                 </div>
@@ -518,7 +511,8 @@ export default function TidyPage({
                         {it.name}
                         {it.renamedTo && (
                           <span className="muted" style={{ fontWeight: 400 }}>
-                            {"  "}{t("→ 改名为 {0}", [it.renamedTo ?? ""])}
+                            {"  "}
+                            {t("→ 改名为 {0}", [it.renamedTo ?? ""])}
                           </span>
                         )}
                       </div>
@@ -568,30 +562,33 @@ export default function TidyPage({
                     className="group-head path-link"
                     style={{ width: "100%", textAlign: "left", textDecoration: "none", color: "inherit" }}
                     aria-expanded={expandedExtensions.has(extension)}
-                    onClick={() => setExpandedExtensions((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(extension)) next.delete(extension);
-                      else next.add(extension);
-                      return next;
-                    })}
+                    onClick={() =>
+                      setExpandedExtensions((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(extension)) next.delete(extension);
+                        else next.add(extension);
+                        return next;
+                      })
+                    }
                   >
                     {expandedExtensions.has(extension) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                     <span className="title">{extension || t("无扩展名")}</span>
                     <span className="spacer" />
                     <span className="muted">{t("{0} 个", [files.length])}</span>
                   </button>
-                  {expandedExtensions.has(extension) && files.map((s) => (
-                    <div key={s.path} className="list-row">
-                      <FileIcon category={null} />
-                      <div className="row-main">
-                        <div className="row-title ellipsis">{s.name}</div>
-                        <div className="row-sub ellipsis">{s.display}</div>
+                  {expandedExtensions.has(extension) &&
+                    files.map((s) => (
+                      <div key={s.path} className="list-row">
+                        <FileIcon category={null} />
+                        <div className="row-main">
+                          <div className="row-title ellipsis">{s.name}</div>
+                          <div className="row-sub ellipsis">{s.display}</div>
+                        </div>
+                        <button className="icon-btn" aria-label={t("更多")} onClick={(e) => skipMenu(e.currentTarget, s)}>
+                          <Ellipsis size={17} />
+                        </button>
                       </div>
-                      <button className="icon-btn" aria-label={t("更多")} onClick={(e) => skipMenu(e.currentTarget, s)}>
-                        <Ellipsis size={17} />
-                      </button>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               ))}
             </div>
@@ -606,15 +603,16 @@ export default function TidyPage({
               >
                 {showKept ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 <h2>{t("保持原位的项目")}</h2>
-                <span className="muted ellipsis">
-                  {keptByLabel.map(([label, list]) => `${label} ${list.length}`).join(" · ")}
-                </span>
+                <span className="muted ellipsis">{keptByLabel.map(([label, list]) => `${label} ${list.length}`).join(" · ")}</span>
               </button>
               {showKept &&
                 keptByLabel.map(([label, list]) => (
                   <div key={label}>
                     <div className="section-title" style={{ padding: "12px 16px 4px" }}>
-                      {label}{t("（")}{list.length}{t("）")}
+                      {label}
+                      {t("（")}
+                      {list.length}
+                      {t("）")}
                     </div>
                     {list.map((s) => (
                       <SkipRow key={s.path} s={s} onMenu={(el) => skipMenu(el, s)} />
@@ -636,9 +634,7 @@ export default function TidyPage({
 
           {items.length > 0 && (
             <div className="footer-bar">
-              <span className="text-2">
-                {t("已选 {0} / {1} 个文件", [selected.size, items.length])}
-              </span>
+              <span className="text-2">{t("已选 {0} / {1} 个文件", [selected.size, items.length])}</span>
               <span className="spacer" />
               {confirmTrash && (
                 <span className="chip warn" style={{ height: 30 }}>
@@ -716,7 +712,10 @@ function Onboarding({ onDone }: { onDone: () => void }) {
       .catch(() => setSuggestions([]));
   }, []);
 
-  const all = [...suggestions.map((s) => ({ path: s.path, title: s.label, sub: s.display })), ...extra.map((p) => ({ path: p, title: baseName(p), sub: p }))];
+  const all = [
+    ...suggestions.map((s) => ({ path: s.path, title: s.label, sub: s.display })),
+    ...extra.map((p) => ({ path: p, title: baseName(p), sub: p })),
+  ];
 
   const start = async () => {
     setSaving(true);

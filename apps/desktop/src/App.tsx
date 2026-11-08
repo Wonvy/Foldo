@@ -72,7 +72,11 @@ function Shell() {
 
   // 悬浮窗是否开着（关闭悬浮窗时也会同步，见下方的轮询）
   useEffect(() => {
-    const check = () => api.floatVisible().then(setFloatOn).catch(() => {});
+    const check = () =>
+      api
+        .floatVisible()
+        .then(setFloatOn)
+        .catch(() => {});
     check();
     const timer = setInterval(check, 2000);
     return () => clearInterval(timer);
@@ -80,12 +84,18 @@ function Shell() {
 
   // 启动时悄悄检查一次更新；没联网或还没有发布版本时不提示
   useEffect(() => {
-    api.checkUpdate().then(setUpdate).catch(() => {});
+    api
+      .checkUpdate()
+      .then(setUpdate)
+      .catch(() => {});
   }, []);
 
   // 后台自动整理的状态，以及托盘发来的事件
   useEffect(() => {
-    api.watchStatus().then(setWatch).catch(() => {});
+    api
+      .watchStatus()
+      .then(setWatch)
+      .catch(() => {});
     const uns: (() => void)[] = [];
     let disposed = false;
     (async () => {
@@ -159,7 +169,9 @@ function Shell() {
     if (!resizing) return;
     const move = (e: PointerEvent) => {
       const x = e.clientX;
-      setSide((s) => (x < SIDE_COLLAPSE_AT ? { ...s, collapsed: true } : { width: Math.min(SIDE_MAX, Math.max(SIDE_MIN, x)), collapsed: false }));
+      setSide((s) =>
+        x < SIDE_COLLAPSE_AT ? { ...s, collapsed: true } : { width: Math.min(SIDE_MAX, Math.max(SIDE_MIN, x)), collapsed: false },
+      );
     };
     const up = () => setResizing(false);
     window.addEventListener("pointermove", move);
@@ -191,12 +203,7 @@ function Shell() {
           <span className="label">Foldo</span>
         </div>
         {nav.map((n) => (
-          <button
-            key={n.id}
-            className={`nav-item ${page === n.id ? "active" : ""}`}
-            onClick={() => setPage(n.id)}
-            title={n.label}
-          >
+          <button key={n.id} className={`nav-item ${page === n.id ? "active" : ""}`} onClick={() => setPage(n.id)} title={n.label}>
             {n.icon}
             <span className="label">{n.label}</span>
             {n.count !== undefined && <span className="count">{n.count}</span>}
@@ -206,7 +213,12 @@ function Shell() {
           <button
             className={`icon-btn ${floatOn ? "active" : ""}`}
             title={floatOn ? t("关闭悬浮窗") : t("打开悬浮窗（把文件拖上去就能整理）")}
-            onClick={() => api.toggleFloat().then(setFloatOn).catch(() => {})}
+            onClick={() =>
+              api
+                .toggleFloat()
+                .then(setFloatOn)
+                .catch(() => {})
+            }
           >
             <PictureInPicture2 size={16} />
           </button>
@@ -227,7 +239,11 @@ function Shell() {
       />
 
       <main className="content">
-        {loadError && <div className="banner error" style={{ margin: 24 }}>{t("读取配置失败：{0}", [loadError])}</div>}
+        {loadError && (
+          <div className="banner error" style={{ margin: 24 }}>
+            {t("读取配置失败：{0}", [loadError])}
+          </div>
+        )}
         <div hidden={page !== "tidy"}>
           <TidyPage
             dropped={dropped}
@@ -257,7 +273,14 @@ function Shell() {
           <HistoryPage active={page === "history"} />
         </div>
         <div hidden={page !== "settings"}>
-          <SettingsPage update={update} onUpdate={setUpdate} theme={theme} onTheme={setTheme} showAdvanced={showAdvanced} onShowAdvanced={setShowAdvanced} />
+          <SettingsPage
+            update={update}
+            onUpdate={setUpdate}
+            theme={theme}
+            onTheme={setTheme}
+            showAdvanced={showAdvanced}
+            onShowAdvanced={setShowAdvanced}
+          />
         </div>
       </main>
 

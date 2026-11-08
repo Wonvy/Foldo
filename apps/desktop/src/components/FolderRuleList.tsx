@@ -7,7 +7,14 @@ type Target = { name: string; after: boolean };
 type Drag = { name: string; pointer: number; x: number; y: number; moved: boolean; order: string[] };
 
 /** 指针拖拽可与 Tauri 的系统文件拖入共存；规则只能在当前文件夹内排序。 */
-export default function FolderRuleList({ rules, folder, disabled, onReorder, onEdit, onRemove }: {
+export default function FolderRuleList({
+  rules,
+  folder,
+  disabled,
+  onReorder,
+  onEdit,
+  onRemove,
+}: {
   rules: RuleDef[];
   folder: string;
   disabled: boolean;
@@ -19,9 +26,15 @@ export default function FolderRuleList({ rules, folder, disabled, onReorder, onE
   const active = useRef<Drag | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [target, setTarget] = useState<Target | null>(null);
-  const clear = () => { active.current = null; setDragging(null); setTarget(null); };
+  const clear = () => {
+    active.current = null;
+    setDragging(null);
+    setTarget(null);
+  };
   useEffect(() => {
-    const escape = (e: KeyboardEvent) => { if (e.key === "Escape") clear(); };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") clear();
+    };
     window.addEventListener("keydown", escape);
     window.addEventListener("blur", clear);
     return () => {
@@ -71,20 +84,40 @@ export default function FolderRuleList({ rules, folder, disabled, onReorder, onE
   return (
     <span ref={root} className={`folder-rule-list${dragging ? " sorting" : ""}`}>
       {rules.map((rule, index) => (
-        <span key={rule.name} data-rule-name={rule.name}
-          className={["rule-chip", rule.enabled === false ? "off" : "", dragging === rule.name ? "dragging" : "",
-            target?.name === rule.name ? (target.after ? "insert-after" : "insert-before") : ""].join(" ")}>
-          <button type="button" className="rule-chip-grip" disabled={disabled || rules.length < 2}
+        <span
+          key={rule.name}
+          data-rule-name={rule.name}
+          className={[
+            "rule-chip",
+            rule.enabled === false ? "off" : "",
+            dragging === rule.name ? "dragging" : "",
+            target?.name === rule.name ? (target.after ? "insert-after" : "insert-before") : "",
+          ].join(" ")}
+        >
+          <button
+            type="button"
+            className="rule-chip-grip"
+            disabled={disabled || rules.length < 2}
             aria-label={t("调整 {0} 的顺序，当前位置 {1}，可用左右方向键", [rule.name, index + 1])}
             title={t("左右拖动调整顺序，左侧优先；也可使用左右方向键")}
             onPointerDown={(e) => {
               if (e.button !== 0 || !e.isPrimary || disabled) return;
               e.preventDefault();
               e.currentTarget.focus();
-              active.current = { name: rule.name, pointer: e.pointerId, x: e.clientX, y: e.clientY, moved: false, order: rules.map((r) => r.name) };
+              active.current = {
+                name: rule.name,
+                pointer: e.pointerId,
+                x: e.clientX,
+                y: e.clientY,
+                moved: false,
+                order: rules.map((r) => r.name),
+              };
               e.currentTarget.setPointerCapture(e.pointerId);
             }}
-            onPointerMove={move} onPointerUp={finish} onPointerCancel={clear} onLostPointerCapture={clear}
+            onPointerMove={move}
+            onPointerUp={finish}
+            onPointerCancel={clear}
+            onLostPointerCapture={clear}
             onKeyDown={(e) => {
               if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
               e.preventDefault();
@@ -94,9 +127,26 @@ export default function FolderRuleList({ rules, folder, disabled, onReorder, onE
               const names = rules.map((r) => r.name);
               [names[index], names[to]] = [names[to], names[index]];
               onReorder(names);
-            }}><GripVertical size={12} /></button>
-          <button className="rule-chip-name" disabled={disabled} title={rule.enabled === false ? t("已停用，点击编辑") : t("编辑规则")} onClick={() => onEdit(rule.name)}>{rule.name}</button>
-          <button className="rule-chip-x" disabled={disabled} aria-label={t("从 {0} 移除 {1}", [folder, rule.name])} onClick={() => onRemove(rule.name)}><X size={12} /></button>
+            }}
+          >
+            <GripVertical size={12} />
+          </button>
+          <button
+            className="rule-chip-name"
+            disabled={disabled}
+            title={rule.enabled === false ? t("已停用，点击编辑") : t("编辑规则")}
+            onClick={() => onEdit(rule.name)}
+          >
+            {rule.name}
+          </button>
+          <button
+            className="rule-chip-x"
+            disabled={disabled}
+            aria-label={t("从 {0} 移除 {1}", [folder, rule.name])}
+            onClick={() => onRemove(rule.name)}
+          >
+            <X size={12} />
+          </button>
         </span>
       ))}
     </span>

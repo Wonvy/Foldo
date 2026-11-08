@@ -5,15 +5,7 @@ import { api, errorText, KIND_LABEL, type UndoCheck, type UndoView } from "../ap
 import { Modal, Spinner } from "./ui";
 import { t } from "../i18n";
 
-export default function UndoDialog({
-  batchId,
-  onClose,
-  onDone,
-}: {
-  batchId: number;
-  onClose: () => void;
-  onDone: (r: UndoView) => void;
-}) {
+export default function UndoDialog({ batchId, onClose, onDone }: { batchId: number; onClose: () => void; onDone: (r: UndoView) => void }) {
   const [checks, setChecks] = useState<UndoCheck[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -72,7 +64,9 @@ export default function UndoDialog({
         <>
           <div className="stats">
             <div className="stat">
-              <div className="num" style={{ color: "var(--ok)" }}>{restore.length}</div>
+              <div className="num" style={{ color: "var(--ok)" }}>
+                {restore.length}
+              </div>
               <div className="label">{t("可以恢复")}</div>
             </div>
             <div className="stat">
@@ -80,7 +74,9 @@ export default function UndoDialog({
               <div className="label">{t("在回收站，需手动还原")}</div>
             </div>
             <div className="stat">
-              <div className="num" style={{ color: blocked.length ? "var(--warn)" : undefined }}>{blocked.length}</div>
+              <div className="num" style={{ color: blocked.length ? "var(--warn)" : undefined }}>
+                {blocked.length}
+              </div>
               <div className="label">{t("无法恢复")}</div>
             </div>
           </div>
@@ -98,9 +94,7 @@ export default function UndoDialog({
                   <div className="row-title ellipsis">
                     {KIND_LABEL[c.kind] ?? c.kind} · {c.name}
                   </div>
-                  <div className="row-sub ellipsis">
-                    {c.reason ?? `${c.dst_display ?? ""} → ${c.src_display}`}
-                  </div>
+                  <div className="row-sub ellipsis">{c.reason ?? `${c.dst_display ?? ""} → ${c.src_display}`}</div>
                 </div>
               </div>
             ))}

@@ -51,13 +51,25 @@ export default function VarMenu({ onInsert }: { onInsert: (text: string) => void
 
   return (
     <>
-      <button ref={btn} className="icon-btn" title={t("插入变量（文件属性、拍摄时间、系统文件夹……）")} aria-label={t("插入变量")} onClick={() => setOpen(!open)}>
+      <button
+        ref={btn}
+        className="icon-btn"
+        title={t("插入变量（文件属性、拍摄时间、系统文件夹……）")}
+        aria-label={t("插入变量")}
+        onClick={() => setOpen(!open)}
+      >
         <Braces size={16} />
       </button>
       {open &&
         createPortal(
           <div className="menu var-menu" ref={pop} style={pos}>
-            <input className="input" autoFocus placeholder={t("搜索变量，如 拍摄、宽度、桌面")} value={q} onChange={(e) => setQ(e.target.value)} />
+            <input
+              className="input"
+              autoFocus
+              placeholder={t("搜索变量，如 拍摄、宽度、桌面")}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
             <div className="var-list">
               {groups.map((g) => (
                 <div key={g}>
@@ -83,7 +95,11 @@ export default function VarMenu({ onInsert }: { onInsert: (text: string) => void
                     ))}
                 </div>
               ))}
-              {shown.length === 0 && <div className="muted" style={{ padding: 10 }}>{t("没有匹配的变量")}</div>}
+              {shown.length === 0 && (
+                <div className="muted" style={{ padding: 10 }}>
+                  {t("没有匹配的变量")}
+                </div>
+              )}
             </div>
           </div>,
           document.body,

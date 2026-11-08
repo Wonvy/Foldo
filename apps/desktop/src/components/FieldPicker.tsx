@@ -39,15 +39,7 @@ export function GroupIcon({ group, size = 14 }: { group: string; size?: number }
   return <Icon size={size} />;
 }
 
-export default function FieldPicker({
-  value,
-  fields,
-  onChange,
-}: {
-  value: string;
-  fields: FieldDef[];
-  onChange: (key: string) => void;
-}) {
+export default function FieldPicker({ value, fields, onChange }: { value: string; fields: FieldDef[]; onChange: (key: string) => void }) {
   const btn = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -94,7 +86,11 @@ export default function FieldPicker({
                   ))}
               </div>
             ))}
-            {shown.length === 0 && <div className="muted" style={{ padding: 12 }}>{t("没有匹配的属性")}</div>}
+            {shown.length === 0 && (
+              <div className="muted" style={{ padding: 12 }}>
+                {t("没有匹配的属性")}
+              </div>
+            )}
           </div>
         </Popover>
       )}

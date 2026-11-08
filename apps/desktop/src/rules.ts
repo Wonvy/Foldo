@@ -1,5 +1,15 @@
 // 规则的编辑模型（条件树）、与配置的互相转换、以及把规则翻译成一句话。
-import { type ActionDef, type ConditionDef, type DestDef, type FieldDef, type FieldType, type FolderDef, type RuleDef, type RuleFile, type RuleTarget } from "./api";
+import {
+  type ActionDef,
+  type ConditionDef,
+  type DestDef,
+  type FieldDef,
+  type FieldType,
+  type FolderDef,
+  type RuleDef,
+  type RuleFile,
+  type RuleTarget,
+} from "./api";
 import { t, tv } from "./i18n";
 
 // ---------- 路径显示 ----------
@@ -174,7 +184,10 @@ export function newTest(fields: FieldMap, key = "name"): TestNode {
 export function defToNode(def: ConditionDef, fields: FieldMap): CondNode {
   const [key, value] = Object.entries(def)[0] ?? ["name", ""];
   if (key === "all" || key === "any" || key === "none") {
-    return group(key, ((value as ConditionDef[]) ?? []).map((d) => defToNode(d, fields)));
+    return group(
+      key,
+      ((value as ConditionDef[]) ?? []).map((d) => defToNode(d, fields)),
+    );
   }
   if (key === "not") {
     const inner = defToNode(value as ConditionDef, fields);
@@ -182,7 +195,15 @@ export function defToNode(def: ConditionDef, fields: FieldMap): CondNode {
   }
   const field = key === "extension" ? "ext" : key;
   const f = fields.get(field);
-  const leaf = (op: string, v: unknown, cs = false): TestNode => ({ id: nid(), kind: "test", field, op: canon(op), value: v, cs, not: false });
+  const leaf = (op: string, v: unknown, cs = false): TestNode => ({
+    id: nid(),
+    kind: "test",
+    field,
+    op: canon(op),
+    value: v,
+    cs,
+    not: false,
+  });
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
     const { case_sensitive, ...ops } = value as Record<string, unknown>;
     const leaves = Object.entries(ops).map(([op, v]) => leaf(op, v, case_sensitive === true));
@@ -277,14 +298,20 @@ export function ruleToForm(rule: RuleDef, fields: FieldMap): RuleForm {
   else if (parts.length === 1 && parts[0].kind === "group" && !parts[0].not) root = parts[0];
   else root = group("all", parts);
   const advanced = rule.actions.some(
-    (a) => typeof a === "object" && typeof Object.values(a)[0] === "object" && (Object.values(a)[0] as { on_conflict?: string }).on_conflict === "overwrite",
+    (a) =>
+      typeof a === "object" &&
+      typeof Object.values(a)[0] === "object" &&
+      (Object.values(a)[0] as { on_conflict?: string }).on_conflict === "overwrite",
   );
   return {
     name: rule.name,
     enabled: rule.enabled !== false,
     target: rule.target === "folder" ? "folder" : "file",
     root,
-    exceptions: group("any", (rule.except ?? []).map((c) => defToNode(c, fields))),
+    exceptions: group(
+      "any",
+      (rule.except ?? []).map((c) => defToNode(c, fields)),
+    ),
     actions: rule.actions.map(rowFromAction),
     advanced,
   };
@@ -299,7 +326,8 @@ function checkValues(n: CondNode, fields: FieldMap): string | null {
     return null;
   }
   const label = fields.get(n.field)?.label ?? n.field;
-  const empty = (v: unknown) => v === "" || v === null || v === undefined || (Array.isArray(v) && (v.length === 0 || v.some((x) => x === "")));
+  const empty = (v: unknown) =>
+    v === "" || v === null || v === undefined || (Array.isArray(v) && (v.length === 0 || v.some((x) => x === "")));
   if (!fields.has(n.field)) return t("未知字段「{0}」", [n.field]);
   if (empty(n.value) && n.op !== "empty") return t("请填写“{0}”的值", [label]);
   return null;
@@ -321,7 +349,8 @@ export function formToRule(f: RuleForm, fields: FieldMap): { rule: RuleDef } | {
       continue;
     }
     const to = a.to.trim();
-    if (!to) return { error: a.kind === "rename" ? t("请填写新文件名") : a.kind === "compress" ? t("请填写压缩包名称") : t("请选择目标文件夹") };
+    if (!to)
+      return { error: a.kind === "rename" ? t("请填写新文件名") : a.kind === "compress" ? t("请填写压缩包名称") : t("请选择目标文件夹") };
     const dest: DestDef = a.onConflict === "skip" ? { to, on_conflict: "skip" } : to;
     actions.push({ [a.kind]: dest } as ActionDef);
   }
@@ -367,7 +396,8 @@ export function describeNode(n: CondNode, fields: FieldMap, top = true): string 
   } else {
     const f = fields.get(n.field);
     const label = f?.label ?? n.field;
-    if (n.op === "exists" || n.op === "empty" || f?.type === "bool") s = `${label}${n.op === "exists" ? t("：") : " "}${valueText(f, n.op, n.value)}`;
+    if (n.op === "exists" || n.op === "empty" || f?.type === "bool")
+      s = `${label}${n.op === "exists" ? t("：") : " "}${valueText(f, n.op, n.value)}`;
     else if (n.op === "older_than") s = t("{0}在 {1}之前", [label, valueText(f, n.op, n.value)]);
     else if (n.op === "newer_than") s = t("{0}在最近 {1}内", [label, valueText(f, n.op, n.value)]);
     else s = `${label} ${opLabel(f, n.op)} ${valueText(f, n.op, n.value)}`;
@@ -435,14 +465,23 @@ export function shortPath(p: string): string {
 
 const MODE_LABEL: Record<GroupMode, string> = { all: t("全部"), any: t("任一"), none: t("都不") };
 
-export function ruleChips(rule: RuleDef, fields: FieldMap): { mode: GroupMode; conds: CondChip[]; actions: ActionChip[]; exceptions: number } {
+export function ruleChips(
+  rule: RuleDef,
+  fields: FieldMap,
+): { mode: GroupMode; conds: CondChip[]; actions: ActionChip[]; exceptions: number } {
   const form = ruleToForm(rule, fields);
   const conds: CondChip[] = form.root.children.map((n) => {
     if (n.kind === "test") {
       const text = describeNode({ ...n, not: false }, fields);
       return { kind: "test", group: fields.get(n.field)?.group ?? t("基本"), text, title: describeNode(n, fields), not: n.not };
     }
-    return { kind: "group", group: "", text: t("{0}满足 {1} 项", [MODE_LABEL[n.mode], n.children.length]), title: describeNode(n, fields), not: n.not };
+    return {
+      kind: "group",
+      group: "",
+      text: t("{0}满足 {1} 项", [MODE_LABEL[n.mode], n.children.length]),
+      title: describeNode(n, fields),
+      not: n.not,
+    };
   });
   const actions: ActionChip[] = form.actions.map((a) => {
     if (a.kind === "trash") return { kind: a.kind, text: t("回收站"), title: t("移到回收站") };

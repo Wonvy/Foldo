@@ -25,7 +25,24 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, baseName, errorText, type RuleDef, type RuleTarget, type TestView } from "../api";
-import { DEFAULT_FIELD, emptyForm, fieldFits, formToRule, group, newTest, renameInFolders, ruleToForm, tilde, type CondNode, type FieldMap, type ActionKind, type ActionRow, type DestKind, type RuleForm, ACTION_DEFAULT_TO } from "../rules";
+import {
+  DEFAULT_FIELD,
+  emptyForm,
+  fieldFits,
+  formToRule,
+  group,
+  newTest,
+  renameInFolders,
+  ruleToForm,
+  tilde,
+  type CondNode,
+  type FieldMap,
+  type ActionKind,
+  type ActionRow,
+  type DestKind,
+  type RuleForm,
+  ACTION_DEFAULT_TO,
+} from "../rules";
 import { pickFile, pickFolder, useStore } from "../store";
 import GroupEditor, { mapResults, type ResultMap } from "./ConditionTree";
 import InspectDialog from "./InspectDialog";
@@ -86,7 +103,10 @@ export default function RuleEditor({
   const rules = config.rules ?? [];
   const original = index === null ? null : rules[index];
   const ready = fields.length > 0;
-  const initial = useMemo(() => (ready ? (original ? ruleToForm(original, fieldMap) : emptyForm(fieldMap)) : null), [original, ready, fieldMap]);
+  const initial = useMemo(
+    () => (ready ? (original ? ruleToForm(original, fieldMap) : emptyForm(fieldMap)) : null),
+    [original, ready, fieldMap],
+  );
   const [form, setForm] = useState<RuleForm | null>(initial);
   useEffect(() => {
     if (!form && initial) setForm(initial);
@@ -123,7 +143,9 @@ export default function RuleEditor({
         .tryRule({ ...rule, name: "__试运行__", enabled: true }, null)
         .then((p) => {
           if (cancelled) return;
-          const names = [...new Set([...p.ops.map((o) => o.origin_name), ...p.skipped.filter((s) => s.rule === "__试运行__").map((s) => s.name)])];
+          const names = [
+            ...new Set([...p.ops.map((o) => o.origin_name), ...p.skipped.filter((s) => s.rule === "__试运行__").map((s) => s.name)]),
+          ];
           setPreview({ count: p.matched, names: names.slice(0, 8) });
         })
         .catch((e) => !cancelled && setPreviewError(errorText(e)));
@@ -234,9 +256,7 @@ export default function RuleEditor({
   // 只列出适用于当前处理对象的属性
   const targetFields = fields.filter((f) => fieldFits(f, form.target));
 
-  const moreSummary = [
-    form.exceptions.children.length > 0 && t("{0} 个例外", [form.exceptions.children.length]),
-  ]
+  const moreSummary = [form.exceptions.children.length > 0 && t("{0} 个例外", [form.exceptions.children.length])]
     .filter(Boolean)
     .join(" · ");
 
@@ -274,7 +294,13 @@ export default function RuleEditor({
           />
           <span className="spacer" />
           {index !== null && (
-            <button className="icon-btn" title={t("删除规则")} aria-label={t("删除规则")} onClick={remove} style={{ color: "var(--danger)" }}>
+            <button
+              className="icon-btn"
+              title={t("删除规则")}
+              aria-label={t("删除规则")}
+              onClick={remove}
+              style={{ color: "var(--danger)" }}
+            >
               <Trash size={16} />
             </button>
           )}
@@ -296,8 +322,22 @@ export default function RuleEditor({
               value={form.target}
               onChange={(tg) => setForm(switchTarget(form, tg, fieldMap))}
               options={[
-                { value: "file", label: <><FileIcon2 size={14} /> {t("文件")}</> },
-                { value: "folder", label: <><FolderIcon size={14} /> {t("文件夹")}</> },
+                {
+                  value: "file",
+                  label: (
+                    <>
+                      <FileIcon2 size={14} /> {t("文件")}
+                    </>
+                  ),
+                },
+                {
+                  value: "folder",
+                  label: (
+                    <>
+                      <FolderIcon size={14} /> {t("文件夹")}
+                    </>
+                  ),
+                },
               ]}
             />
             <span className="muted">
@@ -359,11 +399,24 @@ export default function RuleEditor({
 
 // ---------- 底栏的两个小标签 ----------
 
-function MatchChip({ preview, invalid, error }: { preview: { count: number; names: string[] } | null; invalid: boolean; error: string | null }) {
+function MatchChip({
+  preview,
+  invalid,
+  error,
+}: {
+  preview: { count: number; names: string[] } | null;
+  invalid: boolean;
+  error: string | null;
+}) {
   const ref = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   if (invalid) return <span className="foot-chip muted">{t("命中 —")}</span>;
-  if (error) return <span className="foot-chip" title={error}><TriangleAlert size={13} /> {t("预览失败")}</span>;
+  if (error)
+    return (
+      <span className="foot-chip" title={error}>
+        <TriangleAlert size={13} /> {t("预览失败")}
+      </span>
+    );
   if (!preview)
     return (
       <span className="foot-chip muted">
@@ -372,7 +425,12 @@ function MatchChip({ preview, invalid, error }: { preview: { count: number; name
     );
   return (
     <>
-      <button ref={ref} className={`foot-chip ${preview.count ? "accent" : ""}`} title={t("整理文件夹里现在符合的文件")} onClick={() => preview.count && setOpen(!open)}>
+      <button
+        ref={ref}
+        className={`foot-chip ${preview.count ? "accent" : ""}`}
+        title={t("整理文件夹里现在符合的文件")}
+        onClick={() => preview.count && setOpen(!open)}
+      >
         <Layers size={14} /> {t("命中")} {preview.count}
       </button>
       {open && (
@@ -383,7 +441,9 @@ function MatchChip({ preview, invalid, error }: { preview: { count: number; name
                 {n}
               </div>
             ))}
-            {preview.count > preview.names.length && <div className="pick-item muted">{t("还有 {0} 个…", [preview.count - preview.names.length])}</div>}
+            {preview.count > preview.names.length && (
+              <div className="pick-item muted">{t("还有 {0} 个…", [preview.count - preview.names.length])}</div>
+            )}
           </div>
         </Popover>
       )}
@@ -420,7 +480,11 @@ function TestChip({
       <button className="link-plain ellipsis" title={t("{0}\n点击查看属性", [path])} onClick={onInspect}>
         {baseName(path)}
       </button>
-      {error && <span className="ellipsis" role="alert" title={error} style={{ maxWidth: 220 }}>{error}</span>}
+      {error && (
+        <span className="ellipsis" role="alert" title={error} style={{ maxWidth: 220 }}>
+          {error}
+        </span>
+      )}
       {!error && view && (
         <span className="ellipsis" title={view.destination ?? view.reason ?? ""} style={{ maxWidth: 220 }}>
           {ok ? `→ ${tilde(view.destination!)}` : (view.reason ?? t("不满足"))}
@@ -461,51 +525,56 @@ function ActionList({ rows, folder, onChange }: { rows: ActionRow[]; folder: boo
       {rows.map((a, i) => {
         const cur = ACTIONS.find((x) => x.kind === a.kind) ?? ACTIONS[0];
         return (
-        <div key={i} className="action-row">
-          <button className="action-kind" onClick={(e) => pickKind(e.currentTarget, i)}>
-            <cur.icon size={15} />
-            <span>{cur.label}</span>
-            <ChevronDown size={13} />
-          </button>
-          {a.kind !== "trash" && a.kind !== "keep" && (
-            <div className="dest">
-              {(a.kind === "move" || a.kind === "copy" || a.kind === "shortcut" || a.kind === "extract") && (
-                <button
-                  className="icon-btn"
-                  title={t("选择文件夹")}
-                  onClick={async () => {
-                    const d = await pickFolder(t("选择目标文件夹"));
-                    if (d) update(i, { to: d });
-                  }}
-                >
-                  <FolderOpen size={16} />
-                </button>
-              )}
-              <input
-                className="dest-input mono"
-                placeholder={PLACEHOLDER[a.kind]}
-                value={a.kind === "rename" || a.kind === "compress" ? a.to : tilde(a.to)}
-                title={a.to}
-                onChange={(e) => update(i, { to: e.target.value })}
-              />
-              <VarMenu onInsert={(v) => update(i, { to: a.to + v })} />
-              <select
-                className="pill-select"
-                value={a.onConflict}
-                title={t("目标位置已有同名文件时")}
-                onChange={(e) => update(i, { onConflict: e.target.value as "rename" | "skip" })}
-              >
-                <option value="rename">{t("同名保留两份")}</option>
-                <option value="skip">{t("同名跳过")}</option>
-              </select>
-            </div>
-          )}
-          {rows.length > 1 && (
-            <button className="icon-btn" aria-label={t("删除这一步")} title={t("删除这一步")} onClick={() => onChange(rows.filter((_, j) => j !== i))}>
-              <X size={15} />
+          <div key={i} className="action-row">
+            <button className="action-kind" onClick={(e) => pickKind(e.currentTarget, i)}>
+              <cur.icon size={15} />
+              <span>{cur.label}</span>
+              <ChevronDown size={13} />
             </button>
-          )}
-        </div>
+            {a.kind !== "trash" && a.kind !== "keep" && (
+              <div className="dest">
+                {(a.kind === "move" || a.kind === "copy" || a.kind === "shortcut" || a.kind === "extract") && (
+                  <button
+                    className="icon-btn"
+                    title={t("选择文件夹")}
+                    onClick={async () => {
+                      const d = await pickFolder(t("选择目标文件夹"));
+                      if (d) update(i, { to: d });
+                    }}
+                  >
+                    <FolderOpen size={16} />
+                  </button>
+                )}
+                <input
+                  className="dest-input mono"
+                  placeholder={PLACEHOLDER[a.kind]}
+                  value={a.kind === "rename" || a.kind === "compress" ? a.to : tilde(a.to)}
+                  title={a.to}
+                  onChange={(e) => update(i, { to: e.target.value })}
+                />
+                <VarMenu onInsert={(v) => update(i, { to: a.to + v })} />
+                <select
+                  className="pill-select"
+                  value={a.onConflict}
+                  title={t("目标位置已有同名文件时")}
+                  onChange={(e) => update(i, { onConflict: e.target.value as "rename" | "skip" })}
+                >
+                  <option value="rename">{t("同名保留两份")}</option>
+                  <option value="skip">{t("同名跳过")}</option>
+                </select>
+              </div>
+            )}
+            {rows.length > 1 && (
+              <button
+                className="icon-btn"
+                aria-label={t("删除这一步")}
+                title={t("删除这一步")}
+                onClick={() => onChange(rows.filter((_, j) => j !== i))}
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
         );
       })}
       {menu.node}
@@ -517,4 +586,3 @@ function ActionList({ rows, folder, onChange }: { rows: ActionRow[]; folder: boo
     </div>
   );
 }
-

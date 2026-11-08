@@ -235,10 +235,8 @@ export const api = {
   scan: () => invoke<PlanView>("scan"),
   scanPaths: (paths: string[]) => invoke<PlanView>("scan_paths", { paths }),
   tryRule: (rule: RuleDef, paths: string[] | null) => invoke<PlanView>("try_rule", { rule, paths }),
-  retarget: (planId: number, group: number, dir: string) =>
-    invoke<PlanView>("retarget", { planId, group, dir }),
-  executePlan: (planId: number, groups: number[]) =>
-    invoke<ExecView>("execute_plan", { planId, groups }),
+  retarget: (planId: number, group: number, dir: string) => invoke<PlanView>("retarget", { planId, group, dir }),
+  executePlan: (planId: number, groups: number[]) => invoke<ExecView>("execute_plan", { planId, groups }),
   history: (limit = 100) => invoke<Batch[]>("history", { limit }),
   batchOps: (id: number) => invoke<OpRecord[]>("batch_ops", { id }),
   undoPreview: (id: number) => invoke<UndoCheck[]>("undo_preview", { id }),

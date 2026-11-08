@@ -71,7 +71,8 @@ export default function HistoryPage({ active }: { active: boolean }) {
           <span>
             {t("已撤销第 {0} 次整理，恢复 {1} 项", [lastUndo.batch_id, lastUndo.restored])}
             {lastUndo.in_trash.length > 0 && t("；{0} 项需要到回收站手动还原", [lastUndo.in_trash.length])}
-            {lastUndo.failed.length > 0 && t("；{0} 项无法恢复", [lastUndo.failed.length])}{t("。")}
+            {lastUndo.failed.length > 0 && t("；{0} 项无法恢复", [lastUndo.failed.length])}
+            {t("。")}
           </span>
         </div>
       )}
@@ -134,9 +135,13 @@ export default function HistoryPage({ active }: { active: boolean }) {
                             </>
                           )}
                         </div>
-                        {o.error && <div className="row-sub" style={{ color: "var(--warn)" }}>{o.error}</div>}
+                        {o.error && (
+                          <div className="row-sub" style={{ color: "var(--warn)" }}>
+                            {o.error}
+                          </div>
+                        )}
                       </div>
-                      <span className={`chip ${o.status === "done" ? "" : STATUS_CHIP[o.status] ?? "warn"}`}>
+                      <span className={`chip ${o.status === "done" ? "" : (STATUS_CHIP[o.status] ?? "warn")}`}>
                         {STATUS_LABEL[o.status] ?? o.status}
                       </span>
                     </div>

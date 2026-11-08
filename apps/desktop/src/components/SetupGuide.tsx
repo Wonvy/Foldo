@@ -88,7 +88,9 @@ export default function SetupGuide({ onChanged, onDismiss }: { onChanged: () => 
           <div style={{ flex: 1 }}>
             <div className="setup-title">{t("建第一条规则")}</div>
             <div className="muted">
-              {t("规则写明“什么样的文件 → 怎么处理”，例如“扩展名是 pdf → 移到 文档/”。新建的规则会直接用在上面的文件夹里，执行前都会先给你看预览。")}
+              {t(
+                "规则写明“什么样的文件 → 怎么处理”，例如“扩展名是 pdf → 移到 文档/”。新建的规则会直接用在上面的文件夹里，执行前都会先给你看预览。",
+              )}
             </div>
           </div>
           <button className="btn primary" onClick={() => setEditing(true)}>
@@ -104,7 +106,9 @@ export default function SetupGuide({ onChanged, onDismiss }: { onChanged: () => 
             <div className="setup-title">{t("把规则添加到文件夹")}</div>
             <div className="muted">
               {enabled.length
-                ? t("已有 {0} 条规则，还没有用在任何文件夹里。可以一次全部加上，也可以在下面的文件夹里点“+ 规则”逐个添加。", [enabled.length])
+                ? t("已有 {0} 条规则，还没有用在任何文件夹里。可以一次全部加上，也可以在下面的文件夹里点“+ 规则”逐个添加。", [
+                    enabled.length,
+                  ])
                 : t("规则都停用了。到“规则”页启用后，再添加到文件夹。")}
             </div>
           </div>

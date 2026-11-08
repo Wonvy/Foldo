@@ -44,7 +44,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void reload();
-    api.categories().then(setCategories).catch(() => setCategories([]));
+    api
+      .categories()
+      .then(setCategories)
+      .catch(() => setCategories([]));
     api
       .fields()
       .then((f) => {
@@ -66,9 +69,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const config = view?.config ?? EMPTY;
   const fieldMap = useMemo(() => new Map(fields.map((f) => [f.key, f])), [fields]);
   return (
-    <Ctx.Provider value={{ view, config, categories, fields, fieldMap, vars, loadError, reload, save, setView }}>
-      {children}
-    </Ctx.Provider>
+    <Ctx.Provider value={{ view, config, categories, fields, fieldMap, vars, loadError, reload, save, setView }}>{children}</Ctx.Provider>
   );
 }
 

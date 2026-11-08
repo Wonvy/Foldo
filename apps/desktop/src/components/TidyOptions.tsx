@@ -16,7 +16,11 @@ const BUILTIN_EXCLUDES = [
   { icon: Folder, title: t("已有文件夹"), text: t("作为整体保留，不拆分内部文件；文件夹开启“包含子文件夹”时才整理里面的文件") },
   { icon: KeyRound, title: t("凭证文件"), text: t("私钥、证书、密码库、.env 等默认不移动") },
   { icon: Link, title: t("快捷方式"), text: t(".lnk、.url、.webloc 等保留在原位，也不会影响它们指向的文件") },
-  { icon: ShieldCheck, title: t("系统与隐藏文件"), text: t(".DS_Store、Thumbs.db、desktop.ini；隐藏文件在文件夹开启“包含隐藏文件”时才整理") },
+  {
+    icon: ShieldCheck,
+    title: t("系统与隐藏文件"),
+    text: t(".DS_Store、Thumbs.db、desktop.ini；隐藏文件在文件夹开启“包含隐藏文件”时才整理"),
+  },
   { icon: TriangleAlert, title: t("未完成或正在使用"), text: t("下载中的临时文件、Office 打开时的锁文件、被其他程序占用的文件") },
 ];
 
@@ -135,7 +139,9 @@ export default function TidyOptions() {
         <div className="card-body row" style={{ borderTop: "1px solid var(--border)" }}>
           <div style={{ flex: 1 }}>
             <div>{t("整理后删除变空的文件夹")}</div>
-            <div className="muted" style={{ fontSize: 12.5 }}>{t("只删除因为文件被移走而变空的文件夹；撤销时会重建")}</div>
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              {t("只删除因为文件被移走而变空的文件夹；撤销时会重建")}
+            </div>
           </div>
           <Switch
             label={t("整理后删除变空的文件夹")}

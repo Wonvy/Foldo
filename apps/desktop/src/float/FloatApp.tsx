@@ -77,7 +77,14 @@ export default function FloatApp() {
     for (const o of plan.ops) byGroup.set(o.group, [...(byGroup.get(o.group) ?? []), o]);
     return [...byGroup.values()].map((ops) => {
       const last = ops[ops.length - 1];
-      return { group: last.group, name: last.origin_name, category: last.category, kind: last.kind, dir: last.dst_dir_display, rule: last.rule };
+      return {
+        group: last.group,
+        name: last.origin_name,
+        category: last.category,
+        kind: last.kind,
+        dir: last.dst_dir_display,
+        rule: last.rule,
+      };
     });
   }, [plan]);
   const skipped = plan?.skipped ?? [];
@@ -86,7 +93,10 @@ export default function FloatApp() {
     if (!plan) return;
     setRunning(true);
     try {
-      const r = await api.executePlan(plan.plan_id, items.map((i) => i.group));
+      const r = await api.executePlan(
+        plan.plan_id,
+        items.map((i) => i.group),
+      );
       setResult(r);
       setPhase("done");
       collapseTimer.current = setTimeout(() => setPhase("idle"), 10000);
@@ -133,7 +143,11 @@ export default function FloatApp() {
           await MenuItem.new({ text: t("选择文件整理…"), action: () => void pickAndHandle() }),
           await MenuItem.new({ text: t("撤销上次整理"), enabled: canUndo, action: () => void undo() }),
           await sep(),
-          await MenuItem.new({ text: expanded ? t("收起面板") : t("展开上次结果"), enabled: expanded || !!plan, action: () => setPhase(expanded ? "idle" : result ? "done" : "plan") }),
+          await MenuItem.new({
+            text: expanded ? t("收起面板") : t("展开上次结果"),
+            enabled: expanded || !!plan,
+            action: () => setPhase(expanded ? "idle" : result ? "done" : "plan"),
+          }),
           await CheckMenuItem.new({
             text: t("始终置顶"),
             checked: onTop,
@@ -156,7 +170,10 @@ export default function FloatApp() {
   };
 
   const drag = (e: MouseEvent) => {
-    if (e.button === 0 && e.detail === 1) void getCurrentWindow().startDragging().catch(() => {});
+    if (e.button === 0 && e.detail === 1)
+      void getCurrentWindow()
+        .startDragging()
+        .catch(() => {});
   };
 
   const target = (small: boolean) => (
@@ -239,8 +256,12 @@ export default function FloatApp() {
             <div className="muted" style={{ fontSize: 12.5 }}>
               {undone
                 ? t("文件已放回原处")
-                : [result.skipped.length && t("跳过 {0} 项", [result.skipped.length]), result.failed.length && t("失败 {0} 项", [result.failed.length])].filter(Boolean).join(t("，")) ||
-                  t("全部完成")}
+                : [
+                    result.skipped.length && t("跳过 {0} 项", [result.skipped.length]),
+                    result.failed.length && t("失败 {0} 项", [result.failed.length]),
+                  ]
+                    .filter(Boolean)
+                    .join(t("，")) || t("全部完成")}
             </div>
           </div>
         )}
