@@ -54,7 +54,7 @@ def manifest(directory, tag, repo):
     write_checksums(directory)
 
 
-def asset_download_urls(metadata, tag, repo, uploaded_assets):
+def asset_download_urls(metadata, tag, repo, uploaded_assets, draft=False):
     """Use GitHub's binary asset API, supported by the updater in existing clients."""
     assert metadata["version"] == tag.removeprefix("v"), "Manifest version must match tag"
     assets = updater_assets(tag)
@@ -67,16 +67,19 @@ def asset_download_urls(metadata, tag, repo, uploaded_assets):
         assert asset["state"] == "uploaded" and asset["size"] > 0, f"Incomplete uploaded asset: {name}"
         assert type(asset["id"]) is int and asset["id"] > 0, f"Invalid asset ID: {name}"
         expected = f"https://github.com/{repo}/releases/download/{tag}/{name}"
-        assert asset["browser_download_url"] == expected, f"Asset belongs to another release: {name}"
+        # GitHub uses an untagged URL while a release is still a draft. The caller
+        # selects that draft by tag; only accept its temporary URL in draft mode.
+        temporary = rf"https://github\.com/{re.escape(repo)}/releases/download/untagged-[0-9a-f]+/{re.escape(name)}"
+        assert asset["browser_download_url"] == expected or (draft and re.fullmatch(temporary, asset["browser_download_url"])), f"Asset belongs to another release: {name}"
         urls[platform] = f"https://api.github.com/repos/{repo}/releases/assets/{asset['id']}"
     for platform, url in urls.items():
         metadata["platforms"][platform]["url"] = url
     return metadata
 
 
-def link_assets(directory, tag, repo, uploaded_assets):
+def link_assets(directory, tag, repo, uploaded_assets, draft=False):
     path = directory / "latest.json"
-    metadata = asset_download_urls(json.loads(path.read_text(encoding="utf-8")), tag, repo, uploaded_assets)
+    metadata = asset_download_urls(json.loads(path.read_text(encoding="utf-8")), tag, repo, uploaded_assets, draft)
     path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     write_checksums(directory)
 
@@ -98,6 +101,7 @@ if __name__ == "__main__":
     parser.add_argument("--tag")
     parser.add_argument("--repo", default="Wonvy/Foldo")
     parser.add_argument("--release-assets", type=pathlib.Path)
+    parser.add_argument("--draft", action="store_true")
     args = parser.parse_args()
     if args.command == "version":
         print(version())
@@ -107,4 +111,4 @@ if __name__ == "__main__":
         if args.release_assets is None:
             parser.error("link-assets requires --release-assets")
         link_assets(args.directory, args.tag, args.repo,
-                    json.loads(args.release_assets.read_text(encoding="utf-8")))
+                    json.loads(args.release_assets.read_text(encoding="utf-8")), args.draft)

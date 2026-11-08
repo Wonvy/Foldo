@@ -96,3 +96,14 @@ class ReleaseTests(unittest.TestCase):
         _, metadata, assets = self.uploaded_fixture()
         with self.assertRaisesRegex(AssertionError, 'version must match'):
             release.asset_download_urls(metadata, 'v999.0.0', 'Wonvy/Foldo', assets)
+
+    def test_temporary_draft_urls_only_accepted_during_draft_publication(self):
+        tag, metadata, assets = self.uploaded_fixture()
+        for asset in assets:
+            asset['browser_download_url'] = asset['browser_download_url'].replace('/' + tag + '/', '/untagged-89175f8a64d0aa7f3812/')
+        with self.assertRaisesRegex(AssertionError, 'another release'):
+            release.asset_download_urls(copy.deepcopy(metadata), tag, 'Wonvy/Foldo', assets)
+        release.asset_download_urls(copy.deepcopy(metadata), tag, 'Wonvy/Foldo', assets, draft=True)
+        assets[0]['browser_download_url'] = assets[0]['browser_download_url'].replace('Wonvy/Foldo', 'other/repo')
+        with self.assertRaisesRegex(AssertionError, 'another release'):
+            release.asset_download_urls(copy.deepcopy(metadata), tag, 'Wonvy/Foldo', assets, draft=True)
