@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   drop: undefined as undefined | ((event: { payload: { type: string; paths: string[] } }) => void),
   scan: vi.fn(),
   execute: vi.fn(),
+  undo: vi.fn(),
   close: vi.fn(),
   show: vi.fn(),
   drag: vi.fn(),
@@ -34,7 +35,7 @@ vi.mock("../api", async (original) => ({
     toggleFloat: mocks.close,
     showMain: mocks.show,
     floatResize: vi.fn().mockResolvedValue(undefined),
-    undo: vi.fn(),
+    undo: mocks.undo,
     reveal: vi.fn(),
   },
 }));
@@ -74,6 +75,10 @@ async function drop(paths: string[]) {
   await act(async () => mocks.drop!({ payload: { type: "drop", paths } }));
 }
 
+async function dragEvent(type: string, paths: string[] = []) {
+  await act(async () => mocks.drop!({ payload: { type, paths } }));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
@@ -83,10 +88,92 @@ beforeEach(() => {
   mocks.emit.mockResolvedValue(undefined);
   mocks.drag.mockResolvedValue(undefined);
   mocks.execute.mockResolvedValue({ batch_id: 1, done: 1, skipped: [], failed: [] });
+  mocks.undo.mockResolvedValue(undefined);
 });
 afterEach(cleanup);
 
 describe("悬浮窗文件列表", () => {
+  it("松开时路径为空，仍使用本次拖入的路径更新列表", async () => {
+    render(<FloatApp />);
+    await drop(["D:/files/old.pdf"]);
+    await dragEvent("enter", ["D:/files/new.png"]);
+    await dragEvent("drop");
+    expect(mocks.scan).toHaveBeenLastCalledWith(["D:/files/old.pdf", "D:/files/new.png"]);
+    expect(screen.getByText("new.png")).toBeTruthy();
+  });
+
+  it("取消拖拽不会添加文件，下一次无路径的松开也不会复用旧文件", async () => {
+    render(<FloatApp />);
+    await drop(["D:/files/old.pdf"]);
+    await dragEvent("enter", ["D:/files/canceled.png"]);
+    await dragEvent("leave");
+    await dragEvent("drop");
+    expect(mocks.scan).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("canceled.png")).toBeNull();
+    expect(screen.getByText("未能读取拖入的文件，请重新拖入或点击添加文件")).toBeTruthy();
+    await dragEvent("enter", ["D:/files/next.png"]);
+    await dragEvent("drop");
+    expect(screen.getByText("next.png")).toBeTruthy();
+    expect(mocks.scan).toHaveBeenLastCalledWith(["D:/files/old.pdf", "D:/files/next.png"]);
+  });
+
+  it("整理期间拖入的新文件会排队，完成后刷新成下一批且不会自动执行", async () => {
+    let complete!: (result: { batch_id: number; done: number; skipped: []; failed: [] }) => void;
+    mocks.execute.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    render(<FloatApp />);
+    await drop(["D:/files/old.pdf"]);
+    fireEvent.click(screen.getByRole("button", { name: "整理 1 个文件" }));
+    await drop(["D:/files/new.png"]);
+    await drop(["D:/files/new.png", "D:/files/next.pdf"]);
+    expect(mocks.scan).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("已接收 2 个新文件，当前整理完成后显示")).toBeTruthy();
+    await act(async () => complete({ batch_id: 1, done: 1, skipped: [], failed: [] }));
+    expect(mocks.scan).toHaveBeenLastCalledWith(["D:/files/new.png", "D:/files/next.pdf"]);
+    expect(screen.getByText("new.png")).toBeTruthy();
+    expect(screen.getByText("next.pdf")).toBeTruthy();
+    expect(screen.queryByText("old.pdf")).toBeNull();
+    expect(mocks.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("连续拖入时，较慢返回的旧扫描不会覆盖新列表", async () => {
+    let oldScan!: (p: PlanView) => void;
+    mocks.scan.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          oldScan = resolve;
+        }),
+    );
+    render(<FloatApp />);
+    await drop(["D:/files/old.pdf"]);
+    await drop(["D:/files/new.png"]);
+    await act(async () => oldScan(plan(["D:/files/old.pdf"])));
+    expect(screen.getByText("new.png")).toBeTruthy();
+  });
+
+  it("撤销期间拖入的文件会在撤销完成后显示，不被旧结果覆盖", async () => {
+    let complete!: () => void;
+    mocks.undo.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          complete = resolve;
+        }),
+    );
+    render(<FloatApp />);
+    await drop(["D:/files/old.pdf"]);
+    fireEvent.click(screen.getByRole("button", { name: "整理 1 个文件" }));
+    fireEvent.click(await screen.findByRole("button", { name: "撤销" }));
+    await drop(["D:/files/new.png"]);
+    await act(async () => complete());
+    expect(mocks.scan).toHaveBeenLastCalledWith(["D:/files/new.png"]);
+    expect(screen.getByText("new.png")).toBeTruthy();
+    expect(screen.queryByText("old.pdf")).toBeNull();
+    expect(screen.queryByText("已撤销")).toBeNull();
+  });
   it("展开窗口可以从边角调整大小，收起后没有调整手柄", async () => {
     const { container } = render(<FloatApp />);
     expect(container.querySelector(".float-resize")).toBeNull();

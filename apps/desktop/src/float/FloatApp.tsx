@@ -31,6 +31,9 @@ export default function FloatApp() {
   const [view, setView] = useState<View>(loadView);
   const collapseTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const pathsRef = useRef<string[]>([]);
+  const dragPathsRef = useRef<string[]>([]);
+  const queuedPathsRef = useRef<string[]>([]);
+  const [queuedCount, setQueuedCount] = useState(0);
   const scanId = useRef(0);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
@@ -64,7 +67,12 @@ export default function FloatApp() {
   };
 
   const handle = async (paths: string[]) => {
-    if (!paths.length || runningRef.current) return;
+    if (!paths.length) return;
+    if (runningRef.current) {
+      queuedPathsRef.current = mergePaths(queuedPathsRef.current, paths);
+      setQueuedCount(queuedPathsRef.current.length);
+      return;
+    }
     if (phaseRef.current === "done" || result) {
       pathsRef.current = [];
       setUnchecked(new Set());
@@ -87,6 +95,8 @@ export default function FloatApp() {
     ++scanId.current;
     clearTimeout(collapseTimer.current);
     pathsRef.current = [];
+    queuedPathsRef.current = [];
+    setQueuedCount(0);
     setPlan(null);
     setResult(null);
     setUnchecked(new Set());
@@ -111,12 +121,26 @@ export default function FloatApp() {
     (async () => {
       try {
         const un = await getCurrentWindow().onDragDropEvent((e) => {
+          if (disposed) return;
           const p = e.payload;
-          if (p.type === "enter" || p.type === "over") setHover(true);
-          else if (p.type === "leave") setHover(false);
-          else if (p.type === "drop") {
+          if (p.type === "enter") {
+            dragPathsRef.current = p.paths;
+            setHover(true);
+          } else if (p.type === "over") setHover(true);
+          else if (p.type === "leave") {
+            dragPathsRef.current = [];
             setHover(false);
-            if (p.paths.length) void handleRef.current(p.paths);
+          } else if (p.type === "drop") {
+            setHover(false);
+            // Recover an empty drop payload from this drag's enter event.
+            // Never scan on enter/leave: a canceled drag must not add files.
+            const paths = p.paths.length ? p.paths : dragPathsRef.current;
+            dragPathsRef.current = [];
+            if (paths.length) void handleRef.current(paths);
+            else {
+              setError(t("未能读取拖入的文件，请重新拖入或点击添加文件"));
+              if (phaseRef.current === "idle") setPhase("plan");
+            }
           }
         });
         if (disposed) un();
@@ -127,6 +151,7 @@ export default function FloatApp() {
     })();
     return () => {
       disposed = true;
+      dragPathsRef.current = [];
       unlisten?.();
       ++scanId.current;
       clearTimeout(collapseTimer.current);
@@ -200,36 +225,53 @@ export default function FloatApp() {
       /* 浏览器预览中没有原生菜单 */
     }
   };
+  const drainQueue = async (failure?: string) => {
+    runningRef.current = false;
+    setRunning(false);
+    const queued = queuedPathsRef.current;
+    queuedPathsRef.current = [];
+    setQueuedCount(0);
+    if (queued.length) await handleRef.current(queued);
+    if (failure) setError(failure);
+  };
+
   const execute = async () => {
     if (!plan || !chosen.length || runningRef.current || phase !== "plan") return;
     runningRef.current = true;
     setRunning(true);
+    let failure: string | undefined;
     try {
       const r = await api.executePlan(
         plan.plan_id,
         chosen.map((i) => i.group),
       );
       setResult(r);
+      phaseRef.current = "done";
       setPhase("done");
       collapseTimer.current = setTimeout(() => setPhase("idle"), 10000);
     } catch (e) {
-      setError(errorText(e));
+      failure = errorText(e);
     } finally {
-      runningRef.current = false;
-      setRunning(false);
+      await drainQueue(failure);
     }
   };
 
   const undo = async () => {
-    if (!result) return;
+    if (!result || runningRef.current) return;
+    runningRef.current = true;
+    setRunning(true);
     clearTimeout(collapseTimer.current);
+    let failure: string | undefined;
     try {
       await api.undo(result.batch_id);
       setUndone(true);
+      phaseRef.current = "done";
       setPhase("done");
       collapseTimer.current = setTimeout(() => setPhase("idle"), 4000);
     } catch (e) {
-      setError(errorText(e));
+      failure = errorText(e);
+    } finally {
+      await drainQueue(failure);
     }
   };
 
@@ -361,6 +403,7 @@ export default function FloatApp() {
       </div>
 
       <div className="float-body">
+        {queuedCount > 0 && <div className="banner">{t("已接收 {0} 个新文件，当前整理完成后显示", [queuedCount])}</div>}
         {phase === "busy" && (
           <div className="float-center muted">
             <Spinner size={20} />
@@ -432,7 +475,7 @@ export default function FloatApp() {
           </button>
         )}
         {phase === "done" && !undone && result && result.done > 0 && (
-          <button className="btn" style={{ flex: 1 }} onClick={undo}>
+          <button className="btn" style={{ flex: 1 }} onClick={undo} disabled={running}>
             <RotateCcw size={14} /> {t("撤销")}
           </button>
         )}
