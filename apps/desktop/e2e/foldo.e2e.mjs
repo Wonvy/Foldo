@@ -131,6 +131,9 @@ before(async () => {
     caps.setBrowserName("wry");
     driver = await new Builder().withCapabilities(caps).usingServer("http://127.0.0.1:4444/").build();
     await driver.manage().setTimeouts({ implicit: 0 });
+    // The frontend follows browser language, independently from native locale settings.
+    await driver.executeScript("localStorage.setItem('foldo.lang', 'zh-CN'); location.reload();");
+    await driver.wait(async () => (await driver.executeScript("return document.documentElement.lang")) === "zh-CN", 20_000);
   } catch (err) {
     report("启动", err);
     throw err;
