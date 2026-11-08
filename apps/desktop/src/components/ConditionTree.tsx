@@ -1,5 +1,5 @@
 // 条件树编辑器：组（全部 / 任一 / 都不）可以任意嵌套，每个条件可以单独取反。
-import { Ban, CaseSensitive, CircleCheck, CircleX, Ellipsis, FlaskConical, Layers, Plus, Trash } from "lucide-react";
+import { Ban, CaseSensitive, CircleCheck, CircleX, Ellipsis, Layers, Plus, Trash } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Explain, FieldDef } from "../api";
 import { OPS, PERIODS, defaultValue, group, newTest, type CondNode, type FieldMap, type GroupNode, type TestNode } from "../rules";
@@ -7,6 +7,7 @@ import RegexTester from "./RegexTester";
 import FieldPicker from "./FieldPicker";
 import CategoryPicker from "./CategoryPicker";
 import FolderConditionInput from "./FolderConditionInput";
+import { translateRegex } from "../regex/model";
 import { useMenu } from "./ui";
 import { t, tv } from "../i18n";
 
@@ -152,7 +153,6 @@ function TestRow({
   result?: Explain;
 }) {
   const menu = useMenu();
-  const [debug, setDebug] = useState(false);
   const f = fieldMap.get(node.field);
   const ops = OPS[f?.type ?? "text"];
   const caseable = (f?.type === "text" || f?.type === "list") && !["exists", "empty", "in", "not_in"].includes(node.op);
@@ -191,9 +191,11 @@ function TestRow({
         </select>
         <ValueInput field={f} op={node.op} value={node.value} onChange={(value) => onChange({ ...node, value })} />
         {node.op === "matches" && (
-          <button className="icon-btn" title={t("正则调试")} aria-expanded={debug} onClick={() => setDebug(!debug)}>
-            <FlaskConical size={16} />
-          </button>
+          <RegexTester
+            pattern={String(node.value ?? "")}
+            caseSensitive={!!node.cs}
+            onApply={(value, cs) => onChange({ ...node, value, cs })}
+          />
         )}
         {node.cs && caseable && (
           <span className="mini-badge" title={t("区分大小写")}>
@@ -228,14 +230,6 @@ function TestRow({
         </button>
         {menu.node}
       </div>
-      {debug && node.op === "matches" && (
-        <RegexTester
-          pattern={String(node.value ?? "")}
-          caseSensitive={!!node.cs}
-          onClose={() => setDebug(false)}
-          onApply={(value, cs) => onChange({ ...node, value, cs })}
-        />
-      )}
     </>
   );
 }
@@ -397,6 +391,13 @@ function ValueInput({
       <input
         className={`input grow ${mono ? "mono" : ""}`}
         placeholder={placeholder}
+        title={
+          op === "matches"
+            ? translateRegex(String(value ?? ""))
+                .map((part) => part.description)
+                .join(" → ")
+            : undefined
+        }
         value={String(value ?? "")}
         onChange={(e) => onChange(e.target.value)}
       />

@@ -259,7 +259,14 @@ export type RegexSample = {
   captures: { index: number; name: string | null; value: string | null }[];
 };
 
+export type RegexSession = { id: string; pattern: string; caseSensitive: boolean; canApply: boolean };
+
 export const api = {
+  openRegexLab: (session: RegexSession) => invoke<void>("open_regex_lab", { session }),
+  regexSession: (id: string) => invoke<RegexSession>("regex_session", { id }),
+  applyRegexLab: (id: string, pattern: string, caseSensitive: boolean) => invoke<void>("apply_regex_lab", { id, pattern, caseSensitive }),
+  closeRegexLab: (id: string) => invoke<void>("close_regex_lab", { id }),
+  regexFileSamples: (paths: string[]) => invoke<{ names: string[]; ignored: number }>("regex_file_samples", { paths }),
   testRegex: (pattern: string, samples: string, caseSensitive: boolean) =>
     invoke<RegexSample[]>("test_regex", { pattern, samples, caseSensitive }),
   getConfig: () => invoke<ConfigView>("get_config"),

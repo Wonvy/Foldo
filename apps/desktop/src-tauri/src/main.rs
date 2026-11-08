@@ -3,6 +3,7 @@
 
 mod commands;
 mod float_window;
+mod regex_window;
 mod tray;
 mod updates;
 mod watch;
@@ -29,6 +30,7 @@ fn main() {
         ))
         .manage(commands::AppState::default())
         .manage(float_window::ResizeState::default())
+        .manage(regex_window::Sessions::default())
         .manage(watch::WatchState::default())
         .setup(|app| {
             commands::load_locale();
@@ -58,6 +60,9 @@ fn main() {
         })
         // 关闭主窗口时收到托盘里继续运行；从托盘菜单“退出 Foldo”才真正退出
         .on_window_event(|window, event| {
+            if matches!(event, WindowEvent::Destroyed) {
+                regex_window::forget(window.app_handle(), window.label());
+            }
             if window.label() == float_window::LABEL
                 && matches!(event, WindowEvent::CloseRequested { .. })
             {
@@ -71,6 +76,11 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            regex_window::open_regex_lab,
+            regex_window::regex_session,
+            regex_window::apply_regex_lab,
+            regex_window::close_regex_lab,
+            regex_window::regex_file_samples,
             commands::get_config,
             commands::save_config,
             commands::add_protect,

@@ -255,6 +255,27 @@ step("新建规则并加到文件夹后生效", async () => {
   assert.match(yaml, /rules:\s*\n?\s*- 文档归档\s*\n\s*- 图片归档|rules: \[文档归档, 图片归档\]/);
 });
 
+step("正则助手独立窗口按样本生成并解释表达式", async () => {
+  await click(byTest("nav-rules"));
+  const mainWindow = await driver.getWindowHandle();
+  const before = new Set(await driver.getAllWindowHandles());
+  await click(By.css('button[title="正则助手"]'));
+  const lab = await driver.wait(async () => (await driver.getAllWindowHandles()).find((handle) => !before.has(handle)), 15_000);
+  await driver.switchTo().window(lab);
+  await find(By.css(".regex-lab"));
+  await click(By.xpath('//button[contains(., "手动添加名称")]'));
+  await setInput(By.css('input[aria-label="示例名称 1"]'), "IMG_001.png");
+  await click(By.xpath('//button[contains(., "手动添加名称")]'));
+  await setInput(By.css('input[aria-label="示例名称 2"]'), "IMG_002.png");
+  await click(By.xpath('//button[contains(., "根据样本生成")]'));
+  await driver.wait(async () => (await (await find(By.css(".regex-field textarea"))).getAttribute("value")) === "^IMG_[0-9]{3}\\.png$", 10_000);
+  await find(By.css('.regex-token[title="前一项恰好重复 3 次"]'));
+  await driver.wait(async () => (await driver.findElements(By.css(".regex-sample-row.ok"))).length === 2, 10_000);
+  await driver.close();
+  await driver.switchTo().window(mainWindow);
+  await find(byTest("new-rule"));
+});
+
 step("切换语言后界面和后台都换过来", async () => {
   await click(byTest("nav-settings"));
   const select = await find(By.xpath(`//select[option[@value="ja"]]`));

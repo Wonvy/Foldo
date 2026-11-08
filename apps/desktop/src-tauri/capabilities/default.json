@@ -4,7 +4,8 @@
   "description": "主窗口和悬浮窗：核心 IPC、系统选择文件夹对话框、拖动悬浮窗；文件操作全部经由 Rust 端的命令完成。",
   "windows": [
     "main",
-    "float"
+    "float",
+    "regex-*"
   ],
   "permissions": [
     "core:default",

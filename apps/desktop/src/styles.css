@@ -3458,3 +3458,226 @@ html.float #root {
   max-width: 100%;
   font-size: 11px;
 }
+
+.regex-lab {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.regex-lab-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 24px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.regex-lab-head > svg {
+  color: var(--accent);
+}
+.regex-lab-head h1 {
+  font-size: 20px;
+  margin: 0 0 5px;
+}
+.regex-lab-head p {
+  margin: 0;
+  font-size: 12px;
+}
+.regex-lab-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: minmax(290px, 0.85fr) minmax(430px, 1.3fr);
+  align-items: start;
+  gap: 16px;
+  padding: 18px;
+}
+.regex-lab-loading {
+  padding: 32px;
+}
+.regex-drop-zone {
+  margin: 14px;
+  padding: 22px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  cursor: pointer;
+  color: var(--muted);
+  text-align: center;
+}
+.regex-drop-zone span {
+  font-size: 11px;
+}
+.regex-drop-zone:hover,
+.regex-drop-zone.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.regex-sample-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 14px;
+}
+.regex-lab-tip {
+  font-size: 12px;
+  margin: 12px 14px;
+}
+.regex-sample-list {
+  max-height: 460px;
+  overflow: auto;
+  padding: 0 10px 12px;
+}
+.regex-sample-row {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.regex-sample-row.bad {
+  border-color: var(--danger);
+}
+.regex-sample-row input {
+  min-width: 0;
+  font-size: 12px;
+}
+.regex-sample-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 7px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.regex-sample-result code {
+  overflow-wrap: anywhere;
+}
+.regex-sample-row.ok .regex-sample-result > span {
+  color: var(--ok);
+}
+.regex-sample-row.bad .regex-sample-result > span {
+  color: var(--danger);
+}
+.regex-lab mark {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 2px;
+}
+.regex-editor-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+}
+.regex-editor-inner .settings-tabs {
+  position: static;
+}
+.regex-builder {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.regex-builder > p,
+.regex-translation > p {
+  margin: 0;
+  font-size: 12px;
+}
+.regex-part {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 7px;
+  border-radius: 7px;
+  background: var(--surface-2);
+}
+.regex-part .input {
+  min-width: 0;
+  font-size: 12px;
+}
+.regex-part .grow {
+  flex-basis: 100px;
+}
+.regex-count {
+  width: 55px;
+}
+.regex-builder > .row {
+  flex-wrap: wrap;
+}
+.regex-translation {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.regex-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.regex-token {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: help;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.regex-token:hover,
+.regex-token:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.regex-explanation {
+  min-height: 34px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.regex-lab-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.regex-lab-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.regex-lab-save-hint {
+  padding: 0 18px 9px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+.regex-lab details {
+  margin-top: 8px;
+}
+.regex-lab pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 920px) {
+  .regex-lab-body {
+    grid-template-columns: 1fr;
+  }
+  .regex-sample-list {
+    max-height: 260px;
+  }
+}

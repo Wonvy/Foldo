@@ -9,6 +9,7 @@ document.documentElement.dataset.theme = loadTheme();
 
 // 悬浮窗和主窗口共用同一套前端，用地址里的 #float 区分
 const isFloat = location.hash === "#float";
+const isRegex = location.hash.startsWith("#regex/");
 if (isFloat) document.documentElement.classList.add("float");
 
 // 开发时在普通浏览器里打开（不在 Tauri 中）：注入模拟后端，方便预览界面。
@@ -20,11 +21,18 @@ const ready = import.meta.env.DEV && !inTauri ? import("./dev/mock").then((m) =>
 void Promise.all([ready, loadLocale()]).then(async () => {
   const { api } = await import("./api");
   // 后台的提示、通知和托盘菜单使用同一种语言
-  if (!isFloat) void api.setLocale(lang).catch(() => {});
+  if (!isFloat && !isRegex) void api.setLocale(lang).catch(() => {});
   // 主窗口切换语言后，悬浮窗也重新加载
-  if (isFloat) window.addEventListener("storage", (e) => e.key === "foldo.lang" && location.reload());
+  if (isFloat || isRegex) window.addEventListener("storage", (e) => e.key === "foldo.lang" && location.reload());
   const root = createRoot(document.getElementById("root")!);
-  if (isFloat) {
+  if (isRegex) {
+    const { default: RegexLabApp } = await import("./regex/RegexLabApp");
+    root.render(
+      <StrictMode>
+        <RegexLabApp id={location.hash.slice(7)} />
+      </StrictMode>,
+    );
+  } else if (isFloat) {
     const { default: FloatApp } = await import("./float/FloatApp");
     root.render(
       <StrictMode>

@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { api, baseName, errorText, type DebugView, type RuleDef } from "../api";
+import RegexTester from "../components/RegexTester";
 import { GroupIcon } from "../components/FieldPicker";
 import InspectDialog from "../components/InspectDialog";
 import RuleEditor from "../components/RuleEditor";
@@ -258,6 +259,7 @@ export default function RulesPage({
           <button data-testid="new-rule" className="btn primary" onClick={() => setEditing(null)}>
             <Plus size={16} /> {t("新建规则")}
           </button>
+          <RegexTester text />
           <button
             className="icon-btn"
             aria-label={t("更多")}
