@@ -298,7 +298,10 @@ jobs:
             packages+=("$file")
           done
           gh release upload "$TAG" "${packages[@]}" --clobber
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets' > release-assets.json
+          # The tag endpoint only returns published releases. Listing releases
+          # with this token also includes the draft whose packages we just uploaded.
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$TAG\") | .assets" > release-assets.json
           python3 scripts/release.py link-assets --tag "$TAG" --repo "$GITHUB_REPOSITORY" --release-assets release-assets.json
           gh release upload "$TAG" dist/latest.json dist/SHA256SUMS.txt --clobber
           if [[ "$TAG" == *-* ]]; then gh release edit "$TAG" --draft=false --prerelease
