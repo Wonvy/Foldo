@@ -191,6 +191,13 @@ step("整理页列出按规则整理的文件", async () => {
 
 step("重复打开只保留已有实例", async () => {
   const window = await driver.getWindowHandle();
+  if (process.platform === "linux") {
+    const { stdout } = await execFileAsync("dbus-send", [
+      "--session", "--print-reply", "--dest=org.freedesktop.DBus", "/org/freedesktop/DBus",
+      "org.freedesktop.DBus.NameHasOwner", "string:com.wonvy.foldo.SingleInstance",
+    ], { timeout: 5_000 });
+    assert.match(stdout, /boolean true/, "原实例未注册到测试会话总线");
+  }
   // 同时重复手动启动和静默自启；第二批进程必须正常退出，原窗口继续可用。
   await Promise.all(
     [[], [], ["--hidden"]].map((args) =>
@@ -226,7 +233,8 @@ step("新建规则并加到文件夹后生效", async () => {
   await setInput(By.css(".modal .title-input"), "图片归档");
   await setInput(By.css(".modal .dest-input"), "图片/");
   await click(byTest("rule-save"));
-  await driver.wait(async () => (await driver.findElements(By.css(".modal"))).length === 0, 10_000);
+  // 只返回布尔值，避免弹窗正在卸载时 WebDriver 返回已失效的元素引用。
+  await driver.wait(async () => await driver.executeScript("return document.querySelector('.modal') === null"), 10_000);
 
   // 在整理页把规则加到文件夹（添加后会自动重新扫描）
   await click(byTest("nav-tidy"));
