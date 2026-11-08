@@ -20,7 +20,7 @@ impl FromStr for ByteSize {
         let (num, unit) = s.split_at(split);
         let n: f64 = num
             .parse()
-            .map_err(|_| format!("无法解析大小「{s}」，示例：500KB、1.5MB、2GiB"))?;
+            .map_err(|_| crate::t!("无法解析大小「{s}」，示例：500KB、1.5MB、2GiB", s = s))?;
         let mul: u64 = match unit.trim().to_ascii_lowercase().as_str() {
             "" | "b" => 1,
             "k" | "kb" => 1_000,
@@ -31,7 +31,7 @@ impl FromStr for ByteSize {
             "gib" => 1 << 30,
             "t" | "tb" => 1_000_000_000_000,
             "tib" => 1 << 40,
-            other => return Err(format!("未知的大小单位「{other}」")),
+            other => return Err(crate::t!("未知的大小单位「{other}」", other = other)),
         };
         Ok(ByteSize((n * mul as f64).round() as u64))
     }
@@ -46,7 +46,12 @@ impl FromStr for Span {
 
     fn from_str(s: &str) -> Result<Self, String> {
         let src = s.trim();
-        let bad = || format!("无法解析时长「{src}」，示例：30m、12h、3d、2w、6mo、1d12h");
+        let bad = || {
+            crate::t!(
+                "无法解析时长「{src}」，示例：30m、12h、3d、2w、6mo、1d12h",
+                src = src
+            )
+        };
         let mut rest = src;
         let mut total: u64 = 0;
         if rest.is_empty() {
@@ -98,7 +103,9 @@ impl<'de> Deserialize<'de> for ByteSize {
 impl<'de> Deserialize<'de> for Span {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         match NumOrStr::deserialize(d)? {
-            NumOrStr::Num(_) => Err(de::Error::custom("时长需要带单位，例如 3d、12h、30m")),
+            NumOrStr::Num(_) => Err(de::Error::custom(crate::t!(
+                "时长需要带单位，例如 3d、12h、30m"
+            ))),
             NumOrStr::Str(s) => s.parse().map_err(de::Error::custom),
         }
     }

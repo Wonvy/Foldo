@@ -1,4 +1,5 @@
-//! 给用户看的提示文字的多语言：简体中文写在代码里作为原文，其他语言在 `locales/*.json` 里按原文查找译文。
+//! 给用户看的提示文字的多语言：简体中文写在代码里作为原文，其他语言在仓库根目录的 `locales/*.json`
+//! 里按原文查找译文（与图形界面共用一份）。
 //!
 //! 用 [`t!`](crate::t) 代替 `format!`：`t!("最近 {span} 内新增或修改", span = s)`。
 //! 找不到译文时用原文。语言由桌面端或命令行在启动时设置，默认简体中文。
@@ -16,9 +17,9 @@ const CODES: [&str; 4] = ["zh-CN", "en", "zh-TW", "ja"];
 static DICTS: LazyLock<[HashMap<String, String>; 3]> = LazyLock::new(|| {
     let parse = |s: &str| serde_json::from_str::<HashMap<String, String>>(s).unwrap_or_default();
     [
-        parse(include_str!("../locales/en.json")),
-        parse(include_str!("../locales/zh-TW.json")),
-        parse(include_str!("../locales/ja.json")),
+        parse(include_str!("../../../locales/en.json")),
+        parse(include_str!("../../../locales/zh-TW.json")),
+        parse(include_str!("../../../locales/ja.json")),
     ]
 });
 

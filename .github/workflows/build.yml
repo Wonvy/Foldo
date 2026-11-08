@@ -72,6 +72,12 @@ jobs:
           cache-dependency-path: apps/desktop/package-lock.json
       - run: npm ci
         working-directory: apps/desktop
+      - name: Check formatting
+        run: npm run format:check
+        working-directory: apps/desktop
+      - name: Unit tests
+        run: npm test
+        working-directory: apps/desktop
       - run: npm run build
         working-directory: apps/desktop
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'

@@ -77,9 +77,21 @@ enum Cmd {
     },
 }
 
+/// 命令行的语言：环境变量 FOLDO_LANG 优先，其次是系统的 LC_ALL / LC_MESSAGES / LANG；都没有时用简体中文。
+fn init_locale() {
+    let lang = ["FOLDO_LANG", "LC_ALL", "LC_MESSAGES", "LANG"]
+        .iter()
+        .filter_map(|k| std::env::var(k).ok())
+        .find(|v| !v.is_empty() && v != "C" && v != "POSIX");
+    if let Some(l) = lang {
+        foldo_core::i18n::set_locale(&l);
+    }
+}
+
 fn main() {
+    init_locale();
     if let Err(e) = run() {
-        eprintln!("错误: {e:#}");
+        eprintln!("{}", foldo_core::t!("错误: {e}", e = format!("{e:#}")));
         std::process::exit(1);
     }
 }
@@ -111,22 +123,33 @@ fn run() -> Result<()> {
             }
             if plan.ops.len() > LARGE_BATCH {
                 println!(
-                    "\n⚠ 本次操作数量较多（{} 项），请仔细核对。",
-                    plan.ops.len()
+                    "{}",
+                    foldo_core::t!(
+                        "\n⚠ 本次操作数量较多（{a0} 项），请仔细核对。",
+                        a0 = plan.ops.len()
+                    )
                 );
             }
-            if !yes && !confirm(&format!("\n执行以上 {} 项操作？", plan.ops.len()))? {
-                println!("已取消。");
+            if !yes
+                && !confirm(&foldo_core::t!(
+                    "\n执行以上 {a0} 项操作？",
+                    a0 = plan.ops.len()
+                ))?
+            {
+                println!("{}", foldo_core::t!("已取消。"));
                 return Ok(());
             }
             let journal = Journal::open_in(&data_dir)?;
             let report = execute(&plan, &journal, "cli")?;
             println!(
-                "\n✓ 批次 #{}：完成 {} 项，跳过 {} 项，失败 {} 项。",
-                report.batch_id,
-                report.done,
-                report.skipped.len(),
-                report.failed.len()
+                "{}",
+                foldo_core::t!(
+                    "\n✓ 批次 #{a0}：完成 {a1} 项，跳过 {a2} 项，失败 {a3} 项。",
+                    a0 = report.batch_id,
+                    a1 = report.done,
+                    a2 = report.skipped.len(),
+                    a3 = report.failed.len()
+                )
             );
             for (op, err) in &report.skipped {
                 println!("  ↷ {}  ({err})", display(&op.src));
@@ -135,10 +158,16 @@ fn run() -> Result<()> {
                 println!("  ✗ {}  ({err})", display(&op.src));
             }
             if report.done > 0 {
-                println!("如需撤销：foldo undo {}", report.batch_id);
+                println!(
+                    "{}",
+                    foldo_core::t!("如需撤销：foldo undo {a0}", a0 = report.batch_id)
+                );
             }
             if !report.failed.is_empty() {
-                bail!("有 {} 项操作失败", report.failed.len());
+                bail!(
+                    "{}",
+                    foldo_core::t!("有 {a0} 项操作失败", a0 = report.failed.len())
+                );
             }
             Ok(())
         }
@@ -151,8 +180,11 @@ fn run() -> Result<()> {
 fn load(path: &Path) -> Result<RuleSet> {
     if !path.exists() {
         bail!(
-            "规则文件不存在：{}\n可以先运行 `foldo init` 生成示例规则，或用 --rules 指定路径。",
-            display(path)
+            "{}",
+            foldo_core::t!(
+                "规则文件不存在：{a0}\n可以先运行 `foldo init` 生成示例规则，或用 --rules 指定路径。",
+                a0 = display(path)
+            )
         );
     }
     Ok(RuleSet::load(path)?)
@@ -160,15 +192,25 @@ fn load(path: &Path) -> Result<RuleSet> {
 
 fn init(path: &Path, force: bool) -> Result<()> {
     if path.exists() && !force {
-        bail!("规则文件已存在：{}（使用 --force 覆盖）", display(path));
+        bail!(
+            "{}",
+            foldo_core::t!(
+                "规则文件已存在：{a0}（使用 --force 覆盖）",
+                a0 = display(path)
+            )
+        );
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .with_context(|| format!("无法创建目录 {}", display(parent)))?;
+            .with_context(|| foldo_core::t!("无法创建目录 {a0}", a0 = display(parent)))?;
     }
-    std::fs::write(path, EXAMPLE_RULES).with_context(|| format!("无法写入 {}", display(path)))?;
-    println!("✓ 已生成示例规则：{}", display(path));
-    println!("编辑后运行 `foldo plan` 预览效果。");
+    std::fs::write(path, EXAMPLE_RULES)
+        .with_context(|| foldo_core::t!("无法写入 {a0}", a0 = display(path)))?;
+    println!(
+        "{}",
+        foldo_core::t!("✓ 已生成示例规则：{a0}", a0 = display(path))
+    );
+    println!("{}", foldo_core::t!("编辑后运行 `foldo plan` 预览效果。"));
     Ok(())
 }
 
@@ -176,15 +218,18 @@ fn check(path: &Path) -> Result<()> {
     let rules = load(path)?;
     let enabled = rules.rules.iter().filter(|r| r.enabled).count();
     println!(
-        "✓ 规则文件有效：{}，共 {} 条规则，{} 条启用",
-        display(path),
-        rules.rules.len(),
-        enabled
+        "{}",
+        foldo_core::t!(
+            "✓ 规则文件有效：{a0}，共 {a1} 条规则，{a2} 条启用",
+            a0 = display(path),
+            a1 = rules.rules.len(),
+            a2 = enabled
+        )
     );
     for r in &rules.rules {
         println!("  {} {}", if r.enabled { "●" } else { "○" }, r.name);
     }
-    println!("整理文件夹：");
+    println!("{}", foldo_core::t!("整理文件夹："));
     for f in &rules.folders {
         let names: Vec<&str> = f
             .rules
@@ -195,22 +240,22 @@ fn check(path: &Path) -> Result<()> {
             "  {}{}  →  {}",
             display(&f.path),
             if f.recursive {
-                "（含子文件夹）"
+                foldo_core::t!("（含子文件夹）")
             } else {
-                ""
+                String::new()
             },
             if names.is_empty() {
-                "（没有使用规则）".to_string()
+                foldo_core::t!("（没有使用规则）")
             } else {
-                names.join("、")
+                names.join(&foldo_core::t!("、"))
             }
         );
     }
     Ok(())
 }
 
-fn label(kind: OpKind) -> &'static str {
-    match kind {
+fn label(kind: OpKind) -> String {
+    foldo_core::i18n::tr(match kind {
         OpKind::Move => "移动",
         OpKind::Copy => "复制",
         OpKind::Extract => "解压",
@@ -218,7 +263,7 @@ fn label(kind: OpKind) -> &'static str {
         OpKind::Shortcut => "快捷方式",
         OpKind::Rename => "改名",
         OpKind::Trash => "回收",
-    }
+    })
 }
 
 fn print_plan(plan: &Plan) {
@@ -237,7 +282,7 @@ fn print_plan(plan: &Plan) {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default(),
             (_, Some(d)) => display(d),
-            (_, None) => "回收站".to_string(),
+            (_, None) => foldo_core::t!("回收站"),
         };
         let src = if op.kind == OpKind::Rename {
             op.src
@@ -266,7 +311,10 @@ fn print_plan(plan: &Plan) {
         })
         .collect();
     if !notable.is_empty() {
-        println!("\n需要留意（{} 个）：", notable.len());
+        println!(
+            "{}",
+            foldo_core::t!("\n需要留意（{a0} 个）：", a0 = notable.len())
+        );
         for s in notable {
             println!("  - {}  ({})", display(&s.path), s.reason);
         }
@@ -277,17 +325,23 @@ fn print_plan(plan: &Plan) {
         .map(|(k, n)| format!("{} {n}", k.label()))
         .collect();
     if !summary.is_empty() {
-        println!("\n保持原位：{}", summary.join("，"));
+        println!(
+            "{}",
+            foldo_core::t!("\n保持原位：{a0}", a0 = summary.join("，"))
+        );
     }
     println!(
-        "\n扫描 {} 个文件，命中 {} 个，已在目标位置 {} 个，计划 {} 项操作。",
-        plan.scanned,
-        plan.matched,
-        plan.in_place,
-        plan.ops.len()
+        "{}",
+        foldo_core::t!(
+            "\n扫描 {a0} 个文件，命中 {a1} 个，已在目标位置 {a2} 个，计划 {a3} 项操作。",
+            a0 = plan.scanned,
+            a1 = plan.matched,
+            a2 = plan.in_place,
+            a3 = plan.ops.len()
+        )
     );
     if plan.is_empty() {
-        println!("没有需要处理的文件。");
+        println!("{}", foldo_core::t!("没有需要处理的文件。"));
     }
 }
 
@@ -295,24 +349,24 @@ fn history(data_dir: &Path, limit: usize) -> Result<()> {
     let journal = Journal::open_in(data_dir)?;
     let batches = journal.batches(limit)?;
     if batches.is_empty() {
-        println!("还没有执行记录。");
+        println!("{}", foldo_core::t!("还没有执行记录。"));
         return Ok(());
     }
     for b in batches {
         println!(
-            "#{:<4} {}  {:<4} {:>4} 项  {}",
+            "#{:<4} {}  {:<4} {:>6}  {}",
             b.id,
             b.started_at,
             b.source,
-            b.op_count,
+            foldo_core::t!("{n} 项", n = b.op_count),
             status_label(&b.status)
         );
     }
     Ok(())
 }
 
-fn status_label(s: &str) -> &str {
-    match s {
+fn status_label(s: &str) -> String {
+    foldo_core::i18n::tr(match s {
         status::RUNNING => "执行中/中断",
         status::DONE => "完成",
         status::FAILED => "失败",
@@ -320,7 +374,7 @@ fn status_label(s: &str) -> &str {
         status::UNDONE => "已撤销",
         status::PARTIALLY_UNDONE => "部分撤销",
         other => other,
-    }
+    })
 }
 
 fn undo(data_dir: &Path, batch: Option<i64>, yes: bool) -> Result<()> {
@@ -330,37 +384,48 @@ fn undo(data_dir: &Path, batch: Option<i64>, yes: bool) -> Result<()> {
         None => match journal.last_undoable()? {
             Some(id) => id,
             None => {
-                println!("没有可以撤销的执行记录。");
+                println!("{}", foldo_core::t!("没有可以撤销的执行记录。"));
                 return Ok(());
             }
         },
     };
     let Some(info) = journal.batch(id)? else {
-        bail!("找不到批次 #{id}");
+        bail!("{}", foldo_core::t!("找不到批次 #{id}", id = id));
     };
     if !yes
-        && !confirm(&format!(
-            "撤销批次 #{id}（{}，{} 项操作）？",
-            info.started_at, info.op_count
+        && !confirm(&foldo_core::t!(
+            "撤销批次 #{id}（{a0}，{a1} 项操作）？",
+            id = id,
+            a0 = info.started_at,
+            a1 = info.op_count
         ))?
     {
-        println!("已取消。");
+        println!("{}", foldo_core::t!("已取消。"));
         return Ok(());
     }
     let report = undo_batch(&journal, id)?;
-    println!("✓ 已恢复 {} 个文件。", report.restored);
+    println!(
+        "{}",
+        foldo_core::t!("✓ 已恢复 {a0} 个文件。", a0 = report.restored)
+    );
     if !report.in_trash.is_empty() {
-        println!("以下文件已在系统回收站中，请手动还原：");
+        println!(
+            "{}",
+            foldo_core::t!("以下文件已在系统回收站中，请手动还原：")
+        );
         for p in &report.in_trash {
             println!("  - {}", display(p));
         }
     }
     if !report.failed.is_empty() {
-        println!("以下文件无法撤销：");
+        println!("{}", foldo_core::t!("以下文件无法撤销："));
         for (p, e) in &report.failed {
             println!("  ✗ {}  ({e})", display(p));
         }
-        bail!("有 {} 项无法撤销", report.failed.len());
+        bail!(
+            "{}",
+            foldo_core::t!("有 {a0} 项无法撤销", a0 = report.failed.len())
+        );
     }
     Ok(())
 }
@@ -368,7 +433,7 @@ fn undo(data_dir: &Path, batch: Option<i64>, yes: bool) -> Result<()> {
 fn inspect(path: &Path, all: bool, rules_path: &Path) -> Result<()> {
     use foldo_core::fields::{self, Value};
     let mut file = foldo_core::meta::FileCtx::from_path(path)
-        .with_context(|| format!("无法读取 {}", display(path)))?;
+        .with_context(|| foldo_core::t!("无法读取 {a0}", a0 = display(path)))?;
     if rules_path.exists() {
         file.set_categories(&load(rules_path)?.categories);
     }
@@ -380,13 +445,13 @@ fn inspect(path: &Path, all: bool, rules_path: &Path) -> Result<()> {
         }
         if def.group != group {
             group = def.group;
-            println!("\n{group}");
+            println!("\n{}", foldo_core::i18n::tr(group));
         }
         let shown = match &value {
-            Some(Value::Size(b)) => format!("{b} 字节（{}）", human_size(*b)),
+            Some(Value::Size(b)) => foldo_core::t!("{b} 字节（{a0}）", b = b, a0 = human_size(*b)),
             Some(v) => format!(
                 "{}{}",
-                v.display(),
+                foldo_core::i18n::tr(&v.display()),
                 def.unit
                     .filter(|u| !u.contains('/'))
                     .map(|u| format!(" {u}"))
@@ -394,7 +459,11 @@ fn inspect(path: &Path, all: bool, rules_path: &Path) -> Result<()> {
             ),
             None => "—".into(),
         };
-        println!("  {:<20} {:<10} {shown}", def.key, def.label);
+        println!(
+            "  {:<20} {:<10} {shown}",
+            def.key,
+            foldo_core::i18n::tr(def.label)
+        );
     }
     Ok(())
 }

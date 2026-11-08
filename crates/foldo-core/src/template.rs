@@ -221,14 +221,22 @@ impl Template {
                         expr.push(c);
                     }
                     if !closed {
-                        return Err(format!("模板「{src}」中有未闭合的 {{"));
+                        return Err(crate::t!("模板「{src}」中有未闭合的 {", src = src));
                     }
                     if !lit.is_empty() {
                         parts.push(Part::Lit(std::mem::take(&mut lit)));
                     }
-                    parts.push(parse_expr(&expr).map_err(|e| format!("模板「{src}」: {e}"))?);
+                    parts.push(
+                        parse_expr(&expr)
+                            .map_err(|e| crate::t!("模板「{src}」: {e}", src = src, e = e))?,
+                    );
                 }
-                '}' => return Err(format!("模板「{src}」中有多余的 }}，字面量请写成 }}}}")),
+                '}' => {
+                    return Err(crate::t!(
+                        "模板「{src}」中有多余的 }，字面量请写成 }}",
+                        src = src
+                    ));
+                }
                 c => lit.push(c),
             }
         }
@@ -273,7 +281,7 @@ impl Template {
                             _ => None,
                         }) {
                             Some(d) => (d, false),
-                            None => return Err(format!("无法获取「{}」", describe(alts))),
+                            None => return Err(crate::t!("无法获取「{a0}」", a0 = describe(alts))),
                         },
                     };
                     for f in filters {
@@ -367,7 +375,7 @@ fn parse_expr(expr: &str) -> Result<Part, String> {
     let segs = split_top(expr, "|");
     let head = segs[0].trim();
     if head.is_empty() {
-        return Err("空的变量 {}".into());
+        return Err(crate::t!("空的变量 {}"));
     }
     let mut alts = Vec::new();
     for raw in split_top(head, "??") {
@@ -385,10 +393,10 @@ fn parse_expr(expr: &str) -> Result<Part, String> {
             let is_date =
                 matches!(var, Var::Now) || matches!(var, Var::Field(d) if d.ty == FieldType::Date);
             if !is_date {
-                return Err(format!("变量「{name}」不是时间，不能写格式"));
+                return Err(crate::t!("变量「{name}」不是时间，不能写格式", name = name));
             }
             if StrftimeItems::new(f).any(|i| matches!(i, Item::Error)) {
-                return Err(format!("时间格式「{f}」无效"));
+                return Err(crate::t!("时间格式「{f}」无效", f = f));
             }
         }
         alts.push(Alt::Var { var, fmt });
@@ -423,25 +431,30 @@ fn parse_var(name: &str) -> Result<Var, String> {
         n if n.starts_with("match.") || n.starts_with("regex.") => {
             let k = &n[6..];
             if k.is_empty() {
-                return Err(format!("「{n}」缺少分组名或序号"));
+                return Err(crate::t!("「{n}」缺少分组名或序号", n = n));
             }
             Var::Match(k.to_string())
         }
         n if n.starts_with("env.") && n.len() > 4 => Var::Env(n[4..].to_string()),
         n if n.starts_with("dir.") => {
             Var::Dir(DIRS.iter().find(|d| **d == &n[4..]).ok_or_else(|| {
-                format!("未知系统文件夹「{n}」，可用：{}", DIRS.map_prefix("dir."))
+                crate::t!(
+                    "未知系统文件夹「{n}」，可用：{a0}",
+                    n = n,
+                    a0 = DIRS.map_prefix("dir.")
+                )
             })?)
         }
         n if n.starts_with("system.") => {
             Var::System(SYSTEM.iter().find(|d| **d == &n[7..]).ok_or_else(|| {
-                format!(
-                    "未知系统变量「{n}」，可用：{}",
-                    SYSTEM.map_prefix("system.")
+                crate::t!(
+                    "未知系统变量「{n}」，可用：{a0}",
+                    n = n,
+                    a0 = SYSTEM.map_prefix("system.")
                 )
             })?)
         }
-        n => Var::Field(fields::field(n).ok_or_else(|| format!("未知变量「{n}」"))?),
+        n => Var::Field(fields::field(n).ok_or_else(|| crate::t!("未知变量「{n}」", n = n))?),
     })
 }
 
@@ -462,7 +475,7 @@ fn parse_filter(s: &str) -> Result<Filter, String> {
         Some((n, rest)) => {
             let inner = rest
                 .strip_suffix(')')
-                .ok_or_else(|| format!("过滤器「{s}」缺少右括号"))?;
+                .ok_or_else(|| crate::t!("过滤器「{s}」缺少右括号", s = s))?;
             (
                 n.trim(),
                 split_top(inner, ",")
@@ -476,12 +489,16 @@ fn parse_filter(s: &str) -> Result<Filter, String> {
     let num = |i: usize| -> Result<usize, String> {
         args.get(i)
             .and_then(|a| a.parse().ok())
-            .ok_or_else(|| format!("过滤器「{s}」的第 {} 个参数应为数字", i + 1))
+            .ok_or_else(|| crate::t!("过滤器「{s}」的第 {a0} 个参数应为数字", s = s, a0 = i + 1))
     };
     let string = |i: usize| -> Result<String, String> {
-        args.get(i)
-            .and_then(|a| unquote(a))
-            .ok_or_else(|| format!("过滤器「{s}」的第 {} 个参数应为带引号的文字", i + 1))
+        args.get(i).and_then(|a| unquote(a)).ok_or_else(|| {
+            crate::t!(
+                "过滤器「{s}」的第 {a0} 个参数应为带引号的文字",
+                s = s,
+                a0 = i + 1
+            )
+        })
     };
     Ok(match name {
         "lower" => Filter::Lower,
@@ -494,14 +511,16 @@ fn parse_filter(s: &str) -> Result<Filter, String> {
         "replace" => {
             let pat = string(0)?;
             Filter::Replace(
-                Regex::new(&pat).map_err(|e| format!("replace 的正则「{pat}」无效: {e}"))?,
+                Regex::new(&pat)
+                    .map_err(|e| crate::t!("replace 的正则「{pat}」无效: {e}", pat = pat, e = e))?,
                 string(1)?,
             )
         }
         "default" => Filter::Default(string(0)?),
         other => {
-            return Err(format!(
-                "未知过滤器「{other}」，可用：lower upper title slug trim pad(n) slice(a,b) replace(\"正则\",\"替换\") default(\"值\")"
+            return Err(crate::t!(
+                "未知过滤器「{other}」，可用：lower upper title slug trim pad(n) slice(a,b) replace(\"正则\",\"替换\") default(\"值\")",
+                other = other
             ));
         }
     })

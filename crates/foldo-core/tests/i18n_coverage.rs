@@ -21,7 +21,11 @@ fn sources(dir: &Path, exts: &[&str]) -> Vec<(PathBuf, String)> {
         .filter(|e| e.file_type().is_file())
         .filter(|e| {
             let p = e.path().to_string_lossy();
-            !p.contains("/dev/") && !p.contains("/locales/") && !p.contains("/node_modules/")
+            !p.contains("/dev/")
+                && !p.contains("/locales/")
+                && !p.contains("/node_modules/")
+                && !p.contains("/test/")
+                && !p.contains(".test.")
         })
         .filter(|e| {
             e.path()
@@ -95,12 +99,16 @@ fn ui_keys() -> BTreeSet<String> {
     keys
 }
 
-/// 后台需要的原文：t!("…")、tr("…")，以及托盘菜单和跳过原因的标签。
+/// 后台和命令行需要的原文：t!("…")、tr("…")，以及托盘菜单和跳过原因的标签。
 fn rs_keys() -> BTreeSet<String> {
     let re = Regex::new(r#"\b(?:t!|tr)\(\s*"((?:[^"\\]|\\.)*)""#).unwrap();
     let lit = Regex::new(r#""((?:[^"\\]|\\.)*[\u{3400}-\u{9fff}](?:[^"\\]|\\.)*)""#).unwrap();
     let mut keys = BTreeSet::new();
-    for dir in ["crates/foldo-core/src", "apps/desktop/src-tauri/src"] {
+    for dir in [
+        "crates/foldo-core/src",
+        "crates/foldo-cli/src",
+        "apps/desktop/src-tauri/src",
+    ] {
         for (path, text) in sources(&repo().join(dir), &["rs"]) {
             let body = text.split("#[cfg(test)]").next().unwrap_or("");
             for c in re.captures_iter(body) {
@@ -171,8 +179,9 @@ fn every_text_is_translated() {
         .unwrap();
         return;
     }
-    let mut problems = check("apps/desktop/src/locales", &ui);
-    problems.extend(check("crates/foldo-core/locales", &rs));
+    // 界面和后台共用一份译文
+    let all: BTreeSet<String> = ui.union(&rs).cloned().collect();
+    let problems = check("locales", &all);
     assert!(
         problems.is_empty(),
         "{} 处翻译缺失或有误（前 30 条）：\n{}",

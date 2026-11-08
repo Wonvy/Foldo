@@ -1,8 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App";
-import FloatApp from "./float/FloatApp";
-import { lang } from "./i18n";
+import { lang, loadLocale } from "./i18n";
 import { loadTheme } from "./theme";
 import "./styles.css";
 
@@ -18,10 +16,27 @@ if (isFloat) document.documentElement.classList.add("float");
 const inTauri = "__TAURI_INTERNALS__" in window;
 const ready = import.meta.env.DEV && !inTauri ? import("./dev/mock").then((m) => m.installMock()) : Promise.resolve();
 
-void ready.then(() => {
+// 先加载译文，再加载界面（界面模块里有些文字在加载时就翻译好）
+void Promise.all([ready, loadLocale()]).then(async () => {
+  const { api } = await import("./api");
   // 后台的提示、通知和托盘菜单使用同一种语言
-  if (!isFloat) void import("./api").then(({ api }) => api.setLocale(lang).catch(() => {}));
+  if (!isFloat) void api.setLocale(lang).catch(() => {});
   // 主窗口切换语言后，悬浮窗也重新加载
   if (isFloat) window.addEventListener("storage", (e) => e.key === "foldo.lang" && location.reload());
-  createRoot(document.getElementById("root")!).render(<StrictMode>{isFloat ? <FloatApp /> : <App />}</StrictMode>);
+  const root = createRoot(document.getElementById("root")!);
+  if (isFloat) {
+    const { default: FloatApp } = await import("./float/FloatApp");
+    root.render(
+      <StrictMode>
+        <FloatApp />
+      </StrictMode>,
+    );
+  } else {
+    const { default: App } = await import("./App");
+    root.render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+  }
 });

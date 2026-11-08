@@ -203,9 +203,9 @@ impl<'de> Deserialize<'de> for ConditionDef {
         let map = std::collections::BTreeMap::<String, serde_json::Value>::deserialize(d)?;
         if map.len() != 1 {
             let keys: Vec<&str> = map.keys().map(String::as_str).collect();
-            return Err(serde::de::Error::custom(format!(
-                "每个条件只能有一个键（这里有：{}）。多个条件请写成列表，或放进 all / any 里",
-                keys.join("、")
+            return Err(serde::de::Error::custom(crate::t!(
+                "每个条件只能有一个键（这里有：{a0}）。多个条件请写成列表，或放进 all / any 里",
+                a0 = keys.join("、")
             )));
         }
         let (key, value) = map.into_iter().next().expect("恰好一个键");

@@ -1360,7 +1360,6 @@ dependencies = [
  "serde_json",
  "serde_yaml_ng",
  "tempfile",
- "thiserror 2.0.21",
  "trash",
  "walkdir",
  "xattr",

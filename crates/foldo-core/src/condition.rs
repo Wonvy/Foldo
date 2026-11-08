@@ -130,7 +130,7 @@ impl Condition {
                 let items = def
                     .value
                     .as_array()
-                    .ok_or_else(|| format!("{k} 后面应是条件列表"))?;
+                    .ok_or_else(|| crate::t!("{k} 后面应是条件列表", k = k))?;
                 let list = items
                     .iter()
                     .map(|v| {
@@ -140,7 +140,7 @@ impl Condition {
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 if list.is_empty() && k != "all" {
-                    return Err(format!("{k} 至少需要一个条件"));
+                    return Err(crate::t!("{k} 至少需要一个条件", k = k));
                 }
                 Ok(match k {
                     "all" => Condition::All(list),
@@ -150,12 +150,16 @@ impl Condition {
             }
             "not" => {
                 let inner: ConditionDef = serde_json::from_value(def.value.clone())
-                    .map_err(|e| format!("not 后面应是一个条件: {e}"))?;
+                    .map_err(|e| crate::t!("not 后面应是一个条件: {e}", e = e))?;
                 Ok(Condition::Not(Box::new(Condition::compile(&inner)?)))
             }
             key => {
                 let field = fields::field(key).ok_or_else(|| {
-                    format!("未知字段「{key}」（条件组请用 {}）", GROUPS.join(" / "))
+                    crate::t!(
+                        "未知字段「{key}」（条件组请用 {a0}）",
+                        key = key,
+                        a0 = GROUPS.join(" / ")
+                    )
                 })?;
                 Ok(Condition::Test(compile_test(field, &def.value)?))
             }
@@ -207,7 +211,9 @@ fn compile_test(field: &'static FieldDef, value: &Json) -> Result<Test, String> 
     match value {
         Json::Object(map) => {
             if let Some(cs) = map.get("case_sensitive") {
-                case_sensitive = cs.as_bool().ok_or("case_sensitive 应为 true 或 false")?;
+                case_sensitive = cs
+                    .as_bool()
+                    .ok_or_else(|| crate::t!("case_sensitive 应为 true 或 false"))?;
             }
             for (op, v) in map {
                 if op == "case_sensitive" {
@@ -216,15 +222,15 @@ fn compile_test(field: &'static FieldDef, value: &Json) -> Result<Test, String> 
                 checks.push(compile_op(field, canonical(op), v, case_sensitive)?);
             }
             if checks.is_empty() {
-                return Err(format!(
-                    "「{}」没有写比较方式，可用：{}",
-                    field.label,
-                    op_names(field.ty)
+                return Err(crate::t!(
+                    "「{a0}」没有写比较方式，可用：{a1}",
+                    a0 = field.label,
+                    a1 = op_names(field.ty)
                 ));
             }
         }
         Json::Array(_) => checks.push(compile_op(field, "in", value, false)?),
-        Json::Null => return Err(format!("「{}」缺少要比较的值", field.label)),
+        Json::Null => return Err(crate::t!("「{a0}」缺少要比较的值", a0 = field.label)),
         scalar => {
             // 简写：文本里带 * ? 时按通配符，日期按“当天”，其余按“等于”
             let op = match field.ty {
@@ -258,16 +264,23 @@ fn normalize_enum(field: &FieldDef, s: &str) -> Result<String, String> {
     match field.key {
         "category" => categories::find(s)
             .map(|c| c.name.to_string())
-            .ok_or_else(|| format!("未知类型「{s}」，可用：{}", categories::names())),
+            .ok_or_else(|| {
+                crate::t!(
+                    "未知类型「{s}」，可用：{a0}",
+                    s = s,
+                    a0 = categories::names()
+                )
+            }),
         "image.orientation" => {
             let v = match s.trim().to_lowercase().as_str() {
                 "横" | "横向" | "横版" | "landscape" | "horizontal" => "横",
                 "竖" | "纵向" | "竖版" | "portrait" | "vertical" => "竖",
                 "方" | "正方形" | "square" => "方",
                 _ => {
-                    return Err(format!(
-                        "未知方向「{s}」，可用：{}",
-                        ORIENTATIONS.join(" / ")
+                    return Err(crate::t!(
+                        "未知方向「{s}」，可用：{a0}",
+                        s = s,
+                        a0 = ORIENTATIONS.join(" / ")
                     ));
                 }
             };
@@ -278,7 +291,7 @@ fn normalize_enum(field: &FieldDef, s: &str) -> Result<String, String> {
 }
 
 fn operand(field: &FieldDef, v: &Json, cs: bool) -> Result<Operand, String> {
-    let s = as_text(v).ok_or_else(|| format!("「{}」的比较值应为文字", field.label))?;
+    let s = as_text(v).ok_or_else(|| crate::t!("「{a0}」的比较值应为文字", a0 = field.label))?;
     let s = if field.ty == FieldType::Enum {
         normalize_enum(field, &s)?
     } else {
@@ -300,7 +313,7 @@ fn operand(field: &FieldDef, v: &Json, cs: bool) -> Result<Operand, String> {
 }
 
 fn parse_number(field: &FieldDef, v: &Json) -> Result<f64, String> {
-    let bad = || format!("「{}」的比较值应为数字", field.label);
+    let bad = || crate::t!("「{a0}」的比较值应为数字", a0 = field.label);
     if field.ty == FieldType::Size {
         return match v {
             Json::Number(n) => n.as_f64().ok_or_else(bad),
@@ -324,7 +337,7 @@ fn parse_number(field: &FieldDef, v: &Json) -> Result<f64, String> {
 
 /// 解析日期，返回 (时间, 是否只写了日期)。
 fn parse_date(v: &Json) -> Result<(DateTime<Local>, bool), String> {
-    let s = as_text(v).ok_or("日期应写成 2026-01-31 或 2026-01-31 18:00")?;
+    let s = as_text(v).ok_or_else(|| crate::t!("日期应写成 2026-01-31 或 2026-01-31 18:00"))?;
     let s = s.trim();
     for f in [
         "%Y-%m-%d %H:%M:%S",
@@ -341,8 +354,9 @@ fn parse_date(v: &Json) -> Result<(DateTime<Local>, bool), String> {
             return local(d.and_hms_opt(0, 0, 0).expect("合法时间")).map(|d| (d, true));
         }
     }
-    Err(format!(
-        "无法识别日期「{s}」，请写成 2026-01-31 或 2026-01-31 18:00"
+    Err(crate::t!(
+        "无法识别日期「{s}」，请写成 2026-01-31 或 2026-01-31 18:00",
+        s = s
     ))
 }
 
@@ -350,11 +364,12 @@ fn local(n: NaiveDateTime) -> Result<DateTime<Local>, String> {
     Local
         .from_local_datetime(&n)
         .earliest()
-        .ok_or_else(|| format!("本地时间 {n} 不存在（夏令时切换）"))
+        .ok_or_else(|| crate::t!("本地时间 {n} 不存在（夏令时切换）", n = n))
 }
 
 fn parse_span(field: &FieldDef, v: &Json) -> Result<Duration, String> {
-    let s = as_text(v).ok_or_else(|| format!("「{}」的时长应写成 30d、12h 这样", field.label))?;
+    let s = as_text(v)
+        .ok_or_else(|| crate::t!("「{a0}」的时长应写成 30d、12h 这样", a0 = field.label))?;
     s.parse::<Span>().map(|s| s.0)
 }
 
@@ -370,8 +385,9 @@ fn parse_period(v: &Json) -> Result<Period, String> {
         "this_year" | "今年" => Period::ThisYear,
         "last_year" | "去年" => Period::LastYear,
         other => {
-            return Err(format!(
-                "未知时间段「{other}」，可用：today yesterday this_week last_week this_month last_month this_year last_year（或 今天 昨天 本周 上周 本月 上月 今年 去年）"
+            return Err(crate::t!(
+                "未知时间段「{other}」，可用：today yesterday this_week last_week this_month last_month this_year last_year（或 今天 昨天 本周 上周 本月 上月 今年 去年）",
+                other = other
             ));
         }
     })
@@ -380,24 +396,26 @@ fn parse_period(v: &Json) -> Result<Period, String> {
 fn pair<'a>(field: &FieldDef, v: &'a Json) -> Result<(&'a Json, &'a Json), String> {
     match v.as_array().map(Vec::as_slice) {
         Some([a, b]) => Ok((a, b)),
-        _ => Err(format!(
-            "「{}」的 between 应写成 [最小值, 最大值]",
-            field.label
+        _ => Err(crate::t!(
+            "「{a0}」的 between 应写成 [最小值, 最大值]",
+            a0 = field.label
         )),
     }
 }
 
 fn compile_op(field: &'static FieldDef, op: &str, v: &Json, cs: bool) -> Result<Check, String> {
     let unsupported = || {
-        format!(
-            "「{}」不支持「{op}」，可用：{}",
-            field.label,
-            op_names(field.ty)
+        crate::t!(
+            "「{a0}」不支持「{op}」，可用：{a1}",
+            a0 = field.label,
+            op = op,
+            a1 = op_names(field.ty)
         )
     };
     if op == "exists" {
         return Ok(Check::Exists(
-            v.as_bool().ok_or("exists 应为 true 或 false")?,
+            v.as_bool()
+                .ok_or_else(|| crate::t!("exists 应为 true 或 false"))?,
         ));
     }
     match field.ty {
@@ -414,7 +432,7 @@ fn compile_op(field: &'static FieldDef, op: &str, v: &Json, cs: bool) -> Result<
                     other => vec![other],
                 };
                 if items.is_empty() {
-                    return Err(format!("「{}」的列表不能为空", field.label));
+                    return Err(crate::t!("「{a0}」的列表不能为空", a0 = field.label));
                 }
                 Check::In(
                     items
@@ -425,25 +443,28 @@ fn compile_op(field: &'static FieldDef, op: &str, v: &Json, cs: bool) -> Result<
                 )
             }
             "glob" => {
-                let g = as_text(v).ok_or("通配符应为文字")?;
+                let g = as_text(v).ok_or_else(|| crate::t!("通配符应为文字"))?;
                 Check::Glob(
                     GlobBuilder::new(&g)
                         .case_insensitive(!cs)
                         .build()
-                        .map_err(|e| format!("通配符「{g}」无效: {e}"))?
+                        .map_err(|e| crate::t!("通配符「{g}」无效: {e}", g = g, e = e))?
                         .compile_matcher(),
                 )
             }
             "matches" => {
-                let r = as_text(v).ok_or("正则应为文字")?;
+                let r = as_text(v).ok_or_else(|| crate::t!("正则应为文字"))?;
                 Check::Regex(
                     RegexBuilder::new(&r)
                         .case_insensitive(!cs)
                         .build()
-                        .map_err(|e| format!("正则「{r}」无效: {e}"))?,
+                        .map_err(|e| crate::t!("正则「{r}」无效: {e}", r = r, e = e))?,
                 )
             }
-            "empty" => Check::Empty(v.as_bool().ok_or("empty 应为 true 或 false")?),
+            "empty" => Check::Empty(
+                v.as_bool()
+                    .ok_or_else(|| crate::t!("empty 应为 true 或 false"))?,
+            ),
             _ => return Err(unsupported()),
         }),
         FieldType::Number | FieldType::Size => {
@@ -500,7 +521,7 @@ fn compile_op(field: &'static FieldDef, op: &str, v: &Json, cs: bool) -> Result<
                 Json::Bool(b) => *b,
                 Json::String(s) if matches!(s.as_str(), "是" | "true" | "yes") => true,
                 Json::String(s) if matches!(s.as_str(), "否" | "false" | "no") => false,
-                _ => return Err(format!("「{}」应为 true 或 false", field.label)),
+                _ => return Err(crate::t!("「{a0}」应为 true 或 false", a0 = field.label)),
             })),
             _ => Err(unsupported()),
         },
@@ -531,7 +552,7 @@ pub fn explain(def: &ConditionDef, f: &FileCtx, ctx: &mut MatchCtx) -> Explain {
     match def.key.as_str() {
         k @ ("all" | "any" | "none") => {
             let Some(items) = def.value.as_array() else {
-                return fail(format!("{k} 后面应是条件列表"));
+                return fail(crate::t!("{k} 后面应是条件列表", k = k));
             };
             let children: Vec<Explain> = items
                 .iter()

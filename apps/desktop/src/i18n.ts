@@ -1,11 +1,10 @@
 // 界面语言：简体中文（原文）、English、繁體中文、日本語。
 //
-// 界面里的文字以简体中文写在代码中，用 t("原文") 包起来；其他语言在 locales/*.json 里按原文查找译文，
+// 界面里的文字以简体中文写在代码中，用 t("原文") 包起来；其他语言在仓库根目录的 locales/*.json 里按原文查找译文
+// （与后台、命令行共用一份），
 // 找不到时显示原文。原文里的 {0}、{1}… 由参数依次替换。
 // 选择保存在本机（localStorage）；默认跟随系统语言。切换语言后重新加载窗口，所有文字一次性换好。
-import en from "./locales/en.json";
-import ja from "./locales/ja.json";
-import zhTW from "./locales/zh-TW.json";
+// 只加载当前语言的译文（loadLocale），要在加载界面之前完成，因为有些文字在模块加载时就会翻译。
 
 export type Lang = "zh-CN" | "en" | "zh-TW" | "ja";
 export type LangPref = Lang | "system";
@@ -19,7 +18,13 @@ export const LANGS: { value: Lang; label: string }[] = [
 
 const KEY = "foldo.lang";
 
-const DICTS: Record<Lang, Record<string, string>> = { "zh-CN": {}, en, "zh-TW": zhTW, ja };
+type Dict = Record<string, string>;
+const LOADERS: Record<Lang, () => Promise<Dict>> = {
+  "zh-CN": async () => ({}),
+  en: () => import("../../../locales/en.json").then((m) => m.default),
+  "zh-TW": () => import("../../../locales/zh-TW.json").then((m) => m.default),
+  ja: () => import("../../../locales/ja.json").then((m) => m.default),
+};
 
 /** 按系统语言选一个支持的语言。 */
 export function systemLang(): Lang {
@@ -58,7 +63,16 @@ export function setLangPref(pref: LangPref) {
 const pref = loadLangPref();
 /** 当前界面语言。 */
 export const lang: Lang = pref === "system" ? systemLang() : pref;
-const dict = DICTS[lang];
+let dict: Dict = {};
+
+/** 加载当前语言的译文。界面模块要在它完成之后再加载。 */
+export async function loadLocale(): Promise<void> {
+  try {
+    dict = await LOADERS[lang]();
+  } catch {
+    dict = {};
+  }
+}
 
 if (typeof document !== "undefined") document.documentElement.lang = lang;
 

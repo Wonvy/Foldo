@@ -80,10 +80,13 @@ pub fn default_data_dir() -> PathBuf {
 /// 检查一个目录能不能作为规则的扫描位置，拒绝系统目录和过大的范围。
 pub fn check_location(p: &Path, recursive: bool) -> Result<(), String> {
     if !p.is_absolute() {
-        return Err(format!("位置「{}」必须是绝对路径或以 ~ 开头", p.display()));
+        return Err(crate::t!(
+            "位置「{a0}」必须是绝对路径或以 ~ 开头",
+            a0 = p.display()
+        ));
     }
     if p.parent().is_none() {
-        return Err("不能把磁盘根目录作为整理位置".into());
+        return Err(crate::t!("不能把磁盘根目录作为整理位置"));
     }
     // 如果路径存在，用真实路径再检查一遍（处理符号链接以及 macOS 的 /etc → /private/etc）。
     let real = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
@@ -92,7 +95,7 @@ pub fn check_location(p: &Path, recursive: bool) -> Result<(), String> {
         && let Some(h) = &home
         && (p == h.as_path() || real == *h)
     {
-        return Err("不能递归整理整个用户主目录".into());
+        return Err(crate::t!("不能递归整理整个用户主目录"));
     }
 
     let mut forbidden: Vec<PathBuf> = Vec::new();
@@ -130,9 +133,9 @@ pub fn check_location(p: &Path, recursive: bool) -> Result<(), String> {
 
     for f in &forbidden {
         if p.starts_with(f) || real.starts_with(f) {
-            return Err(format!(
-                "为了安全，不允许整理系统或应用数据目录「{}」",
-                display(f)
+            return Err(crate::t!(
+                "为了安全，不允许整理系统或应用数据目录「{a0}」",
+                a0 = display(f)
             ));
         }
     }
