@@ -24,6 +24,7 @@ import { Segmented, Spinner, Switch } from "../components/ui";
 import { useStore } from "../store";
 import type { ThemePref } from "../theme";
 import { t } from "../i18n";
+import { useIconSize } from "../float/useIconSize";
 
 export default function SettingsPage({
   update,
@@ -43,6 +44,7 @@ export default function SettingsPage({
   advancedRequest?: number;
 }) {
   const { view } = useStore();
+  const iconSize = useIconSize();
   const [section, setSection] = useState(showAdvanced ? "advanced" : "general");
   useEffect(() => {
     if (showAdvanced) setSection("advanced");
@@ -164,6 +166,26 @@ export default function SettingsPage({
             </select>
           </div>
           <AutostartRow />
+          <div className="card-body row" style={{ borderTop: "1px solid var(--border)", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span className="text-2">{t("悬浮图标大小")}</span>
+              <div className="muted">{t("Ctrl + 滚轮调整大小")}</div>
+            </div>
+            <input
+              type="range"
+              min={40}
+              max={112}
+              step={4}
+              value={iconSize.size}
+              aria-label={t("悬浮图标大小")}
+              onChange={(event) => iconSize.change(Number(event.target.value))}
+            />
+            <span className="mono">{iconSize.size} px</span>
+            <button className="btn sm" onClick={() => iconSize.change(64)}>
+              {t("恢复默认大小")}
+            </button>
+            {iconSize.error && <div className="banner error">{iconSize.error}</div>}
+          </div>
         </div>
         <UpdateCard update={update} onUpdate={onUpdate} />
       </section>

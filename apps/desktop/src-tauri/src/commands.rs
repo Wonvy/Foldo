@@ -322,6 +322,7 @@ pub struct SkipView {
 
 #[derive(Serialize)]
 pub struct PlanView {
+    accepted_paths: Option<Vec<String>>,
     plan_id: u64,
     groups: usize,
     ops: Vec<OpView>,
@@ -334,6 +335,7 @@ pub struct PlanView {
 
 fn plan_view(id: u64, plan: &Plan) -> PlanView {
     PlanView {
+        accepted_paths: None,
         plan_id: id,
         groups: plan.group_count(),
         ops: plan
@@ -418,10 +420,59 @@ pub async fn cancel_scan(state: State<'_, AppState>) -> CmdResult<()> {
 
 /// 处理拖入窗口的文件和文件夹。
 #[tauri::command]
-pub async fn scan_paths(state: State<'_, AppState>, paths: Vec<String>) -> CmdResult<PlanView> {
+pub async fn scan_paths(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    mode: Option<DropMode>,
+) -> CmdResult<PlanView> {
     let set = load_set()?;
-    let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
-    state.store_plan(build_plan_for_paths(&set, &paths, Local::now()))
+    let paths = filter_drop_paths(
+        paths.into_iter().map(PathBuf::from).collect(),
+        mode.unwrap_or_default(),
+    );
+    let mut view = state.store_plan(build_plan_for_paths(&set, &paths, Local::now()))?;
+    view.accepted_paths = Some(paths.iter().map(|p| path_string(p)).collect());
+    Ok(view)
+}
+
+#[derive(Clone, Copy, Default, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DropMode {
+    #[default]
+    All,
+    File,
+    Folder,
+}
+
+fn filter_drop_paths(paths: Vec<PathBuf>, mode: DropMode) -> Vec<PathBuf> {
+    paths
+        .into_iter()
+        .filter(|path| match mode {
+            DropMode::All => true,
+            DropMode::File => path.symlink_metadata().is_ok_and(|m| m.is_file()),
+            DropMode::Folder => path.symlink_metadata().is_ok_and(|m| m.is_dir()),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod drop_mode_tests {
+    use super::*;
+    #[test]
+    fn filtering_uses_real_file_types_not_extensions() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("README");
+        let folder = dir.path().join("project.pdf");
+        std::fs::write(&file, "text").unwrap();
+        std::fs::create_dir(&folder).unwrap();
+        let paths = vec![file.clone(), folder.clone()];
+        assert_eq!(filter_drop_paths(paths.clone(), DropMode::File), vec![file]);
+        assert_eq!(
+            filter_drop_paths(paths.clone(), DropMode::Folder),
+            vec![folder]
+        );
+        assert_eq!(filter_drop_paths(paths.clone(), DropMode::All), paths);
+    }
 }
 
 /// 临时测试规则应用到所有整理文件夹，避免保留对已移除规则的引用。

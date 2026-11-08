@@ -409,19 +409,18 @@ export default function RulesPage({
                         <ShieldCheck size={12} /> {t("{0} 个例外", [chips.exceptions])}
                       </span>
                     )}
-                    <span className="flow-arrow">
-                      <ArrowRight size={13} />
-                    </span>
-                    {chips.actions.map((a, k) => {
-                      const Icon = ACTION_ICON[a.kind];
-                      return (
-                        <span key={k} className={`cchip act ${a.kind}`} title={a.title}>
-                          <Icon size={12} />
-                          <span className="ellipsis">{a.text}</span>
-                        </span>
-                      );
-                    })}
                   </div>
+                </div>
+                <div className="rule-destination" aria-label={t("目标位置与操作")}>
+                  {chips.actions.map((a, k) => {
+                    const Icon = ACTION_ICON[a.kind];
+                    return (
+                      <span key={k} className={`cchip act ${a.kind}`} title={a.title}>
+                        <Icon size={12} />
+                        <span className="ellipsis">{a.text}</span>
+                      </span>
+                    );
+                  })}
                 </div>
                 <span className="rule-side" onClick={(e) => e.stopPropagation()}>
                   <Switch

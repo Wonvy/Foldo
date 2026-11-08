@@ -5,6 +5,34 @@ use tauri::{Manager, PhysicalPosition, PhysicalSize};
 
 pub const LABEL: &str = "float";
 pub const SIZE: f64 = 84.0;
+static ICON_SIZE_LOCK: Mutex<()> = Mutex::new(());
+pub fn icon_size() -> f64 {
+    std::fs::read(foldo_core::paths::default_data_dir().join("float-icon-size.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<f64>(&bytes).ok())
+        .filter(|v| v.is_finite())
+        .unwrap_or(64.0)
+        .clamp(40.0, 112.0)
+}
+
+#[tauri::command]
+pub async fn float_icon_size(app: tauri::AppHandle, diameter: Option<f64>) -> Result<f64, String> {
+    use tauri::Emitter;
+    let _guard = ICON_SIZE_LOCK.lock().map_err(|e| e.to_string())?;
+    if let Some(value) = diameter {
+        if !value.is_finite() {
+            return Err("Invalid icon size".into());
+        }
+        let value = value.round().clamp(40.0, 112.0);
+        let dir = foldo_core::paths::default_data_dir();
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        std::fs::write(dir.join("float-icon-size.json"), value.to_string())
+            .map_err(|e| e.to_string())?;
+        let _ = app.emit("float-icon-size-changed", value);
+        return Ok(value);
+    }
+    Ok(icon_size())
+}
 const MARGIN: f64 = 16.0;
 const MIN_PANEL_WIDTH: f64 = 340.0;
 const MIN_PANEL_HEIGHT: f64 = 300.0;
@@ -106,12 +134,12 @@ impl Screen {
             && i64::from(p.y) + i64::from(size.height) <= i64::from(self.y) + i64::from(self.height)
     }
 
-    fn collapsed_size(self) -> PhysicalSize<u32> {
-        tauri::LogicalSize::new(SIZE, SIZE).to_physical(self.scale)
+    fn collapsed_size(self, size: f64) -> PhysicalSize<u32> {
+        tauri::LogicalSize::new(size, size).to_physical(self.scale)
     }
 
-    fn top_right(self) -> Position {
-        let size = self.collapsed_size();
+    fn top_right(self, size: f64) -> Position {
+        let size = self.collapsed_size(size);
         let margin = (MARGIN * self.scale).round() as i32;
         Position {
             x: self.x + (self.width as i32 - size.width as i32 - margin).max(0),
@@ -120,10 +148,14 @@ impl Screen {
     }
 }
 
-fn restore(saved: Option<Position>, screens: &[Screen], primary: Screen) -> Position {
+fn restore(saved: Option<Position>, screens: &[Screen], primary: Screen, size: f64) -> Position {
     saved
-        .filter(|p| screens.iter().any(|s| s.contains(*p, s.collapsed_size())))
-        .unwrap_or_else(|| primary.top_right())
+        .filter(|p| {
+            screens
+                .iter()
+                .any(|s| s.contains(*p, s.collapsed_size(size)))
+        })
+        .unwrap_or_else(|| primary.top_right(size))
 }
 
 fn position_file() -> std::path::PathBuf {
@@ -131,6 +163,9 @@ fn position_file() -> std::path::PathBuf {
 }
 
 pub fn show(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    let size = icon_size() + 20.0;
+    // Resize first so restoring the saved position cannot shift it by the size difference.
+    resize(window, size, size)?;
     if let Ok(mut anchor) = window.state::<ResizeState>().0.lock() {
         *anchor = None;
     }
@@ -147,6 +182,7 @@ pub fn show(window: &tauri::WebviewWindow) -> tauri::Result<()> {
             saved,
             &screens,
             Screen::from(&primary),
+            size,
         )))?;
     }
     window.show()
@@ -201,7 +237,7 @@ pub fn resize(window: &tauri::WebviewWindow, width: f64, height: f64) -> tauri::
     let old = window.outer_size()?;
     let position = window.outer_position()?;
     let scale = window.scale_factor()?;
-    let expanded = width > SIZE || height > SIZE;
+    let expanded = width >= MIN_PANEL_WIDTH || height >= MIN_PANEL_HEIGHT;
     let monitor = window.current_monitor()?;
     let mut size = tauri::LogicalSize::new(width, height);
     if expanded {
@@ -298,14 +334,27 @@ mod tests {
     fn first_open_and_offscreen_positions_use_top_right_work_area() {
         let screen = primary();
         let expected = Position { x: 1820, y: 56 };
-        assert_eq!(restore(None, &[screen], screen), expected);
+        assert_eq!(restore(None, &[screen], screen, SIZE), expected);
         for p in [
             Position { x: 5000, y: 50 },
             Position { x: 1900, y: 50 },
             Position { x: 500, y: -10 },
         ] {
-            assert_eq!(restore(Some(p), &[screen], screen), expected);
+            assert_eq!(restore(Some(p), &[screen], screen, SIZE), expected);
         }
+    }
+
+    #[test]
+    fn custom_icon_size_restores_without_drift_and_resets_if_it_no_longer_fits() {
+        let screen = primary();
+        let saved = Position { x: 1780, y: 56 };
+        assert_eq!(restore(Some(saved), &[screen], screen, 132.0), saved);
+        let near_edge = Position { x: 1830, y: 56 };
+        assert_eq!(restore(Some(near_edge), &[screen], screen, 60.0), near_edge);
+        assert_eq!(
+            restore(Some(near_edge), &[screen], screen, 132.0),
+            Position { x: 1772, y: 56 }
+        );
     }
 
     #[test]
@@ -321,20 +370,28 @@ mod tests {
         let saved = Position { x: -1800, y: 100 };
         let bytes = serde_json::to_vec(&saved).unwrap();
         let loaded = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(restore(Some(loaded), &[main, left], main), saved);
-        assert_eq!(restore(Some(loaded), &[main], main), main.top_right());
-        assert_eq!(left.top_right(), Position { x: -150, y: 24 });
+        assert_eq!(restore(Some(loaded), &[main, left], main, SIZE), saved);
         assert_eq!(
-            restore(Some(Position { x: -100, y: 100 }), &[main, left], main),
-            main.top_right()
+            restore(Some(loaded), &[main], main, SIZE),
+            main.top_right(SIZE)
+        );
+        assert_eq!(left.top_right(SIZE), Position { x: -150, y: 24 });
+        assert_eq!(
+            restore(
+                Some(Position { x: -100, y: 100 }),
+                &[main, left],
+                main,
+                SIZE
+            ),
+            main.top_right(SIZE)
         );
     }
 
     #[test]
     fn expanding_at_top_right_stays_visible_and_collapsing_restores_position() {
         let screen = primary();
-        let start = screen.top_right();
-        let collapsed = screen.collapsed_size();
+        let start = screen.top_right(SIZE);
+        let collapsed = screen.collapsed_size(SIZE);
         let expanded = PhysicalSize::new(420, 500);
         let anchor = Anchor {
             right: true,
@@ -352,7 +409,7 @@ mod tests {
     fn expanding_across_screen_center_does_not_change_the_saved_anchor() {
         let screen = primary();
         let start = Position { x: 960, y: 100 };
-        let collapsed = screen.collapsed_size();
+        let collapsed = screen.collapsed_size(SIZE);
         let expanded = PhysicalSize::new(340, 380);
         let anchor = Anchor {
             right: true,

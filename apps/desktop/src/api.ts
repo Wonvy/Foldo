@@ -175,6 +175,7 @@ export type SkipView = {
 };
 
 export type PlanView = {
+  accepted_paths?: string[] | null;
   plan_id: number;
   groups: number;
   ops: OpView[];
@@ -268,7 +269,7 @@ export const api = {
   categories: () => invoke<Category[]>("categories"),
   suggestedFolders: () => invoke<FolderSuggestion[]>("suggested_folders"),
   scan: () => invoke<PlanView>("scan"),
-  scanPaths: (paths: string[]) => invoke<PlanView>("scan_paths", { paths }),
+  scanPaths: (paths: string[], mode: "all" | "file" | "folder" = "all") => invoke<PlanView>("scan_paths", { paths, mode }),
   scanProgress: () => invoke<{ found: number; checked: number }>("scan_progress"),
   cancelScan: () => invoke<void>("cancel_scan"),
   tryRule: (rule: RuleDef, paths: string[] | null) => invoke<PlanView>("try_rule", { rule, paths }),
@@ -287,6 +288,7 @@ export const api = {
   toggleFloat: () => invoke<boolean>("toggle_float"),
   floatVisible: () => invoke<boolean>("float_visible"),
   floatResize: (width: number, height: number) => invoke<void>("float_resize", { width, height }),
+  floatIconSize: (diameter?: number) => invoke<number>("float_icon_size", { diameter }),
   showMain: () => invoke<void>("show_main"),
   watchStatus: () => invoke<WatchStatus>("watch_status"),
   watchNow: () => invoke<void>("watch_now"),

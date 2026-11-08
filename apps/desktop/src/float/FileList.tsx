@@ -61,7 +61,7 @@ export default function FileList({
         onContextMenu={(event) => onMenu(event, item.path, item.group)}
       >
         <Checkbox checked={on} onChange={(checked) => onToggle([item.path], checked)} label={item.name} />
-        <FileIcon category={item.category} name={item.name} size={26} />
+        <FileIcon category={item.category} name={item.name} size={20} />
         <span className="ellipsis name">{item.name}</span>
         <span className="float-to ellipsis">
           {item.kind === "trash" ? (
@@ -155,7 +155,7 @@ export default function FileList({
                 title={file.reason}
                 onContextMenu={(event) => onMenu(event, file.path, undefined, file.kind === "no_match")}
               >
-                <FileIcon category={file.kind === "folder" ? "文件夹" : null} name={file.name} size={26} />
+                <FileIcon category={file.kind === "folder" ? "文件夹" : null} name={file.name} size={20} />
                 <span className="ellipsis name">{file.name}</span>
                 <span className="float-to ellipsis">{file.label}</span>
                 {file.kind === "no_match" && (

@@ -2377,7 +2377,8 @@ html.float #root {
 
 .rule-card {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: 16px 22px minmax(0, 1fr) minmax(150px, 28%) auto;
   align-items: center;
   gap: 10px;
   padding: 12px 12px 12px 6px;
@@ -3283,4 +3284,40 @@ html.float #root {
   font-size: 11px;
   color: var(--muted);
   margin-top: 5px;
+}
+
+.rule-destination {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
+}
+.rule-destination .cchip {
+  max-width: 100%;
+}
+.rule-main .rule-chips .cchip {
+  max-width: min(230px, 100%);
+}
+.rule-card.off .rule-destination {
+  opacity: 0.5;
+}
+.float-target.mode-file {
+  background: linear-gradient(160deg, #39b990, #168363);
+}
+.float-target.mode-folder {
+  background: linear-gradient(160deg, #e9ab47, #c77720);
+}
+.float-target.mode-file.hover {
+  box-shadow:
+    0 0 0 4px rgba(57, 185, 144, 0.3),
+    0 8px 22px rgba(22, 131, 99, 0.35);
+}
+.float-target.mode-folder.hover {
+  box-shadow:
+    0 0 0 4px rgba(233, 171, 71, 0.3),
+    0 8px 22px rgba(199, 119, 32, 0.35);
 }

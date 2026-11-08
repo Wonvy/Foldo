@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   show: vi.fn(),
   drag: vi.fn(),
   resize: vi.fn().mockResolvedValue(undefined),
+  iconSize: vi.fn(async (value?: number) => value ?? 64),
   emit: vi.fn(),
   configChanged: undefined as undefined | (() => void),
   switchProfile: vi.fn().mockResolvedValue(undefined),
@@ -62,6 +63,7 @@ vi.mock("../api", async (original) => ({
     toggleFloat: mocks.close,
     showMain: mocks.show,
     floatResize: vi.fn().mockResolvedValue(undefined),
+    floatIconSize: mocks.iconSize,
     undo: mocks.undo,
     reveal: vi.fn(),
   },
@@ -121,6 +123,43 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("悬浮窗文件列表", () => {
+  it("滚轮切换接收类型并过滤旧条目，Ctrl 滚轮只调整大小", async () => {
+    let time = 1000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => time);
+    try {
+      mocks.scan.mockImplementation(async (paths: string[], mode?: string) => {
+        const accepted = paths.filter((path) => !mode || (mode === "folder" ? path.endsWith(".folder") : !path.endsWith(".folder")));
+        return { ...plan(accepted), accepted_paths: accepted };
+      });
+      const { container } = render(<FloatApp />);
+      const wheel = (deltaY: number, ctrlKey = false) => {
+        time += 300;
+        const event = new WheelEvent("wheel", { deltaY, bubbles: true, cancelable: true });
+        // happy-dom's WheelEvent omits MouseEvent modifier properties.
+        Object.defineProperty(event, "ctrlKey", { value: ctrlKey });
+        fireEvent(container.querySelector(".float-target")!, event);
+        expect(event.defaultPrevented).toBe(true);
+      };
+      expect(container.querySelector(".mode-all")).not.toBeNull();
+      wheel(100);
+      await drop(["D:/files/a.pdf", "D:/files/project.folder"]);
+      expect(mocks.scan).toHaveBeenLastCalledWith(["D:/files/a.pdf", "D:/files/project.folder"], "file");
+      expect(screen.queryByText("project.folder")).toBeNull();
+      wheel(100);
+      await waitFor(() => expect(screen.queryByText("a.pdf")).toBeNull());
+      await drop(["D:/files/b.pdf", "D:/files/project.folder"]);
+      expect(screen.queryByText("b.pdf")).toBeNull();
+      expect(screen.getByText("project.folder")).toBeTruthy();
+      wheel(-100, true);
+      expect(mocks.iconSize).toHaveBeenLastCalledWith(68);
+      expect(container.querySelector(".mode-folder")).not.toBeNull();
+      wheel(100);
+      await waitFor(() => expect(container.querySelector(".mode-all")).not.toBeNull());
+      expect(mocks.scan).toHaveBeenLastCalledWith(["D:/files/project.folder"]);
+    } finally {
+      now.mockRestore();
+    }
+  });
   it("右键方案菜单标记当前方案，支持切换与关闭悬浮窗", async () => {
     const { container } = render(<FloatApp />);
     await drop(["D:/files/a.pdf"]);

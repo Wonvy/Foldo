@@ -2,21 +2,23 @@
 import { CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emitTo, listen } from "@tauri-apps/api/event";
-import { AppWindow, CircleCheck, FolderTree, ListX, Plus, RotateCcw, TriangleAlert, Upload, X } from "lucide-react";
+import { AppWindow, CircleCheck, File, Folder, FolderTree, ListX, Plus, RotateCcw, TriangleAlert, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { api, errorText, type ExecView, type PlanView } from "../api";
 import { Spinner } from "../components/ui";
 import { t } from "../i18n";
 import FileList, { ViewSwitcher } from "./FileList";
+import { useIconSize } from "./useIconSize";
 import { loadView, mergePaths, pathKey, toItems, type View } from "./items";
 
 type Phase = "idle" | "busy" | "plan" | "done";
 
-const COLLAPSED: [number, number] = [84, 84];
 const EXPANDED: [number, number] = [340, 380];
 const RESIZE_EDGES = ["North", "South", "East", "West", "NorthEast", "NorthWest", "SouthEast", "SouthWest"] as const;
 
 export default function FloatApp() {
+  const iconSize = useIconSize();
+  const lastExpanded = useRef<boolean | undefined>(undefined);
   const [hover, setHover] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
   const [plan, setPlan] = useState<PlanView | null>(null);
@@ -27,6 +29,11 @@ export default function FloatApp() {
   const [undone, setUndone] = useState(false);
   const [running, setRunning] = useState(false);
   const [onTop, setOnTop] = useState(true);
+  const [dropMode, setDropMode] = useState<"all" | "file" | "folder">("all");
+  const modeRef = useRef(dropMode);
+  const lastWheel = useRef(0);
+  const modeLabel = dropMode === "file" ? t("仅文件") : dropMode === "folder" ? t("仅文件夹") : t("全部文件和文件夹");
+  const ModeIcon = dropMode === "file" ? File : dropMode === "folder" ? Folder : FolderTree;
   // 拖入后取消勾选的（不整理）和从列表里移除的
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
   const [removed, setRemoved] = useState<Set<string>>(new Set());
@@ -44,8 +51,18 @@ export default function FloatApp() {
 
   const expanded = phase !== "idle";
   useEffect(() => {
-    void api.floatResize(...(expanded ? EXPANDED : COLLAPSED)).catch(() => {});
-  }, [expanded]);
+    const preventZoom = (event: WheelEvent) => {
+      if (event.target instanceof Element && event.target.closest(".float-target")) event.preventDefault();
+    };
+    window.addEventListener("wheel", preventZoom, { passive: false, capture: true });
+    return () => window.removeEventListener("wheel", preventZoom, true);
+  }, []);
+  useEffect(() => {
+    if (expanded && lastExpanded.current === true) return;
+    lastExpanded.current = expanded;
+    const size: [number, number] = expanded ? EXPANDED : [iconSize.size + 20, iconSize.size + 20];
+    void api.floatResize(...size).catch(() => {});
+  }, [expanded, iconSize.size]);
 
   const scan = async (paths: string[]) => {
     const request = ++scanId.current;
@@ -57,8 +74,9 @@ export default function FloatApp() {
     setResult(null);
     setUndone(false);
     try {
-      const next = await api.scanPaths(paths);
+      const next = await (modeRef.current === "all" ? api.scanPaths(paths) : api.scanPaths(paths, modeRef.current));
       if (request !== scanId.current) return;
+      if (next.accepted_paths) pathsRef.current = next.accepted_paths;
       setPlan(next);
       setPhase("plan");
     } catch (e) {
@@ -366,13 +384,32 @@ export default function FloatApp() {
 
   const target = (small: boolean) => (
     <div
-      className={`float-target ${small ? "small" : ""} ${hover ? "hover" : ""}`}
+      className={`float-target mode-${dropMode} ${small ? "small" : ""} ${hover ? "hover" : ""}`}
+      aria-label={modeLabel}
+      style={small ? undefined : { width: iconSize.size, height: iconSize.size }}
+      onWheel={(event) => {
+        event.stopPropagation();
+        const now = Date.now();
+        if (!event.deltaY || now - lastWheel.current < 100) return;
+        if (event.ctrlKey) {
+          lastWheel.current = now;
+          iconSize.change(iconSize.size + (event.deltaY < 0 ? 4 : -4));
+          return;
+        }
+        if (runningRef.current || now - lastWheel.current < 200) return;
+        lastWheel.current = now;
+        const modes = ["all", "file", "folder"] as const;
+        const next = modes[(modes.indexOf(modeRef.current) + (event.deltaY > 0 ? 1 : 2)) % 3];
+        modeRef.current = next;
+        setDropMode(next);
+        if (pathsRef.current.length && !resultRef.current) void scan(pathsRef.current);
+      }}
       onMouseDown={drag}
       onDoubleClick={() => void api.showMain()}
       onContextMenu={openMenu}
-      title={t("把文件拖到这里整理 · 双击打开主窗口 · 右键更多操作")}
+      title={`${modeLabel} · ${t("滚轮切换接收类型")}\n${t("Ctrl + 滚轮调整大小")}\n${t("把文件拖到这里整理 · 双击打开主窗口 · 右键更多操作")}`}
     >
-      {hover ? <Upload size={small ? 16 : 26} /> : <FolderTree size={small ? 16 : 26} />}
+      <ModeIcon size={small ? 16 : Math.round(iconSize.size * 0.41)} />
     </div>
   );
 
@@ -430,7 +467,9 @@ export default function FloatApp() {
 
       <div className={`float-drop-hint ${hover ? "active" : ""}`}>
         <Upload size={13} />
-        <span>{hover ? t("松开即可添加文件") : t("可继续拖入文件或文件夹")}</span>
+        <span>
+          {modeLabel} · {hover ? t("松开即可添加文件") : t("可继续拖入文件或文件夹")}
+        </span>
         <button className="icon-btn" title={t("添加文件")} disabled={running} onClick={() => void pickAndHandle()}>
           <Plus size={15} />
         </button>

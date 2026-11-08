@@ -99,6 +99,7 @@ fn main() {
             commands::toggle_float,
             commands::float_visible,
             commands::float_resize,
+            float_window::float_icon_size,
             commands::show_main,
             commands::watch_status,
             commands::watch_now,
