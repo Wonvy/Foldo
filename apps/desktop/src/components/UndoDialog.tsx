@@ -2,7 +2,7 @@
 import { CircleCheck, RotateCcw, Trash, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, errorText, KIND_LABEL, type UndoCheck, type UndoView } from "../api";
-import { Modal, Spinner } from "./ui";
+import { FileIcon, Modal, Spinner } from "./ui";
 import { t } from "../i18n";
 
 export default function UndoDialog({ batchId, onClose, onDone }: { batchId: number; onClose: () => void; onDone: (r: UndoView) => void }) {
@@ -83,6 +83,7 @@ export default function UndoDialog({ batchId, onClose, onDone }: { batchId: numb
           <div className="card">
             {[...blocked, ...trash, ...restore].map((c, i) => (
               <div key={i} className="list-row">
+                <FileIcon name={c.name} category={c.kind === "mkdir" ? "文件夹" : null} size={28} />
                 {c.outcome === "restore" ? (
                   <CircleCheck size={17} color="var(--ok)" />
                 ) : c.outcome === "in_trash" ? (

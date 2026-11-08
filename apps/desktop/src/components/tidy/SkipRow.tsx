@@ -7,7 +7,7 @@ import { FileIcon } from "../ui";
 export default function SkipRow({ s, onMenu }: { s: SkipView; onMenu: (el: HTMLElement) => void }) {
   return (
     <div className="list-row">
-      <FileIcon category={null} size={28} />
+      <FileIcon category={s.kind === "folder" ? "文件夹" : null} name={s.name} size={28} />
       <div className="row-main">
         <div className="row-title ellipsis">{s.name}</div>
         <div className="row-sub ellipsis">{s.reason}</div>

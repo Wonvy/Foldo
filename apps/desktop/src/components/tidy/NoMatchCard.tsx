@@ -48,7 +48,7 @@ export default function NoMatchCard({
             <ShowMore items={files}>
               {(s) => (
                 <div key={s.path} className="list-row">
-                  <FileIcon category={null} />
+                  <FileIcon name={s.name} />
                   <div className="row-main">
                     <div className="row-title ellipsis">{s.name}</div>
                     <div className="row-sub ellipsis">{s.display}</div>

@@ -19,6 +19,8 @@ import {
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { t } from "../i18n";
+import { FileIcon as TypeIcon } from "react-file-icon";
+import { fileIconStyle } from "./fileTypes";
 
 // ---------- 文件类型图标 ----------
 
@@ -37,7 +39,13 @@ const CATEGORY_STYLE: Record<string, { icon: LucideIcon; color: string }> = {
   文件夹: { icon: Folder, color: "#2f7de1" },
 };
 
-export function FileIcon({ category, size = 32 }: { category: string | null | undefined; size?: number }) {
+export function FileIcon({ category, name, size = 32 }: { category?: string | null; name?: string; size?: number }) {
+  if (name && category !== "文件夹")
+    return (
+      <span className="file-icon file-type-icon" style={{ width: size, height: size }} aria-hidden="true">
+        <TypeIcon {...fileIconStyle(name, category)} />
+      </span>
+    );
   const s = (category && CATEGORY_STYLE[category]) || { icon: File, color: "#8a8a94" };
   const Icon = s.icon;
   return (

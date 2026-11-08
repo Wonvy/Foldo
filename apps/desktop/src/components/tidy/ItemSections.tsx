@@ -133,7 +133,7 @@ function ItemRow({
       onClick={() => onToggle([it.group], !selected.has(it.group))}
     >
       <Checkbox checked={selected.has(it.group)} onChange={(v) => onToggle([it.group], v)} label={it.name} />
-      <FileIcon category={it.category} />
+      <FileIcon category={it.category} name={it.name} />
       <div className="row-main">
         <div className="row-title ellipsis">
           {it.name}

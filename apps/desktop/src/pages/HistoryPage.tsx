@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, errorText, KIND_LABEL, STATUS_LABEL, type Batch, type OpRecord, type Stats, type UndoView } from "../api";
 import { formatBytes } from "../rules";
 import UndoDialog from "../components/UndoDialog";
+import { FileIcon } from "../components/ui";
 import { t } from "../i18n";
 
 const STATUS_CHIP: Record<string, string> = {
@@ -150,6 +151,7 @@ export default function HistoryPage({ active }: { active: boolean }) {
                 <div style={{ background: "var(--surface-2)", borderTop: "1px solid var(--border)" }}>
                   {ops.map((o) => (
                     <div key={o.id} className="list-row" style={{ paddingLeft: 44, minHeight: 40 }}>
+                      <FileIcon name={o.name} category={o.kind === "mkdir" ? "文件夹" : null} size={28} />
                       <span className="chip">{KIND_LABEL[o.kind] ?? o.kind}</span>
                       <div className="row-main">
                         <div className="row-title ellipsis">{o.name}</div>

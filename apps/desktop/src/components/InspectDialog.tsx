@@ -2,7 +2,7 @@
 import { Copy, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, baseName, errorText, type AttrView } from "../api";
-import { Checkbox, Modal, Spinner } from "./ui";
+import { Checkbox, FileIcon, Modal, Spinner } from "./ui";
 import { t, tv } from "../i18n";
 
 export default function InspectDialog({ path, onClose }: { path: string; onClose: () => void }) {
@@ -32,7 +32,7 @@ export default function InspectDialog({ path, onClose }: { path: string; onClose
   };
 
   return (
-    <Modal title={t("文件属性")} subtitle={baseName(path)} onClose={onClose} width={640}>
+    <Modal title={t("文件属性")} subtitle={baseName(path)} icon={<FileIcon name={path} />} onClose={onClose} width={640}>
       {error && (
         <div className="banner error">
           <TriangleAlert size={16} />

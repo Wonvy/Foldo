@@ -661,6 +661,13 @@ select.input {
   place-items: center;
 }
 
+.file-type-icon svg {
+  display: block;
+  height: 100%;
+  width: 83%;
+  overflow: visible;
+}
+
 .empty {
   margin: auto;
   max-width: 460px;

@@ -482,7 +482,7 @@ export default function RulesPage({
           </button>
         ) : (
           <>
-            {debugging && !debug ? <Spinner size={15} /> : <FileIcon category={debug?.category} size={26} />}
+            {debugging && !debug ? <Spinner size={15} /> : <FileIcon category={debug?.category} name={debug?.name ?? current} size={26} />}
             <button className="debug-name ellipsis" title={t("{0}\n点击查看全部属性", [current])} onClick={() => setInspect(current)}>
               {debug?.name ?? current.split(/[\\/]/).pop()}
             </button>
