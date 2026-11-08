@@ -69,7 +69,9 @@ export default function RegexTester({
           className="btn sm"
           onClick={() => {
             setPattern(datePrefix.trim());
-            setSamples("20160203 xxx\n1231 xxx\n26-12-12 xxx\n26.11.8 xxx\n2026-1-8 xxx\n普通文件夹\n26.13.8 xxx");
+            setSamples(
+              "20160203 xxx\n1231 xxx\n26-12-12 xxx\n26.11.8 xxx\n2026-02-19_洞洞板\n1231-项目\n1111\n20260219\n2026-02-19_\n普通文件夹\n26.13.8 xxx",
+            );
           }}
         >
           {t("日期开头示例")}
@@ -80,6 +82,8 @@ export default function RegexTester({
         <textarea className="input mono" rows={5} value={samples} onChange={(e) => setSamples(e.target.value)} spellCheck={false} />
       </label>
       <p className="muted regex-help">
+        {t("日期后需有项目名称，可用空格、_ 或 - 分隔")}
+        <br />
         {t("与整理规则使用相同的正则语法；不支持前后查找和反向引用。日期示例检查月日范围，不校验闰年和每月天数。")}
       </p>
       <div aria-live="polite" className="regex-results">

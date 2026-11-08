@@ -51,7 +51,6 @@ export default function SettingsPage({
     { id: "general", label: t("通用"), Icon: SlidersHorizontal },
     { id: "tidy", label: t("整理"), Icon: FolderTree },
     { id: "categories", label: t("文件分类"), Icon: Tags },
-    { id: "updates", label: t("更新"), Icon: Download },
     { id: "advanced", label: t("高级"), Icon: Code },
   ];
   const tabKey = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -93,7 +92,7 @@ export default function SettingsPage({
           >
             <Icon size={16} />
             <span>{label}</span>
-            {id === "updates" && update?.version && <span className="settings-update-dot" />}
+            {id === "general" && update?.version && <span className="settings-update-dot" />}
           </button>
         ))}
       </div>
@@ -166,6 +165,7 @@ export default function SettingsPage({
           </div>
           <AutostartRow />
         </div>
+        <UpdateCard update={update} onUpdate={onUpdate} />
       </section>
       <section
         className="settings-panel"
@@ -184,15 +184,6 @@ export default function SettingsPage({
         hidden={section !== "categories"}
       >
         <CategorySettings />
-      </section>
-      <section
-        className="settings-panel"
-        id="settings-panel-updates"
-        role="tabpanel"
-        aria-labelledby="settings-tab-updates"
-        hidden={section !== "updates"}
-      >
-        <UpdateCard update={update} onUpdate={onUpdate} />
       </section>
       <section
         className="settings-panel"

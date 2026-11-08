@@ -71,9 +71,9 @@ mod tests {
     #[test]
     fn date_prefix_examples_and_boundaries() {
         let pattern = include_str!("../../../examples/date-prefix.regex").trim();
-        let samples = test(pattern, "20160203 xxx\n1231 xxx\n26-12-12 xxx\n26.11.8 xxx\n2026-1-8\n普通文件夹\n1312 xxx\n20261301 xxx\n26.2.32 xxx\n12345 xxx\n20160203abc", false).unwrap();
-        assert!(samples[..5].iter().all(|s| s.range.is_some()));
-        assert!(samples[5..].iter().all(|s| s.range.is_none()));
+        let samples = test(pattern, "20160203 xxx\n1231 xxx\n26-12-12 xxx\n26.11.8 xxx\n2026-1-8 项目\n2026-02-19_洞洞板\n1231-项目\n20260219__洞洞板\n普通文件夹\n1312 xxx\n20261301 xxx\n26.2.32 xxx\n12345 xxx\n20160203abc\n1111\n20260219\n2026-02-19\n2026-02-19_\n1231 -_ \n26.11.8   ", false).unwrap();
+        assert!(samples[..8].iter().all(|s| s.range.is_some()));
+        assert!(samples[8..].iter().all(|s| s.range.is_none()));
     }
 
     #[test]

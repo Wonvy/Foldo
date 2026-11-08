@@ -946,5 +946,6 @@
  "测试文本（每行一个文件名）": "Test text (one filename per line)",
  "空匹配": "Empty match",
  "设置分类": "Settings categories",
- "高级": "Advanced"
+ "高级": "Advanced",
+ "日期后需有项目名称，可用空格、_ 或 - 分隔": "A project name must follow the date, separated by a space, _ or -."
 }
