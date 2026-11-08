@@ -1,7 +1,7 @@
 import { File, Folder, FolderPlus, KeyRound, Link, Lock, ShieldCheck, Trash, TriangleAlert, X } from "lucide-react";
 import { useState } from "react";
 import { api, baseName, errorText, type RuleFile } from "../api";
-import { Segmented } from "../components/ui";
+import { Segmented, Switch } from "../components/ui";
 import { pickFile, pickFolder, useStore } from "../store";
 
 const BUFFERS = [
@@ -171,6 +171,25 @@ export default function ScopePage() {
               })
             }
             options={BUFFERS}
+          />
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-body row">
+          <div style={{ flex: 1 }}>
+            <div>整理后删除变空的文件夹</div>
+            <div className="muted" style={{ fontSize: 12.5 }}>只删除因为文件被移走而变空的文件夹；撤销时会重建</div>
+          </div>
+          <Switch
+            label="整理后删除变空的文件夹"
+            on={!config.settings?.keep_empty_folders}
+            onChange={(on) =>
+              update({
+                ...config,
+                settings: { ...config.settings, keep_empty_folders: on ? undefined : true },
+              })
+            }
           />
         </div>
       </div>

@@ -56,7 +56,7 @@ impl SkipKind {
 }
 
 /// 系统自动生成的文件。
-const SYSTEM_NAMES: &[&str] = &[
+pub(crate) const SYSTEM_NAMES: &[&str] = &[
     ".DS_Store",
     ".localized",
     "Icon\r",

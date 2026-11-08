@@ -857,3 +857,70 @@ pub async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> CmdResult<bo
     if enabled { al.enable() } else { al.disable() }.map_err(err)?;
     al.is_enabled().map_err(err)
 }
+
+// ---------- 更新 ----------
+
+#[derive(Serialize)]
+pub struct UpdateInfo {
+    /// 当前版本
+    pub current: String,
+    /// 有新版本时为新版本号
+    pub version: Option<String>,
+    pub notes: Option<String>,
+    pub date: Option<String>,
+}
+
+/// 检查 GitHub Releases 上有没有新版本。
+#[tauri::command]
+pub async fn check_update(app: tauri::AppHandle) -> CmdResult<UpdateInfo> {
+    use tauri_plugin_updater::UpdaterExt;
+    let current = app.package_info().version.to_string();
+    let update = app
+        .updater()
+        .map_err(err)?
+        .check()
+        .await
+        .map_err(|e| format!("暂时无法检查更新：{e}"))?;
+    Ok(UpdateInfo {
+        current,
+        version: update.as_ref().map(|u| u.version.clone()),
+        notes: update.as_ref().and_then(|u| u.body.clone()),
+        date: update
+            .as_ref()
+            .and_then(|u| u.date)
+            .map(|d| d.date().to_string()),
+    })
+}
+
+#[derive(Clone, Serialize)]
+struct UpdateProgress {
+    downloaded: u64,
+    total: Option<u64>,
+}
+
+/// 下载并安装新版本，完成后重启。下载进度通过 `update-progress` 事件发出。
+#[tauri::command]
+pub async fn install_update(app: tauri::AppHandle) -> CmdResult<()> {
+    use tauri::Emitter;
+    use tauri_plugin_updater::UpdaterExt;
+    let update = app
+        .updater()
+        .map_err(err)?
+        .check()
+        .await
+        .map_err(err)?
+        .ok_or("已经是最新版本")?;
+    let mut downloaded = 0u64;
+    let progress = app.clone();
+    update
+        .download_and_install(
+            move |chunk, total| {
+                downloaded += chunk as u64;
+                let _ = progress.emit("update-progress", UpdateProgress { downloaded, total });
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| format!("更新失败：{e}"))?;
+    app.restart()
+}

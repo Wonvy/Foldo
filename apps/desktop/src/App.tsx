@@ -1,7 +1,7 @@
 import { Clock, FolderTree, Monitor, Moon, PictureInPicture2, Settings, ShieldCheck, Sparkles, Sun, Upload, WandSparkles } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { api, type WatchStatus } from "./api";
+import { api, type UpdateInfo, type WatchStatus } from "./api";
 import HistoryPage from "./pages/HistoryPage";
 import RulesPage from "./pages/RulesPage";
 import ScopePage from "./pages/ScopePage";
@@ -71,6 +71,9 @@ function Shell() {
   const [newRule, setNewRule] = useState(0);
   const [scanRequest, setScanRequest] = useState(0);
   const [watch, setWatch] = useState<WatchStatus | null>(null);
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const watchRef = useRef<WatchStatus | null>(null);
+  watchRef.current = watch;
 
   useEffect(() => applyTheme(theme), [theme]);
 
@@ -80,6 +83,11 @@ function Shell() {
     check();
     const t = setInterval(check, 2000);
     return () => clearInterval(t);
+  }, []);
+
+  // 启动时悄悄检查一次更新；没联网或还没有发布版本时不提示
+  useEffect(() => {
+    api.checkUpdate().then(setUpdate).catch(() => {});
   }, []);
 
   // 后台自动整理的状态，以及托盘发来的事件
@@ -92,10 +100,17 @@ function Shell() {
         const add = (u: () => void) => (disposed ? u() : uns.push(u));
         add(await listen<WatchStatus>("watch-status", (e) => setWatch(e.payload)));
         add(await listen("config-changed", () => void reload()));
+        const scanNow = () => {
+          setPage("tidy");
+          setScanRequest((n) => n + 1);
+        };
+        add(await listen("tidy-scan", scanNow));
+        // 点了托盘状态或系统通知：有待确认的文件就去整理页，刚自动整理过就看历史
         add(
-          await listen("tidy-scan", () => {
-            setPage("tidy");
-            setScanRequest((n) => n + 1);
+          await listen("open-pending", () => {
+            const w = watchRef.current;
+            if (!w?.pending && w?.last_batch) setPage("history");
+            else scanNow();
           }),
         );
       } catch {
@@ -164,12 +179,12 @@ function Shell() {
   }, [side, resizing]);
 
   const ruleCount = config.rules?.length ?? 0;
-  const nav: { id: Page; label: string; icon: ReactNode; count?: number }[] = [
+  const nav: { id: Page; label: string; icon: ReactNode; count?: number | string }[] = [
     { id: "tidy", label: "整理", icon: <Sparkles size={17} />, count: watch?.pending || undefined },
     { id: "rules", label: "规则", icon: <WandSparkles size={17} />, count: ruleCount || undefined },
     { id: "scope", label: "范围与保护", icon: <ShieldCheck size={17} /> },
     { id: "history", label: "历史", icon: <Clock size={17} /> },
-    { id: "settings", label: "设置", icon: <Settings size={17} /> },
+    { id: "settings", label: "设置", icon: <Settings size={17} />, count: update?.version ? "新" : undefined },
   ];
 
   return (
@@ -253,7 +268,7 @@ function Shell() {
           <HistoryPage active={page === "history"} />
         </div>
         <div hidden={page !== "settings"}>
-          <SettingsPage watch={watch} theme={theme} onTheme={setTheme} showAdvanced={showAdvanced} onShowAdvanced={setShowAdvanced} />
+          <SettingsPage watch={watch} update={update} onUpdate={setUpdate} theme={theme} onTheme={setTheme} showAdvanced={showAdvanced} onShowAdvanced={setShowAdvanced} />
         </div>
       </main>
 

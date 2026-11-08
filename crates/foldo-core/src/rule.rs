@@ -24,6 +24,8 @@ pub struct RuleSet {
     pub buffer: Duration,
     /// 后台自动整理的方式。
     pub auto: crate::config::AutoMode,
+    /// 整理后删除变空的文件夹。
+    pub clean_empty_folders: bool,
 }
 
 #[derive(Debug)]
@@ -125,6 +127,7 @@ impl RuleSet {
             protect,
             buffer,
             auto: file.settings.auto,
+            clean_empty_folders: !file.settings.keep_empty_folders,
         })
     }
 

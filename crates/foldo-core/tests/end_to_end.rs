@@ -459,3 +459,61 @@ fn rules_file_with_utf8_bom_loads() {
     fs::write(&path, yaml).unwrap();
     assert_eq!(RuleSet::load(&path).unwrap().rules.len(), 1);
 }
+
+fn recursive_pdf_rules(e: &Env, extra_settings: &str) -> RuleSet {
+    rules(&format!(
+        r#"
+version: 1
+settings:
+  {extra_settings}
+rules:
+  - name: pdf
+    locations: [{inbox}]
+    recursive: true
+    conditions:
+      - extension: pdf
+    actions:
+      - move: {dest}
+"#,
+        inbox = q(&e.inbox),
+        dest = q(&e.out),
+    ))
+}
+
+#[test]
+fn folders_emptied_by_tidying_are_removed_and_restored_on_undo() {
+    let e = env();
+    let deep = touch(&e.inbox, "资料/2024/报告.pdf", "pdf");
+    touch(&e.inbox, "资料/2024/.DS_Store", "junk");
+    let other = touch(&e.inbox, "资料/备注.txt", "keep");
+    let lonely = touch(&e.inbox, "单独/说明.pdf", "pdf");
+
+    let journal = Journal::open_in_memory().unwrap();
+    let plan = build_plan(&recursive_pdf_rules(&e, "auto: off"), None).unwrap();
+    let report = execute(&plan, &journal, "test").unwrap();
+    assert_eq!(report.done, 2);
+
+    // 变空的文件夹被删除（只剩 .DS_Store 也算空），有其他文件的保留，整理范围本身保留
+    assert!(!e.inbox.join("资料/2024").exists());
+    assert!(!e.inbox.join("单独").exists());
+    assert!(other.exists());
+    assert!(e.inbox.is_dir());
+    assert_eq!(report.removed_dirs.len(), 2);
+
+    // 撤销时文件夹会重建
+    undo_batch(&journal, report.batch_id).unwrap();
+    assert!(deep.exists());
+    assert!(lonely.exists());
+}
+
+#[test]
+fn keep_empty_folders_setting() {
+    let e = env();
+    touch(&e.inbox, "单独/说明.pdf", "pdf");
+    let journal = Journal::open_in_memory().unwrap();
+    let plan = build_plan(&recursive_pdf_rules(&e, "keep_empty_folders: true"), None).unwrap();
+    let report = execute(&plan, &journal, "test").unwrap();
+    assert_eq!(report.done, 1);
+    assert!(e.inbox.join("单独").is_dir());
+    assert!(report.removed_dirs.is_empty());
+}

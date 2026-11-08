@@ -1,18 +1,23 @@
-import { Bell, Code, FolderOpen, Monitor, Moon, PauseCircle, Sun, TriangleAlert, Zap } from "lucide-react";
+import { Bell, CircleCheck, Code, Download, FolderOpen, Monitor, Moon, PauseCircle, RefreshCw, Sun, TriangleAlert, Zap } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { api, errorText, type AutoMode, type WatchStatus } from "../api";
-import { Segmented, Switch } from "../components/ui";
+import { api, errorText, type AutoMode, type UpdateInfo, type WatchStatus } from "../api";
+import { Segmented, Spinner, Switch } from "../components/ui";
 import { useStore } from "../store";
 import type { ThemePref } from "../theme";
 
 export default function SettingsPage({
   watch,
+  update,
+  onUpdate,
   theme,
   onTheme,
   showAdvanced,
   onShowAdvanced,
 }: {
   watch: WatchStatus | null;
+  update: UpdateInfo | null;
+  onUpdate: (u: UpdateInfo) => void;
   theme: ThemePref;
   onTheme: (t: ThemePref) => void;
   showAdvanced: boolean;
@@ -50,6 +55,8 @@ export default function SettingsPage({
         </div>
       </div>
 
+      <UpdateCard update={update} onUpdate={onUpdate} />
+
       <div className="card">
         <div className="card-head">
           <h2>配置文件</h2>
@@ -69,6 +76,92 @@ export default function SettingsPage({
           </button>
         </div>
         {showAdvanced && <YamlEditor />}
+      </div>
+    </div>
+  );
+}
+
+function UpdateCard({ update, onUpdate }: { update: UpdateInfo | null; onUpdate: (u: UpdateInfo) => void }) {
+  const [busy, setBusy] = useState<null | "check" | "install">(null);
+  const [checked, setChecked] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    let disposed = false;
+    listen<{ downloaded: number; total: number | null }>("update-progress", (e) => {
+      const { downloaded, total } = e.payload;
+      setProgress(total ? Math.min(100, Math.round((downloaded / total) * 100)) : null);
+    })
+      .then((u) => (disposed ? u() : (un = u)))
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      un?.();
+    };
+  }, []);
+
+  const check = async () => {
+    setBusy("check");
+    setError(null);
+    try {
+      onUpdate(await api.checkUpdate());
+      setChecked(true);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const install = async () => {
+    setBusy("install");
+    setError(null);
+    setProgress(0);
+    try {
+      await api.installUpdate(); // 成功后应用会重启
+    } catch (e) {
+      setError(errorText(e));
+      setBusy(null);
+      setProgress(null);
+    }
+  };
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2>版本与更新</h2>
+        {update && <span className="muted">当前版本 {update.current}</span>}
+      </div>
+      <div className="card-body" style={{ display: "grid", gap: 10 }}>
+        {update?.version ? (
+          <>
+            <div className="row">
+              <Download size={16} color="var(--accent)" />
+              <span style={{ flex: 1 }}>
+                新版本 <b>{update.version}</b>
+                {update.date && <span className="muted"> · {update.date}</span>}
+              </span>
+              <button className="btn sm primary" disabled={!!busy} onClick={install}>
+                {busy === "install" ? <Spinner size={14} /> : <Download size={14} />}
+                {busy === "install" ? (progress !== null ? `下载中 ${progress}%` : "正在安装…") : "下载并重启"}
+              </button>
+            </div>
+            {update.notes && <div className="update-notes selectable">{update.notes}</div>}
+          </>
+        ) : (
+          <div className="row">
+            {checked && !error && <CircleCheck size={16} color="var(--ok)" />}
+            <span className="text-2" style={{ flex: 1 }}>
+              {checked && !error ? "已经是最新版本" : "新版本发布在 GitHub，安装后自动替换旧版本，规则和历史都会保留"}
+            </span>
+            <button className="btn sm" disabled={!!busy} onClick={check}>
+              {busy === "check" ? <Spinner size={14} /> : <RefreshCw size={14} />} 检查更新
+            </button>
+          </div>
+        )}
+        {error && <div className="banner error selectable">{error}</div>}
       </div>
     </div>
   );

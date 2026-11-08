@@ -3,6 +3,7 @@
 use crate::commands::{current_config, toggle_float_window, write_config};
 use crate::watch::{self, WatchStatus};
 use foldo_core::config::AutoMode;
+use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, Wry};
@@ -15,6 +16,7 @@ pub struct TrayItems {
 const MODES: [AutoMode; 3] = [AutoMode::Off, AutoMode::Notify, AutoMode::Run];
 
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
+    // 有待确认的文件时可以点，点了打开主窗口并扫描
     let status = MenuItem::with_id(app, "status", "自动整理：关闭", false, None::<&str>)?;
     let run_now = MenuItem::with_id(app, "run_now", "立即整理", true, None::<&str>)?;
     let m_off = CheckMenuItem::with_id(app, "mode_off", "不自动整理", true, true, None::<&str>)?;
@@ -61,6 +63,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, e| match e.id().as_ref() {
             "run_now" => run_now_action(app),
+            "status" => open_pending(app),
             "mode_off" => set_mode(app, AutoMode::Off),
             "mode_notify" => set_mode(app, AutoMode::Notify),
             "mode_run" => set_mode(app, AutoMode::Run),
@@ -81,7 +84,14 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
                 show_main(tray.app_handle());
             }
         });
-    if let Some(icon) = app.default_window_icon() {
+    // macOS 菜单栏用单色模板图标，系统会按深浅色自动着色；其他平台用彩色应用图标
+    if cfg!(target_os = "macos") {
+        builder = builder
+            .icon(Image::from_bytes(include_bytes!(
+                "../icons/tray-template.png"
+            ))?)
+            .icon_as_template(true);
+    } else if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone());
     }
     builder.build(app)?;
@@ -125,12 +135,19 @@ pub fn refresh(app: &AppHandle, st: &WatchStatus) {
         _ => "自动整理：关闭".to_string(),
     };
     let _ = t.status.set_text(text);
+    let _ = t.status.set_enabled(st.pending > 0);
     let mode = match st.mode {
         "notify" => AutoMode::Notify,
         "run" => AutoMode::Run,
         _ => AutoMode::Off,
     };
     check_mode(app, mode);
+}
+
+/// 打开主窗口并显示待确认的文件（点托盘状态或系统通知时）。
+pub fn open_pending(app: &AppHandle) {
+    show_main(app);
+    let _ = app.emit("open-pending", ());
 }
 
 /// 从托盘切换自动整理模式：写入配置并立即生效。

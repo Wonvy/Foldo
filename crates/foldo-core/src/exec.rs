@@ -6,10 +6,10 @@
 use crate::error::Result;
 use crate::fsops::{self, exists};
 use crate::journal::{Journal, KIND_MKDIR, status};
-use crate::paths::is_case_only_change;
+use crate::paths::{is_case_only_change, path_key};
 use crate::plan::{Op, OpKind, Plan};
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Default)]
 pub struct ExecReport {
@@ -17,6 +17,8 @@ pub struct ExecReport {
     pub done: usize,
     pub skipped: Vec<(Op, String)>,
     pub failed: Vec<(Op, String)>,
+    /// 因整理而变空、已删除的文件夹。
+    pub removed_dirs: Vec<PathBuf>,
 }
 
 enum Problem {
@@ -33,6 +35,8 @@ pub fn execute(plan: &Plan, journal: &Journal, source: &str) -> Result<ExecRepor
     };
     let mut broken_groups: HashSet<usize> = HashSet::new();
     let mut seq: i64 = 0;
+    // 有文件被移走的文件夹，执行完后检查是否变空
+    let mut vacated: Vec<PathBuf> = Vec::new();
 
     for op in &plan.ops {
         if broken_groups.contains(&op.group) {
@@ -76,6 +80,11 @@ pub fn execute(plan: &Plan, journal: &Journal, source: &str) -> Result<ExecRepor
             Ok(()) => {
                 journal.finish_op(id, status::DONE, None)?;
                 report.done += 1;
+                if matches!(op.kind, OpKind::Move | OpKind::Rename | OpKind::Trash)
+                    && let Some(parent) = op.src.parent()
+                {
+                    vacated.push(parent.to_path_buf());
+                }
             }
             Err(Problem::Skip(e)) => {
                 broken_groups.insert(op.group);
@@ -90,6 +99,8 @@ pub fn execute(plan: &Plan, journal: &Journal, source: &str) -> Result<ExecRepor
         }
     }
 
+    report.removed_dirs = remove_emptied_dirs(vacated, &plan.cleanup_roots);
+
     let st = match (report.done, report.failed.len()) {
         (_, 0) => status::DONE,
         (0, _) => status::FAILED,
@@ -97,6 +108,77 @@ pub fn execute(plan: &Plan, journal: &Journal, source: &str) -> Result<ExecRepor
     };
     journal.finish_batch(batch, st)?;
     Ok(report)
+}
+
+/// 删除因整理而变空的文件夹，并逐级向上检查，但不越过 `roots`（也不删除 `roots` 本身）。
+/// 只剩系统自动生成的文件（如 .DS_Store、Thumbs.db）的文件夹也算空。
+fn remove_emptied_dirs(mut dirs: Vec<PathBuf>, roots: &[PathBuf]) -> Vec<PathBuf> {
+    if roots.is_empty() {
+        return Vec::new();
+    }
+    let root_keys: Vec<String> = roots
+        .iter()
+        .map(|r| path_key(r).trim_end_matches(['/', '\\']).to_string())
+        .collect();
+    // 严格位于某个范围之内
+    let inside = |d: &Path| {
+        let k = path_key(d);
+        root_keys.iter().any(|r| {
+            k.len() > r.len()
+                && k.starts_with(r.as_str())
+                && matches!(k.as_bytes()[r.len()], b'/' | b'\\')
+        })
+    };
+    // 深的先处理，子文件夹删掉后父文件夹才可能变空
+    dirs.sort_by_key(|d| std::cmp::Reverse(d.components().count()));
+    dirs.dedup();
+    let mut removed = Vec::new();
+    let mut done: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for start in dirs {
+        let mut dir = start;
+        while inside(&dir) && done.insert(path_key(&dir)) {
+            if !remove_if_empty(&dir) {
+                break;
+            }
+            removed.push(dir.clone());
+            match dir.parent() {
+                Some(p) => dir = p.to_path_buf(),
+                None => break,
+            }
+        }
+    }
+    removed
+}
+
+fn remove_if_empty(dir: &Path) -> bool {
+    let Ok(md) = dir.symlink_metadata() else {
+        return false;
+    };
+    if !md.is_dir() {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    let mut junk = Vec::new();
+    for e in entries {
+        let Ok(e) = e else { return false };
+        let name = e.file_name();
+        let is_junk = name
+            .to_str()
+            .is_some_and(|n| crate::protect::SYSTEM_NAMES.contains(&n))
+            && e.file_type().is_ok_and(|t| t.is_file());
+        if !is_junk {
+            return false;
+        }
+        junk.push(e.path());
+    }
+    for j in junk {
+        if std::fs::remove_file(j).is_err() {
+            return false;
+        }
+    }
+    std::fs::remove_dir(dir).is_ok()
 }
 
 fn apply(op: &Op) -> Result<(), Problem> {

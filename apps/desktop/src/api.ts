@@ -33,6 +33,14 @@ export type RuleDef = {
 
 export type FolderDef = { path: string };
 
+export type UpdateInfo = {
+  current: string;
+  /** 有新版本时为新版本号 */
+  version: string | null;
+  notes: string | null;
+  date: string | null;
+};
+
 /** 后台自动整理：关闭 / 发现文件时提醒 / 直接整理（移到回收站仍需确认）。 */
 export type AutoMode = "off" | "notify" | "run";
 
@@ -50,7 +58,7 @@ export type RuleFile = {
   version: number;
   folders?: FolderDef[];
   protect?: string[];
-  settings?: { buffer?: string; auto?: AutoMode };
+  settings?: { buffer?: string; auto?: AutoMode; keep_empty_folders?: boolean };
   rules?: RuleDef[];
 };
 
@@ -232,6 +240,8 @@ export const api = {
   watchNow: () => invoke<void>("watch_now"),
   autostartEnabled: () => invoke<boolean>("autostart_enabled"),
   setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
+  checkUpdate: () => invoke<UpdateInfo>("check_update"),
+  installUpdate: () => invoke<void>("install_update"),
   reveal: (path: string) => invoke<void>("reveal", { path }),
 };
 

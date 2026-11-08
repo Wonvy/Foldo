@@ -114,14 +114,26 @@ examples/rules.yaml  示例规则
 
 ### 发布新版本
 
-修改 `Cargo.toml` 里的 `version`，提交后打标签并推送，GitHub 会自动构建并创建 Release：
+提交后打标签并推送，GitHub 会自动构建并创建 Release（命令行版的版本号在 `Cargo.toml` 里修改）：
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-带连字符的标签（如 `v0.2.0-beta.1`）会被标记为预发布版本。
+带连字符的标签（如 `v0.2.0-beta.1`）会被标记为预发布版本。图形界面的版本号直接取自标签，不需要另外修改。
+
+### 自动更新
+
+已安装的 Foldo 启动时会检查 GitHub 上最新的正式版（不含预发布版本），有新版本时“设置”旁边会出现“新”，在“设置 → 版本与更新”里一键下载并重启。目前支持 Windows 和 macOS（Apple 芯片）；Linux 的 .deb 需要手动下载安装。
+
+更新包需要签名，第一次发布前要在 GitHub 上配置一次签名私钥：
+
+1. 私钥在本机 `~/.tauri/foldo-updater.key`（对应的公钥已经写在 `apps/desktop/src-tauri/tauri.conf.json` 里）。**私钥不要提交到仓库，也不要发给别人；弄丢后已安装的版本就无法再自动更新。**
+2. 打开仓库的 Settings → Secrets and variables → Actions → New repository secret，名称填 `TAURI_SIGNING_PRIVATE_KEY`，值填私钥文件的全部内容（macOS 上可用 `pbcopy < ~/.tauri/foldo-updater.key` 复制）。
+3. 之后推送 `v*` 标签时，Release 里会多出签名文件和 `latest.json`，自动更新就会生效。
+
+没有配置这个密钥时，构建照常进行，只是不生成更新包。
 
 ## 从源码构建
 
@@ -152,6 +164,7 @@ protect:                     # 固定保留：路径或文件名通配符
 settings:
   buffer: 10m                # 新文件缓冲期
   auto: notify               # 后台自动整理：off（默认）/ notify 发现文件时提醒 / run 直接整理（移到回收站仍需确认）
+  keep_empty_folders: false  # true 时保留整理后变空的文件夹（默认删除，撤销时重建）
 rules:
   - name: 规则名（唯一）
     enabled: true            # 默认 true

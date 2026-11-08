@@ -72,6 +72,9 @@ pub struct SettingsDef {
     /// 自动整理：off（默认）/ notify（发现可整理的文件时提醒）/ run（直接整理）。
     #[serde(default, skip_serializing_if = "AutoMode::is_off")]
     pub auto: AutoMode,
+    /// 保留整理后变空的文件夹。默认会删除它们（撤销时会自动重建）。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub keep_empty_folders: bool,
 }
 
 impl SettingsDef {

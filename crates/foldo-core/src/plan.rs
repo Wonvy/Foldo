@@ -83,6 +83,9 @@ pub struct Plan {
     pub matched: usize,
     /// 命中但已经在目标位置、无需操作的文件数。
     pub in_place: usize,
+    /// 执行后可以清理空文件夹的范围：只删除这些文件夹内部（不含它们自己）因整理而变空的文件夹。
+    /// 为空表示不清理（如拖入的文件，或设置了保留空文件夹）。
+    pub cleanup_roots: Vec<PathBuf>,
 }
 
 impl Plan {
@@ -109,6 +112,7 @@ impl Plan {
             scanned: self.scanned,
             matched: self.matched,
             in_place: self.in_place,
+            cleanup_roots: self.cleanup_roots.clone(),
         }
     }
 
@@ -209,6 +213,15 @@ pub fn build_plan_at(set: &RuleSet, only: Option<&str>, now: DateTime<Local>) ->
         None => set.rules.iter().filter(|r| r.enabled).collect(),
     };
     let mut p = Planner::new(set, now);
+    if set.clean_empty_folders {
+        let mut roots: Vec<PathBuf> = set.folders.clone();
+        for rule in &selected {
+            roots.extend(rule.locations.iter().cloned());
+        }
+        let mut seen = HashSet::new();
+        roots.retain(|r| seen.insert(path_key(r)));
+        p.plan.cleanup_roots = roots;
+    }
     for rule in selected {
         p.run_rule(rule);
     }

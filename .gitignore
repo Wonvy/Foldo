@@ -2,3 +2,6 @@
 node_modules/
 /apps/desktop/dist/
 /apps/desktop/src-tauri/gen/
+
+# 签名私钥绝不提交
+*.key

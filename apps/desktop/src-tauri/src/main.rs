@@ -12,6 +12,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             // 开机自启时只留在托盘里，不弹出主窗口
@@ -21,6 +22,14 @@ fn main() {
         .manage(watch::WatchState::default())
         .setup(|app| {
             tray::build(app.handle())?;
+            // 点系统通知：打开主窗口，显示待确认的文件或刚才的整理记录
+            {
+                use tauri_plugin_notification::NotificationExt;
+                let handle = app.handle().clone();
+                let _ = app
+                    .notification()
+                    .on_action(move |_| tray::open_pending(&handle));
+            }
             watch::spawn(app.handle().clone());
             if std::env::args().any(|a| a == "--hidden")
                 && let Some(w) = app.get_webview_window("main")
@@ -67,6 +76,8 @@ fn main() {
             commands::watch_now,
             commands::autostart_enabled,
             commands::set_autostart,
+            commands::check_update,
+            commands::install_update,
             commands::reveal,
         ])
         .build(tauri::generate_context!())
