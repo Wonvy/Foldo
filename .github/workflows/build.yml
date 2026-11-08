@@ -156,6 +156,23 @@ jobs:
         working-directory: apps/desktop
       - name: Desktop command tests
         run: cargo test --locked -p foldo-desktop
+      - name: Download verified AppImage tool
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Tauri CLI 2.12.4 uses linuxdeploy 07333c6. The release-download URL
+          # can return persistent 504s; fetch the same upstream asset via the API.
+          tools="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
+          mkdir -p "$tools"
+          tool="$tools/linuxdeploy-07333c6-x86_64.AppImage"
+          curl --fail --location --retry 3 --retry-all-errors --connect-timeout 15 --max-time 120 \
+            -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/octet-stream' \
+            'https://api.github.com/repos/tauri-apps/binary-releases/releases/assets/576945544' \
+            --output "$tool.part"
+          echo "36a2d7e274d12e1050d0e9ecfe11d339ed54720b2bec464c286d53f8b07f5c62  $tool.part" | sha256sum --check
+          chmod +x "$tool.part"
+          mv "$tool.part" "$tool"
       - name: Build signed installer
         working-directory: apps/desktop
         env:
