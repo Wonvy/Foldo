@@ -104,11 +104,58 @@ pub async fn check<R: tauri::Runtime>(
 }
 
 fn can_retry_download(error: &tauri_plugin_updater::Error, url: &reqwest::Url) -> bool {
-    url.host_str() == Some("github.com")
+    (url.host_str() == Some("github.com") || is_asset_api(url))
         && matches!(
             error,
             tauri_plugin_updater::Error::Network(_) | tauri_plugin_updater::Error::Reqwest(_)
         )
+}
+
+fn is_asset_api(url: &reqwest::Url) -> bool {
+    url.scheme() == "https"
+        && url.host_str() == Some("api.github.com")
+        && url.port_or_known_default() == Some(443)
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url
+            .path()
+            .strip_prefix(&format!("/repos/{REPO}/releases/assets/"))
+            .is_some_and(|id| !id.is_empty() && id.bytes().all(|c| c.is_ascii_digit()))
+}
+
+/// This route must not require another API request: the API may be rate limited.
+fn browser_fallback(
+    version: &str,
+    url: &reqwest::Url,
+    metadata: &serde_json::Value,
+) -> Option<reqwest::Url> {
+    if !is_asset_api(url)
+        || !version.as_bytes().first().is_some_and(u8::is_ascii_digit)
+        || !version
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'.' | b'-'))
+    {
+        return None;
+    }
+    let platform = metadata
+        .get("platforms")?
+        .as_object()?
+        .iter()
+        .find(|(_, info)| info.get("url").and_then(|v| v.as_str()) == Some(url.as_str()))?
+        .0;
+    let suffix = match platform.as_str() {
+        "windows-x86_64" => "windows-x64-setup.exe",
+        "darwin-aarch64" => "macos-arm64.app.tar.gz",
+        "linux-x86_64" => "linux-x64.AppImage",
+        _ => return None,
+    };
+    format!(
+        "https://github.com/{REPO}/releases/download/v{version}/foldo-desktop-v{version}-{suffix}"
+    )
+    .parse()
+    .ok()
 }
 
 pub async fn download(
@@ -130,6 +177,15 @@ pub async fn download(
         match result {
             Ok(bytes) => return Ok(bytes), // Tauri has verified the package signature.
             Err(error) if attempt == 0 && can_retry_download(&error, &update.download_url) => {
+                if let Some(url) =
+                    browser_fallback(&update.version, &update.download_url, &update.raw_json)
+                {
+                    update.download_url = url;
+                    continue;
+                }
+                if is_asset_api(&update.download_url) {
+                    return Err(error.to_string());
+                }
                 let release = release(Some(&update.version)).await?;
                 if release.tag_name != format!("v{}", update.version) {
                     return Err("Published update version does not match".into());
@@ -173,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn signature_failures_and_api_urls_are_not_retried() {
+    fn only_network_failures_on_supported_routes_are_retried() {
         let direct = "https://github.com/Wonvy/Foldo/releases/download/v1/package.exe"
             .parse()
             .unwrap();
@@ -182,8 +238,35 @@ mod tests {
             .unwrap();
         let network = tauri_plugin_updater::Error::Network("504 Gateway Timeout".into());
         assert!(can_retry_download(&network, &direct));
-        assert!(!can_retry_download(&network, &api));
+        assert!(can_retry_download(&network, &api));
         let signature = tauri_plugin_updater::Error::SignatureUtf8("invalid signature".into());
         assert!(!can_retry_download(&signature, &direct));
+        assert!(!can_retry_download(&signature, &api));
+        let foreign = "https://api.github.com/repos/other/repo/releases/assets/123"
+            .parse()
+            .unwrap();
+        assert!(!can_retry_download(&network, &foreign));
+    }
+
+    #[test]
+    fn rate_limited_api_uses_same_version_and_platform_without_an_api_lookup() {
+        let url: reqwest::Url = "https://api.github.com/repos/Wonvy/Foldo/releases/assets/123"
+            .parse()
+            .unwrap();
+        for (platform, suffix) in [
+            ("windows-x86_64", "windows-x64-setup.exe"),
+            ("darwin-aarch64", "macos-arm64.app.tar.gz"),
+            ("linux-x86_64", "linux-x64.AppImage"),
+        ] {
+            let metadata = serde_json::json!({"platforms": {platform: {"url": url.as_str()}}});
+            assert_eq!(
+                browser_fallback("0.2.5", &url, &metadata).unwrap().as_str(),
+                format!(
+                    "https://github.com/Wonvy/Foldo/releases/download/v0.2.5/foldo-desktop-v0.2.5-{suffix}"
+                )
+            );
+            assert!(browser_fallback("../other", &url, &metadata).is_none());
+        }
+        assert!(browser_fallback("0.2.5", &url, &serde_json::json!({})).is_none());
     }
 }
