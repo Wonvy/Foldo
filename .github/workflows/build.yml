@@ -167,7 +167,21 @@ jobs:
             echo '::error::Configure TAURI_SIGNING_PRIVATE_KEY before publishing updates'
             exit 1
           fi
-          npx tauri build --bundles '${{ matrix.bundles }}' --config '{"bundle":{"createUpdaterArtifacts":true}}'
+          # 打包工具从上游下载；短暂的 429/5xx 或连接超时不应直接中断整次发布。
+          # 只重试网络故障，编译、签名和配置错误仍立即失败。
+          for attempt in 1 2 3; do
+            if npx tauri build --bundles '${{ matrix.bundles }}' --config '{"bundle":{"createUpdaterArtifacts":true}}' \
+              2>&1 | tee "$RUNNER_TEMP/foldo-installer-build.log"; then
+              break
+            fi
+            if [[ "$attempt" == 3 ]] || ! grep -Eiq \
+              'http status: (408|429|5[0-9]{2})|[Cc]onnection (reset|timed out)|[Oo]peration timed out|[Ee]rror trying to connect' \
+              "$RUNNER_TEMP/foldo-installer-build.log"; then
+              exit 1
+            fi
+            echo "::warning::Installer tool download failed; retrying build ($attempt/3)"
+            sleep $((attempt * 15))
+          done
       - name: Collect installer and updater assets
         run: |
           mkdir -p dist
