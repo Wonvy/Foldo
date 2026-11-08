@@ -251,7 +251,15 @@ export type Stats = {
 
 export type FolderSuggestion = { key: "downloads" | "desktop" | "documents"; path: string; display: string; label: string };
 
+export type RegexSample = {
+  text: string;
+  range: [number, number] | null;
+  captures: { index: number; name: string | null; value: string | null }[];
+};
+
 export const api = {
+  testRegex: (pattern: string, samples: string, caseSensitive: boolean) =>
+    invoke<RegexSample[]>("test_regex", { pattern, samples, caseSensitive }),
   getConfig: () => invoke<ConfigView>("get_config"),
   saveConfig: (config: RuleFile) => invoke<ConfigView>("save_config", { config }),
   addProtect: (entry: string) => invoke<ConfigView>("add_protect", { entry }),

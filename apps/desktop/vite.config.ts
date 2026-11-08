@@ -10,7 +10,7 @@ export default defineConfig({
     strictPort: true,
     watch: { ignored: ["**/src-tauri/**"] },
     // 译文放在仓库根目录的 locales/，与后台共用
-    fs: { allow: ["..", "../../locales"] },
+    fs: { allow: ["..", "../../locales", "../../examples"] },
   },
   build: {
     // Windows 用 WebView2（Chromium），macOS 用 WKWebView（Safari）

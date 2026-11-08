@@ -14,7 +14,26 @@ const mocks = vi.hoisted(() => ({
   drag: vi.fn(),
   resize: vi.fn().mockResolvedValue(undefined),
   emit: vi.fn(),
+  configChanged: undefined as undefined | (() => void),
+  switchProfile: vi.fn().mockResolvedValue(undefined),
+  popup: vi.fn(),
+  menuItems: [] as { text: string; checked?: boolean; action?: () => void; items?: unknown[] }[],
 }));
+vi.mock("@tauri-apps/api/menu", () => {
+  const item = {
+    new: async (options: (typeof mocks.menuItems)[number]) => {
+      mocks.menuItems.push(options);
+      return options;
+    },
+  };
+  return {
+    MenuItem: item,
+    CheckMenuItem: item,
+    Submenu: item,
+    PredefinedMenuItem: item,
+    Menu: { new: async () => ({ popup: mocks.popup }) },
+  };
+});
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     onDragDropEvent: async (callback: typeof mocks.drop) => {
@@ -26,10 +45,18 @@ vi.mock("@tauri-apps/api/window", () => ({
     setAlwaysOnTop: vi.fn().mockResolvedValue(undefined),
   }),
 }));
-vi.mock("@tauri-apps/api/event", () => ({ emitTo: mocks.emit, listen: vi.fn().mockResolvedValue(() => {}) }));
+vi.mock("@tauri-apps/api/event", () => ({
+  emitTo: mocks.emit,
+  listen: async (name: string, callback: () => void) => {
+    if (name === "config-changed") mocks.configChanged = callback;
+    return () => {};
+  },
+}));
 vi.mock("../api", async (original) => ({
   ...(await original<typeof import("../api")>()),
   api: {
+    getConfig: async () => ({ config: { profile: "工作", profiles: [{ name: "工作" }, { name: "个人" }] } }),
+    switchProfile: mocks.switchProfile,
     scanPaths: mocks.scan,
     executePlan: mocks.execute,
     toggleFloat: mocks.close,
@@ -82,6 +109,7 @@ async function dragEvent(type: string, paths: string[] = []) {
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  mocks.menuItems = [];
   mocks.scan.mockImplementation(async (paths: string[]) => plan(paths));
   mocks.close.mockResolvedValue(false);
   mocks.show.mockResolvedValue(undefined);
@@ -93,6 +121,27 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("悬浮窗文件列表", () => {
+  it("右键方案菜单标记当前方案，支持切换与关闭悬浮窗", async () => {
+    const { container } = render(<FloatApp />);
+    await drop(["D:/files/a.pdf"]);
+    fireEvent.contextMenu(container.querySelector(".float-target")!);
+    await waitFor(() => expect(mocks.popup).toHaveBeenCalledTimes(1));
+    expect(mocks.menuItems.find((item) => item.text === "工作")?.checked).toBe(true);
+    mocks.menuItems.find((item) => item.text === "个人")?.action?.();
+    expect(mocks.switchProfile).toHaveBeenCalledWith("个人");
+    mocks.menuItems.find((item) => item.text === "关闭悬浮窗")?.action?.();
+    await waitFor(() => expect(mocks.close).toHaveBeenCalledTimes(1));
+  });
+
+  it("整理完成并收起后切换方案，不会重新扫描已整理的文件", async () => {
+    render(<FloatApp />);
+    await drop(["D:/files/a.pdf"]);
+    fireEvent.click(screen.getByRole("button", { name: "整理 1 个文件" }));
+    await screen.findByText("已整理 1 项");
+    fireEvent.click(screen.getByTitle("收起面板"));
+    await act(async () => mocks.configChanged?.());
+    expect(mocks.scan).toHaveBeenCalledTimes(1);
+  });
   it("松开时路径为空，仍使用本次拖入的路径更新列表", async () => {
     render(<FloatApp />);
     await drop(["D:/files/old.pdf"]);
@@ -258,14 +307,15 @@ describe("悬浮窗文件列表", () => {
     expect(mocks.scan).toHaveBeenLastCalledWith(["D:/files/c.png"]);
   });
 
-  it("右上角关闭按钮不触发窗口拖动", async () => {
-    render(<FloatApp />);
+  it("右上角关闭按钮收起为悬浮框，不关闭窗口也不触发拖动", async () => {
+    const { container } = render(<FloatApp />);
     await drop(["D:/files/a.pdf"]);
-    const close = screen.getByTitle("关闭悬浮窗");
+    const close = screen.getByTitle("收起面板");
     fireEvent.mouseDown(close, { button: 0, detail: 1 });
     fireEvent.click(close);
     expect(mocks.drag).not.toHaveBeenCalled();
-    expect(mocks.close).toHaveBeenCalledTimes(1);
+    expect(mocks.close).not.toHaveBeenCalled();
+    expect(container.querySelector(".float-root")).not.toBeNull();
   });
 
   it("整理完成后收起面板，再拖入只处理新一批文件", async () => {

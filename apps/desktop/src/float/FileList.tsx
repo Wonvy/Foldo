@@ -22,7 +22,6 @@ export default function FileList({
   skipped,
   excluded,
   view,
-  onView,
   onToggle,
   onRemove,
   onMenu,
@@ -32,7 +31,6 @@ export default function FileList({
   skipped: SkipView[];
   excluded: Set<string>;
   view: View;
-  onView: (view: View) => void;
   onToggle: (paths: string[], on: boolean) => void;
   onRemove: (paths: string[]) => void;
   onMenu: (event: MouseEvent, path: string, group?: number, noMatch?: boolean) => void;
@@ -45,13 +43,6 @@ export default function FileList({
     { key: "kept", title: t("保持原位"), files: skipped.filter((file) => file.kind !== "no_match") },
   ].filter((group) => group.files.length);
   const keys = [...(view === "none" ? [] : groups.map((group) => group.key)), ...skippedGroups.map((group) => group.key)];
-  const views = [
-    { value: "none", label: t("列表"), Icon: List },
-    { value: "category", label: t("按类型分组"), Icon: Layers },
-    { value: "extension", label: t("按扩展名分组"), Icon: FileType },
-    { value: "target", label: t("按目标位置分组"), Icon: FolderOpen },
-    { value: "rule", label: t("按规则分组"), Icon: ListFilter },
-  ] as const;
   const toggleCollapsed = (key: string) =>
     setCollapsed((previous) => {
       const next = new Set(previous);
@@ -98,22 +89,8 @@ export default function FileList({
   };
   return (
     <>
-      <div className="float-list-tools">
-        <div className="segmented float-view-switch" role="group" aria-label={t("文件视图")}>
-          {views.map(({ value, label, Icon }) => (
-            <button
-              key={value}
-              className={view === value ? "on" : ""}
-              title={label}
-              aria-label={label}
-              aria-pressed={view === value}
-              onClick={() => onView(view === value ? "none" : value)}
-            >
-              <Icon size={15} />
-            </button>
-          ))}
-        </div>
-        {view !== "none" && (
+      {view !== "none" && (
+        <div className="float-list-tools">
           <button
             className="icon-btn"
             disabled={!keys.length}
@@ -122,8 +99,8 @@ export default function FileList({
           >
             {collapsed.size ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
           </button>
-        )}
-      </div>
+        </div>
+      )}
       {groups.map((group) => {
         if (view === "none") return <div key={group.key}>{group.items.map(row)}</div>;
         const count = group.items.filter((item) => !excluded.has(pathKey(item.path))).length;
@@ -195,5 +172,31 @@ export default function FileList({
         </section>
       ))}
     </>
+  );
+}
+
+export function ViewSwitcher({ view, onView }: { view: View; onView: (view: View) => void }) {
+  const views = [
+    { value: "none", label: t("列表"), Icon: List },
+    { value: "category", label: t("按类型分组"), Icon: Layers },
+    { value: "extension", label: t("按扩展名分组"), Icon: FileType },
+    { value: "target", label: t("按目标位置分组"), Icon: FolderOpen },
+    { value: "rule", label: t("按规则分组"), Icon: ListFilter },
+  ] as const;
+  return (
+    <div className="segmented float-view-switch" role="group" aria-label={t("文件视图")}>
+      {views.map(({ value, label, Icon }) => (
+        <button
+          key={value}
+          className={view === value ? "on" : ""}
+          title={label}
+          aria-label={label}
+          aria-pressed={view === value}
+          onClick={() => onView(view === value ? "none" : value)}
+        >
+          <Icon size={15} />
+        </button>
+      ))}
+    </div>
   );
 }

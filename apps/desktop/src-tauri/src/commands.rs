@@ -31,6 +31,19 @@ fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
+#[tauri::command]
+pub async fn test_regex(
+    pattern: String,
+    samples: String,
+    case_sensitive: bool,
+) -> CmdResult<Vec<foldo_core::regex_debug::RegexSample>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        foldo_core::regex_debug::test(&pattern, &samples, case_sensitive)
+    })
+    .await
+    .map_err(err)?
+}
+
 #[derive(Default)]
 pub struct AppState {
     journal: Mutex<Option<Journal>>,
@@ -187,7 +200,10 @@ pub(crate) fn switch_profile_to(app: &tauri::AppHandle, name: &str) -> CmdResult
 
 #[tauri::command]
 pub async fn switch_profile(app: tauri::AppHandle, name: String) -> CmdResult<ConfigView> {
-    switch_profile_to(&app, &name)
+    use tauri::Emitter;
+    let view = switch_profile_to(&app, &name)?;
+    let _ = app.emit("config-changed", ());
+    Ok(view)
 }
 
 #[tauri::command]

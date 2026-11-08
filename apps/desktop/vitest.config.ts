@@ -6,5 +6,5 @@ export default defineConfig({
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["src/test/setup.ts"],
   },
-  server: { fs: { allow: ["..", "../../locales"] } },
+  server: { fs: { allow: ["..", "../../locales", "../../examples"] } },
 });

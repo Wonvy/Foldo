@@ -17,6 +17,7 @@ pub mod paths;
 pub mod plan;
 pub mod progress;
 pub mod protect;
+pub mod regex_debug;
 pub mod rule;
 pub mod scan;
 pub mod schedule;

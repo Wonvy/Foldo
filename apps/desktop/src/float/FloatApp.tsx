@@ -1,13 +1,13 @@
 // 悬浮窗（类似 DropIt）：置顶的小图标，把文件拖上去就按规则给出整理方案，确认后执行，可撤销。
-import { CheckMenuItem, Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
+import { CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emitTo, listen } from "@tauri-apps/api/event";
-import { AppWindow, CircleCheck, FolderTree, ListX, Minus, Plus, RotateCcw, TriangleAlert, Upload, X } from "lucide-react";
+import { AppWindow, CircleCheck, FolderTree, ListX, Plus, RotateCcw, TriangleAlert, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { api, errorText, type ExecView, type PlanView } from "../api";
 import { Spinner } from "../components/ui";
 import { t } from "../i18n";
-import FileList from "./FileList";
+import FileList, { ViewSwitcher } from "./FileList";
 import { loadView, mergePaths, pathKey, toItems, type View } from "./items";
 
 type Phase = "idle" | "busy" | "plan" | "done";
@@ -89,7 +89,7 @@ export default function FloatApp() {
   handleRef.current = handle;
   const rescanRef = useRef(() => {});
   rescanRef.current = () => {
-    if (pathsRef.current.length && !runningRef.current && phaseRef.current !== "done") void scan(pathsRef.current);
+    if (pathsRef.current.length && !runningRef.current && !resultRef.current) void scan(pathsRef.current);
   };
 
   const clear = () => {
@@ -291,11 +291,39 @@ export default function FloatApp() {
   // 右键菜单（系统原生菜单，收起时窗口很小也能完整显示）
   const openMenu = async (e: MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     const canUndo = !!result && result.done > 0 && !undone;
     try {
       const sep = () => PredefinedMenuItem.new({ item: "Separator" });
+      const config = await api
+        .getConfig()
+        .then((view) => view.config)
+        .catch(() => null);
+      const current = config?.profile ?? t("默认方案");
+      const names = [...new Set([current, ...(config?.profiles ?? []).map((profile) => profile.name)])];
+      const profiles = await Submenu.new({
+        text: t("切换方案"),
+        items: await Promise.all(
+          names.map((name) =>
+            CheckMenuItem.new({
+              text: name,
+              checked: name === current,
+              enabled: !running && name !== current,
+              action: () => {
+                if (runningRef.current) return;
+                void api.switchProfile(name).catch((e) => {
+                  setError(errorText(e));
+                  setPhase(resultRef.current ? "done" : "plan");
+                });
+              },
+            }),
+          ),
+        ),
+      });
       const menu = await Menu.new({
         items: [
+          profiles,
+          await sep(),
           await MenuItem.new({ text: t("打开主窗口"), action: () => void api.showMain() }),
           await MenuItem.new({ text: t("选择文件整理…"), action: () => void pickAndHandle() }),
           await MenuItem.new({ text: t("撤销上次整理"), enabled: canUndo, action: () => void undo() }),
@@ -388,10 +416,14 @@ export default function FloatApp() {
         <button className="icon-btn" title={t("打开主窗口")} onClick={() => void api.showMain()}>
           <AppWindow size={15} />
         </button>
-        <button className="icon-btn" title={t("收起面板")} onClick={() => setPhase("idle")}>
-          <Minus size={15} />
-        </button>
-        <button className="icon-btn" title={t("关闭悬浮窗")} onClick={close}>
+        <button
+          className="icon-btn"
+          title={t("收起面板")}
+          onClick={() => {
+            clearTimeout(collapseTimer.current);
+            setPhase("idle");
+          }}
+        >
           <X size={15} />
         </button>
       </div>
@@ -430,7 +462,6 @@ export default function FloatApp() {
             skipped={skipped}
             excluded={unchecked}
             view={view}
-            onView={changeView}
             onToggle={toggle}
             onRemove={remove}
             onMenu={itemMenu}
@@ -464,6 +495,9 @@ export default function FloatApp() {
         )}
       </div>
 
+      <div className="float-view-bar">
+        <ViewSwitcher view={view} onView={changeView} />
+      </div>
       <div className="float-foot">
         {(phase === "plan" || phase === "busy") && (
           <button

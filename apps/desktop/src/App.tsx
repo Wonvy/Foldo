@@ -61,6 +61,7 @@ function Shell() {
   const pageRef = useRef<Page>("tidy");
   pageRef.current = page;
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [advancedRequest, setAdvancedRequest] = useState(0);
   const [ruleRequest, setRuleRequest] = useState<RuleRequest | null>(null);
   const [scanRequest, setScanRequest] = useState(0);
   const [watch, setWatch] = useState<WatchStatus | null>(null);
@@ -277,6 +278,7 @@ function Shell() {
             dropped={rulesDrop}
             onOpenAdvanced={() => {
               setShowAdvanced(true);
+              setAdvancedRequest((n) => n + 1);
               setPage("settings");
             }}
           />
@@ -292,6 +294,7 @@ function Shell() {
             onTheme={setTheme}
             showAdvanced={showAdvanced}
             onShowAdvanced={setShowAdvanced}
+            advancedRequest={advancedRequest}
           />
         </div>
       </main>

@@ -94,6 +94,7 @@ fn main() {
             commands::fields,
             commands::inspect,
             commands::test_rule,
+            commands::test_regex,
             commands::debug_file,
             commands::toggle_float,
             commands::float_visible,

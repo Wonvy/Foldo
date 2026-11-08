@@ -930,5 +930,21 @@
  "仅支持普通文件或文件夹，不跟随符号链接": "Only regular files and folders are supported; symbolic links are not followed",
  "调整窗口大小": "Resize window",
  "未能读取拖入的文件，请重新拖入或点击添加文件": "Could not read the dropped files. Drop them again or use Add files.",
- "已接收 {0} 个新文件，当前整理完成后显示": "Received {0} new files; they will appear after the current batch finishes"
+ "已接收 {0} 个新文件，当前整理完成后显示": "Received {0} new files; they will appear after the current batch finishes",
+ "不匹配": "No match",
+ "与整理规则使用相同的正则语法；不支持前后查找和反向引用。日期示例检查月日范围，不校验闰年和每月天数。": "Uses the same regex syntax as your rules; lookaround and backreferences are not supported. The date example checks month/day ranges, but not leap years or days per month.",
+ "切换方案": "Switch profile",
+ "匹配": "Match",
+ "应用到条件": "Apply to condition",
+ "收起调试": "Close tester",
+ "文件分类": "File categories",
+ "日期开头示例": "Date prefix example",
+ "更新": "Updates",
+ "正则最多 4096 字节，测试文本最多 100 行、64 KB": "Regex is limited to 4096 bytes; test text to 100 lines and 64 KB.",
+ "正则表达式": "Regular expression",
+ "正则调试": "Regex tester",
+ "测试文本（每行一个文件名）": "Test text (one filename per line)",
+ "空匹配": "Empty match",
+ "设置分类": "Settings categories",
+ "高级": "Advanced"
 }

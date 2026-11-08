@@ -26,7 +26,7 @@ use chrono::{
     DateTime, Datelike, Duration as ChronoDuration, Local, NaiveDate, NaiveDateTime, TimeZone,
 };
 use globset::{GlobBuilder, GlobMatcher};
-use regex::{Regex, RegexBuilder};
+use regex::Regex;
 use serde_json::Value as Json;
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -455,9 +455,7 @@ fn compile_op(field: &'static FieldDef, op: &str, v: &Json, cs: bool) -> Result<
             "matches" => {
                 let r = as_text(v).ok_or_else(|| crate::t!("正则应为文字"))?;
                 Check::Regex(
-                    RegexBuilder::new(&r)
-                        .case_insensitive(!cs)
-                        .build()
+                    crate::regex_debug::compile(&r, cs)
                         .map_err(|e| crate::t!("正则「{r}」无效: {e}", r = r, e = e))?,
                 )
             }

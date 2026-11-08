@@ -1,5 +1,19 @@
 import { LANGS, loadLangPref, setLangPref, systemLang, type LangPref } from "../i18n";
-import { CircleCheck, Languages, Code, Download, FolderOpen, Monitor, Moon, RefreshCw, Sun, TriangleAlert } from "lucide-react";
+import {
+  CircleCheck,
+  Languages,
+  Code,
+  Download,
+  FolderOpen,
+  Monitor,
+  Moon,
+  RefreshCw,
+  Sun,
+  TriangleAlert,
+  SlidersHorizontal,
+  FolderTree,
+  Tags,
+} from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { version } from "../../package.json";
 import { useEffect, useState, type KeyboardEvent } from "react";
@@ -18,6 +32,7 @@ export default function SettingsPage({
   onTheme,
   showAdvanced,
   onShowAdvanced,
+  advancedRequest = 0,
 }: {
   update: UpdateInfo | null;
   onUpdate: (u: UpdateInfo) => void;
@@ -25,107 +40,188 @@ export default function SettingsPage({
   onTheme: (t: ThemePref) => void;
   showAdvanced: boolean;
   onShowAdvanced: (v: boolean) => void;
+  advancedRequest?: number;
 }) {
   const { view } = useStore();
+  const [section, setSection] = useState(showAdvanced ? "advanced" : "general");
+  useEffect(() => {
+    if (showAdvanced) setSection("advanced");
+  }, [showAdvanced, advancedRequest]);
+  const sections = [
+    { id: "general", label: t("通用"), Icon: SlidersHorizontal },
+    { id: "tidy", label: t("整理"), Icon: FolderTree },
+    { id: "categories", label: t("文件分类"), Icon: Tags },
+    { id: "updates", label: t("更新"), Icon: Download },
+    { id: "advanced", label: t("高级"), Icon: Code },
+  ];
+  const tabKey = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const next =
+      event.key === "ArrowRight"
+        ? (index + 1) % sections.length
+        : event.key === "ArrowLeft"
+          ? (index + sections.length - 1) % sections.length
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? sections.length - 1
+              : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    setSection(sections[next].id);
+    document.getElementById(`settings-tab-${sections[next].id}`)?.focus();
+  };
 
   return (
-    <div className="page">
+    <div className="page settings-page">
       <div className="page-head">
         <div>
           <h1>{t("设置")}</h1>
         </div>
       </div>
 
-      <div className="card">
-        <div className="card-head">
-          <h2>{t("通用")}</h2>
-        </div>
-        <div className="card-body row">
-          <span className="text-2" style={{ flex: 1 }}>
-            {t("主题")}
-          </span>
-          <Segmented
-            value={theme}
-            onChange={onTheme}
-            options={[
-              {
-                value: "system",
-                label: (
-                  <>
-                    <Monitor size={14} /> {t("跟随系统")}
-                  </>
-                ),
-              },
-              {
-                value: "light",
-                label: (
-                  <>
-                    <Sun size={14} /> {t("浅色")}
-                  </>
-                ),
-              },
-              {
-                value: "dark",
-                label: (
-                  <>
-                    <Moon size={14} /> {t("深色")}
-                  </>
-                ),
-              },
-            ]}
-          />
-        </div>
-        <div className="card-body row" style={{ borderTop: "1px solid var(--border)" }}>
-          <span className="text-2" style={{ flex: 1 }}>
-            <Languages size={14} style={{ verticalAlign: -2, marginRight: 6 }} />
-            {t("语言")}
-          </span>
-          <select
-            className="input"
-            style={{ width: "auto" }}
-            value={loadLangPref()}
-            onChange={(e) => setLangPref(e.target.value as LangPref)}
+      <div className="settings-tabs" role="tablist" aria-label={t("设置分类")}>
+        {sections.map(({ id, label, Icon }, index) => (
+          <button
+            key={id}
+            id={`settings-tab-${id}`}
+            role="tab"
+            aria-selected={section === id}
+            aria-controls={`settings-panel-${id}`}
+            tabIndex={section === id ? 0 : -1}
+            onKeyDown={(event) => tabKey(event, index)}
+            onClick={() => setSection(id)}
           >
-            <option value="system">
-              {t("跟随系统")}（{LANGS.find((l) => l.value === systemLang())?.label}）
-            </option>
-            {LANGS.map((l) => (
-              <option key={l.value} value={l.value}>
-                {l.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <AutostartRow />
-      </div>
-
-      <h3 className="section-title">{t("整理选项")}</h3>
-      <TidyOptions />
-      <CategorySettings />
-
-      <h3 className="section-title">{t("关于")}</h3>
-      <UpdateCard update={update} onUpdate={onUpdate} />
-
-      <div className="card">
-        <div className="card-head">
-          <h2>{t("配置文件")}</h2>
-          <span className="muted">{t("规则、整理文件夹和固定保留都保存在这里")}</span>
-        </div>
-        <div className="card-body row">
-          <span className="mono ellipsis selectable" style={{ flex: 1 }}>
-            {view?.display_path}
-          </span>
-          {view?.exists && (
-            <button className="btn sm" onClick={() => api.reveal(view.path)}>
-              <FolderOpen size={14} /> {t("显示")}
-            </button>
-          )}
-          <button className="btn sm" onClick={() => onShowAdvanced(!showAdvanced)}>
-            <Code size={14} /> {showAdvanced ? t("收起源码") : t("编辑源码（高级）")}
+            <Icon size={16} />
+            <span>{label}</span>
+            {id === "updates" && update?.version && <span className="settings-update-dot" />}
           </button>
-        </div>
-        {showAdvanced && <YamlEditor />}
+        ))}
       </div>
+      <section
+        className="settings-panel"
+        id="settings-panel-general"
+        role="tabpanel"
+        aria-labelledby="settings-tab-general"
+        hidden={section !== "general"}
+      >
+        <div className="card">
+          <div className="card-head">
+            <h2>{t("通用")}</h2>
+          </div>
+          <div className="card-body row">
+            <span className="text-2" style={{ flex: 1 }}>
+              {t("主题")}
+            </span>
+            <Segmented
+              value={theme}
+              onChange={onTheme}
+              options={[
+                {
+                  value: "system",
+                  label: (
+                    <>
+                      <Monitor size={14} /> {t("跟随系统")}
+                    </>
+                  ),
+                },
+                {
+                  value: "light",
+                  label: (
+                    <>
+                      <Sun size={14} /> {t("浅色")}
+                    </>
+                  ),
+                },
+                {
+                  value: "dark",
+                  label: (
+                    <>
+                      <Moon size={14} /> {t("深色")}
+                    </>
+                  ),
+                },
+              ]}
+            />
+          </div>
+          <div className="card-body row" style={{ borderTop: "1px solid var(--border)" }}>
+            <span className="text-2" style={{ flex: 1 }}>
+              <Languages size={14} style={{ verticalAlign: -2, marginRight: 6 }} />
+              {t("语言")}
+            </span>
+            <select
+              className="input"
+              style={{ width: "auto" }}
+              value={loadLangPref()}
+              onChange={(e) => setLangPref(e.target.value as LangPref)}
+            >
+              <option value="system">
+                {t("跟随系统")}（{LANGS.find((l) => l.value === systemLang())?.label}）
+              </option>
+              {LANGS.map((l) => (
+                <option key={l.value} value={l.value}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <AutostartRow />
+        </div>
+      </section>
+      <section
+        className="settings-panel"
+        id="settings-panel-tidy"
+        role="tabpanel"
+        aria-labelledby="settings-tab-tidy"
+        hidden={section !== "tidy"}
+      >
+        <TidyOptions />
+      </section>
+      <section
+        className="settings-panel"
+        id="settings-panel-categories"
+        role="tabpanel"
+        aria-labelledby="settings-tab-categories"
+        hidden={section !== "categories"}
+      >
+        <CategorySettings />
+      </section>
+      <section
+        className="settings-panel"
+        id="settings-panel-updates"
+        role="tabpanel"
+        aria-labelledby="settings-tab-updates"
+        hidden={section !== "updates"}
+      >
+        <UpdateCard update={update} onUpdate={onUpdate} />
+      </section>
+      <section
+        className="settings-panel"
+        id="settings-panel-advanced"
+        role="tabpanel"
+        aria-labelledby="settings-tab-advanced"
+        hidden={section !== "advanced"}
+      >
+        <div className="card">
+          <div className="card-head">
+            <h2>{t("配置文件")}</h2>
+            <span className="muted">{t("规则、整理文件夹和固定保留都保存在这里")}</span>
+          </div>
+          <div className="card-body row">
+            <span className="mono ellipsis selectable" style={{ flex: 1 }}>
+              {view?.display_path}
+            </span>
+            {view?.exists && (
+              <button className="btn sm" onClick={() => api.reveal(view.path)}>
+                <FolderOpen size={14} /> {t("显示")}
+              </button>
+            )}
+            <button className="btn sm" onClick={() => onShowAdvanced(!showAdvanced)}>
+              <Code size={14} /> {showAdvanced ? t("收起源码") : t("编辑源码（高级）")}
+            </button>
+          </div>
+          {showAdvanced && <YamlEditor />}
+        </div>
+      </section>
     </div>
   );
 }

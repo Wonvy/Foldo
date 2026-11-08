@@ -1,8 +1,9 @@
 // 条件树编辑器：组（全部 / 任一 / 都不）可以任意嵌套，每个条件可以单独取反。
-import { Ban, CaseSensitive, CircleCheck, CircleX, Ellipsis, Layers, Plus, Trash } from "lucide-react";
+import { Ban, CaseSensitive, CircleCheck, CircleX, Ellipsis, FlaskConical, Layers, Plus, Trash } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Explain, FieldDef } from "../api";
 import { OPS, PERIODS, defaultValue, group, newTest, type CondNode, type FieldMap, type GroupNode, type TestNode } from "../rules";
+import RegexTester from "./RegexTester";
 import FieldPicker from "./FieldPicker";
 import { useMenu } from "./ui";
 import { t, tv } from "../i18n";
@@ -149,6 +150,7 @@ function TestRow({
   result?: Explain;
 }) {
   const menu = useMenu();
+  const [debug, setDebug] = useState(false);
   const f = fieldMap.get(node.field);
   const ops = OPS[f?.type ?? "text"];
   const caseable = (f?.type === "text" || f?.type === "list") && !["exists", "empty", "in", "not_in"].includes(node.op);
@@ -169,55 +171,70 @@ function TestRow({
   };
 
   return (
-    <div className="cond-row">
-      <StatusDot ex={result} />
-      {node.not && (
-        <button className="not-badge" title={t("已取反，点击取消")} onClick={() => onChange({ ...node, not: false })}>
-          {t("非")}
+    <>
+      <div className="cond-row">
+        <StatusDot ex={result} />
+        {node.not && (
+          <button className="not-badge" title={t("已取反，点击取消")} onClick={() => onChange({ ...node, not: false })}>
+            {t("非")}
+          </button>
+        )}
+        <FieldPicker value={node.field} fields={fields} onChange={setField} />
+        <select className="pill-select" value={node.op} onChange={(e) => setOp(e.target.value)}>
+          {ops.map((o) => (
+            <option key={o.op} value={o.op}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <ValueInput field={f} op={node.op} value={node.value} onChange={(value) => onChange({ ...node, value })} />
+        {node.op === "matches" && (
+          <button className="icon-btn" title={t("正则调试")} aria-expanded={debug} onClick={() => setDebug(!debug)}>
+            <FlaskConical size={16} />
+          </button>
+        )}
+        {node.cs && caseable && (
+          <span className="mini-badge" title={t("区分大小写")}>
+            Aa
+          </span>
+        )}
+        <button
+          className="icon-btn row-more"
+          aria-label={t("更多")}
+          onClick={(e) =>
+            menu.open(e.currentTarget, [
+              {
+                label: node.not ? t("取消取反") : t("取反（不满足时命中）"),
+                icon: <Ban size={15} />,
+                onClick: () => onChange({ ...node, not: !node.not }),
+              },
+              ...(caseable
+                ? [
+                    {
+                      label: node.cs ? t("不区分大小写") : t("区分大小写"),
+                      icon: <CaseSensitive size={15} />,
+                      onClick: () => onChange({ ...node, cs: !node.cs }),
+                    },
+                  ]
+                : []),
+              "divider" as const,
+              { label: t("删除条件"), icon: <Trash size={15} />, danger: true, onClick: onRemove },
+            ])
+          }
+        >
+          <Ellipsis size={16} />
         </button>
+        {menu.node}
+      </div>
+      {debug && node.op === "matches" && (
+        <RegexTester
+          pattern={String(node.value ?? "")}
+          caseSensitive={!!node.cs}
+          onClose={() => setDebug(false)}
+          onApply={(value, cs) => onChange({ ...node, value, cs })}
+        />
       )}
-      <FieldPicker value={node.field} fields={fields} onChange={setField} />
-      <select className="pill-select" value={node.op} onChange={(e) => setOp(e.target.value)}>
-        {ops.map((o) => (
-          <option key={o.op} value={o.op}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <ValueInput field={f} op={node.op} value={node.value} onChange={(value) => onChange({ ...node, value })} />
-      {node.cs && caseable && (
-        <span className="mini-badge" title={t("区分大小写")}>
-          Aa
-        </span>
-      )}
-      <button
-        className="icon-btn row-more"
-        aria-label={t("更多")}
-        onClick={(e) =>
-          menu.open(e.currentTarget, [
-            {
-              label: node.not ? t("取消取反") : t("取反（不满足时命中）"),
-              icon: <Ban size={15} />,
-              onClick: () => onChange({ ...node, not: !node.not }),
-            },
-            ...(caseable
-              ? [
-                  {
-                    label: node.cs ? t("不区分大小写") : t("区分大小写"),
-                    icon: <CaseSensitive size={15} />,
-                    onClick: () => onChange({ ...node, cs: !node.cs }),
-                  },
-                ]
-              : []),
-            "divider" as const,
-            { label: t("删除条件"), icon: <Trash size={15} />, danger: true, onClick: onRemove },
-          ])
-        }
-      >
-        <Ellipsis size={16} />
-      </button>
-      {menu.node}
-    </div>
+    </>
   );
 }
 
