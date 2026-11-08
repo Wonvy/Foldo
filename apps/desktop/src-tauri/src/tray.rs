@@ -28,14 +28,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         false,
         None::<&str>,
     )?;
-    let m_run = CheckMenuItem::with_id(
-        app,
-        "mode_run",
-        "自动整理（回收站操作仍需确认）",
-        true,
-        false,
-        None::<&str>,
-    )?;
+    let m_run = CheckMenuItem::with_id(app, "mode_run", "自动整理…", true, false, None::<&str>)?;
     let open = MenuItem::with_id(app, "open", "打开 Foldo", true, None::<&str>)?;
     let float = MenuItem::with_id(app, "float", "悬浮窗", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出 Foldo", true, None::<&str>)?;
@@ -66,7 +59,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             "status" => open_pending(app),
             "mode_off" => set_mode(app, AutoMode::Off),
             "mode_notify" => set_mode(app, AutoMode::Notify),
-            "mode_run" => set_mode(app, AutoMode::Run),
+            "mode_run" => request_auto(app),
             "open" => show_main(app),
             "float" => {
                 let _ = toggle_float_window(app);
@@ -148,6 +141,19 @@ pub fn refresh(app: &AppHandle, st: &WatchStatus) {
 pub fn open_pending(app: &AppHandle) {
     show_main(app);
     let _ = app.emit("open-pending", ());
+}
+
+/// 从托盘选“自动整理”：不直接开启，打开主窗口让用户先确认（列出监听的文件夹和会立刻整理的文件）。
+fn request_auto(app: &AppHandle) {
+    let current = current_config()
+        .map(|c| c.settings.auto)
+        .unwrap_or_default();
+    // 菜单上的勾选先恢复成当前模式，确认后才会变
+    check_mode(app, current);
+    if current != AutoMode::Run {
+        show_main(app);
+        let _ = app.emit("confirm-auto", ());
+    }
 }
 
 /// 从托盘切换自动整理模式：写入配置并立即生效。

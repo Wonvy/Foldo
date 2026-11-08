@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api, baseName, errorText, type FolderDef, type RuleFile, type WatchStatus } from "../api";
 import { tilde } from "../rules";
 import { pickFolder, useStore } from "../store";
-import { useMenu, type MenuItem } from "./ui";
+import { Modal, useMenu, type MenuItem } from "./ui";
 
 export default function FolderPanel({
   watch,
@@ -24,6 +24,10 @@ export default function FolderPanel({
   const rules = config.rules ?? [];
   const [error, setError] = useState<string | null>(null);
   const menu = useMenu();
+  // 自动整理开着时，添加规则或文件夹会立即生效：先确认
+  const auto = config.settings?.auto === "run";
+  const [pending, setPending] = useState<{ text: string; run: () => void } | null>(null);
+  const confirmIfAuto = (text: string, run: () => void) => (auto ? setPending({ text, run }) : run());
 
   const update = async (next: RuleFile) => {
     setError(null);
@@ -40,6 +44,7 @@ export default function FolderPanel({
   const addFolder = async () => {
     const dir = await pickFolder("添加要整理的文件夹");
     if (!dir || folders.some((f) => f.path === dir)) return;
+    // 新文件夹还没有规则，不会立即整理，不需要确认
     await update({ ...config, folders: [...folders, { path: dir, rules: [] }] });
   };
 
@@ -52,7 +57,10 @@ export default function FolderPanel({
     const items: MenuItem[] = rest.map((r) => ({
       label: r.enabled === false ? `${r.name}（已停用）` : r.name,
       icon: <WandSparkles size={15} />,
-      onClick: () => setFolder(i, { rules: [...(f.rules ?? []), r.name] }),
+      onClick: () =>
+        confirmIfAuto(`自动整理已开启：添加后会立即按「${r.name}」整理「${baseName(f.path)}」里的文件。`, () =>
+          setFolder(i, { rules: [...(f.rules ?? []), r.name] }),
+        ),
     }));
     if (items.length) items.push("divider");
     items.push({ label: "新建规则…", icon: <Plus size={15} />, onClick: () => onNewRule(f.path) });
@@ -63,11 +71,25 @@ export default function FolderPanel({
     const f = folders[i];
     const tick = (on: boolean | undefined) => (on ? <Check size={15} /> : <span style={{ width: 15 }} />);
     menu.open(el, [
-      { label: "包含子文件夹", icon: tick(f.recursive), onClick: () => setFolder(i, { recursive: f.recursive ? undefined : true }) },
+      {
+        label: "包含子文件夹",
+        icon: tick(f.recursive),
+        onClick: () =>
+          f.recursive
+            ? setFolder(i, { recursive: undefined })
+            : confirmIfAuto(`自动整理已开启：「${baseName(f.path)}」的子文件夹里的文件也会立即按规则整理。`, () =>
+                setFolder(i, { recursive: true }),
+              ),
+      },
       {
         label: "包含隐藏文件",
         icon: tick(f.include_hidden),
-        onClick: () => setFolder(i, { include_hidden: f.include_hidden ? undefined : true }),
+        onClick: () =>
+          f.include_hidden
+            ? setFolder(i, { include_hidden: undefined })
+            : confirmIfAuto(`自动整理已开启：「${baseName(f.path)}」里的隐藏文件也会立即按规则整理。`, () =>
+                setFolder(i, { include_hidden: true }),
+              ),
       },
       "divider",
       { label: "在文件管理器中显示", icon: <Search size={15} />, onClick: () => api.reveal(f.path) },
@@ -132,6 +154,34 @@ export default function FolderPanel({
         <FolderPlus size={15} /> 添加文件夹
       </button>
       {menu.node}
+      {pending && (
+        <Modal
+          title="立即生效"
+          onClose={() => setPending(null)}
+          width={440}
+          footer={
+            <>
+              <span className="spacer" />
+              <button className="btn" onClick={() => setPending(null)}>
+                取消
+              </button>
+              <button
+                className="btn primary"
+                onClick={() => {
+                  pending.run();
+                  setPending(null);
+                }}
+              >
+                确定
+              </button>
+            </>
+          }
+        >
+          <p className="text-2" style={{ marginBottom: 12 }}>
+            {pending.text}整理过的文件可以在“历史”里撤销。
+          </p>
+        </Modal>
+      )}
     </div>
   );
 }

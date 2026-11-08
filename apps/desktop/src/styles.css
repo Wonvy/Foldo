@@ -2427,3 +2427,44 @@ html.float #root {
 .summary-line .link:hover {
   color: var(--accent);
 }
+
+/* 开启自动整理的确认 */
+.confirm-section {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.confirm-folder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.confirm-folder svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.confirm-folder b {
+  flex: none;
+  font-weight: 600;
+}
+
+.confirm-folder.off {
+  opacity: 0.55;
+}
+
+.confirm-folder.off svg {
+  color: var(--muted);
+}
+
+.confirm-file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr);
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}

@@ -966,3 +966,77 @@ pub async fn read_rules_file(path: String) -> CmdResult<Vec<RuleDef>> {
     }
     Ok(file.rules)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tauri::async_runtime::block_on;
+
+    /// 用真实的命令函数走一遍：读取旧版配置（自动迁移）→ 保存为新写法 → 导出规则 → 读取导入文件。
+    #[test]
+    fn config_migration_save_and_rule_import_export() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        let inbox = root.join("inbox");
+        std::fs::create_dir_all(&inbox).unwrap();
+        let rules_path = root.join("rules.yaml");
+        std::fs::write(
+            &rules_path,
+            format!(
+                "version: 1\nfolders:\n  - path: '{}'\nrules:\n  - name: 文档\n    conditions: [{{ category: 文档 }}]\n    actions: [{{ move: '文档/' }}]\n  - name: 打包\n    locations: ['{}']\n    recursive: true\n    actions: [{{ compress: '{{stem}}.zip' }}]\n",
+                inbox.display(),
+                inbox.display()
+            ),
+        )
+        .unwrap();
+        // 只有这一个测试会改这个环境变量
+        unsafe { std::env::set_var("FOLDO_RULES", &rules_path) };
+
+        // 读取：自动迁移成 version 2，规则加入文件夹
+        let view = block_on(get_config()).unwrap();
+        assert!(view.error.is_none(), "{:?}", view.error);
+        let cfg = view.config.unwrap();
+        assert_eq!(cfg.version, 2);
+        assert_eq!(cfg.folders.len(), 1);
+        assert_eq!(
+            cfg.folders[0].rules.as_deref(),
+            Some(&["文档".to_string(), "打包".to_string()][..])
+        );
+        assert!(cfg.folders[0].recursive);
+
+        // 保存：写成新写法
+        write_config(&cfg).unwrap();
+        let text = std::fs::read_to_string(&rules_path).unwrap();
+        assert!(text.contains("version: 2"), "{text}");
+        assert!(!text.contains("locations"), "{text}");
+        assert!(RuleSet::load(&rules_path).is_ok());
+
+        // 导出单条和全部规则，再读回来
+        let one = root.join("one.yaml");
+        assert_eq!(
+            block_on(export_rules(vec!["打包".into()], path_string(&one))).unwrap(),
+            1
+        );
+        let all = root.join("all.yaml");
+        assert_eq!(
+            block_on(export_rules(vec![], path_string(&all))).unwrap(),
+            2
+        );
+        let imported = block_on(read_rules_file(path_string(&all))).unwrap();
+        let names: Vec<_> = imported.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["文档", "打包"]);
+        // 导出的文件只有规则，没有文件夹
+        assert!(!std::fs::read_to_string(&all).unwrap().contains("folders"));
+        // 完整配置文件也能当作导入来源
+        assert_eq!(
+            block_on(read_rules_file(path_string(&rules_path)))
+                .unwrap()
+                .len(),
+            2
+        );
+        // 不是规则文件时给出明确的错误
+        let bad = root.join("bad.yaml");
+        std::fs::write(&bad, "hello: world\n").unwrap();
+        assert!(block_on(read_rules_file(path_string(&bad))).is_err());
+    }
+}

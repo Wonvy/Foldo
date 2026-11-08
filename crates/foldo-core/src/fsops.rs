@@ -106,9 +106,25 @@ pub fn compress_file(src: &Path, dst: &Path) -> io::Result<()> {
         .open(dst)?;
     let result = (|| {
         let mut zip = zip::ZipWriter::new(io::BufWriter::new(out));
-        let opts = zip::write::SimpleFileOptions::default()
+        let md = fs::metadata(src)?;
+        let mut opts = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated)
-            .large_file(fs::metadata(src)?.len() >= u32::MAX as u64);
+            .large_file(md.len() >= u32::MAX as u64);
+        // 压缩包里保留文件原来的修改时间（zip 用本地时间）
+        if let Ok(t) = md.modified() {
+            use chrono::{Datelike, Timelike};
+            let t: chrono::DateTime<chrono::Local> = t.into();
+            if let Ok(dt) = zip::DateTime::from_date_and_time(
+                t.year().clamp(1980, 2107) as u16,
+                t.month() as u8,
+                t.day() as u8,
+                t.hour() as u8,
+                t.minute() as u8,
+                t.second() as u8,
+            ) {
+                opts = opts.last_modified_time(dt);
+            }
+        }
         zip.start_file(name, opts).map_err(io::Error::other)?;
         io::copy(&mut io::BufReader::new(fs::File::open(src)?), &mut zip)?;
         zip.finish().map_err(io::Error::other)?.flush()

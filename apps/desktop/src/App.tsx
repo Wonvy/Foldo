@@ -96,6 +96,8 @@ function Shell() {
           setScanRequest((n) => n + 1);
         };
         add(await listen("tidy-scan", scanNow));
+        // 托盘里选了“自动整理”：到整理页确认（确认框由整理页顶部的模式切换显示）
+        add(await listen("confirm-auto", () => setPage("tidy")));
         // 点了托盘状态或系统通知：有待确认的文件就去整理页，刚自动整理过就看历史
         add(
           await listen("open-pending", () => {
