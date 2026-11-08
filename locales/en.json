@@ -955,5 +955,17 @@
  "目标位置与操作": "Destination and actions",
  "Ctrl + 滚轮调整大小": "Ctrl + scroll to resize",
  "悬浮图标大小": "Floating icon size",
- "恢复默认大小": "Reset size"
+ "恢复默认大小": "Reset size",
+ "未配置扩展名": "No extensions configured",
+ "文件类型": "File type",
+ "未找到可添加的扩展名，请拖入带后缀的文件；文件夹不会添加。": "No extensions found. Drop files with an extension; folders are skipped.",
+ "已识别 {0} 种扩展名，跳过 {1} 个项目；点击保存更改后生效。": "Found {0} extensions; skipped {1} items. Save changes to apply.",
+ "也可把文件拖到对应分类，自动提取扩展名；不会移动文件。": "Drop files onto a category to add their extensions. Files will stay in place.",
+ "松开以添加扩展名": "Drop to add extensions",
+ "正在保存…": "Saving…",
+ "保存失败：{0}": "Save failed: {0}",
+ "状态栏": "Status bar",
+ "就绪": "Ready",
+ "选择文件夹或位置变量": "Choose a folder or location variable",
+ "上一级文件夹的名字；也可比较完整路径或系统文件夹变量": "Parent folder name; also accepts full paths or system folder variables"
 }

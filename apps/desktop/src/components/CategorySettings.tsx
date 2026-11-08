@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CircleCheck, Plus, RotateCcw, X } from "lucide-react";
-import { errorText } from "../api";
+import { api, errorText } from "../api";
 import { useStore } from "../store";
 import { FileIcon, Spinner } from "./ui";
 import { t } from "../i18n";
+import { CATEGORY_DROP, type CategoryDrop } from "../categoryDrop";
+import { useUnsaved } from "../saveStatus";
 
 const parse = (text: string) => [
   ...new Set(
@@ -22,17 +24,24 @@ export default function CategorySettings() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [inputs, setInputs] = useState<Record<string, string>>({});
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [pendingDrops, setPendingDrops] = useState(0);
+  const [dropNote, setDropNote] = useState<string | null>(null);
   const current = Object.fromEntries(
     categories.map((c) => [c.id, (config.settings?.category_extensions?.[c.id] ?? c.extensions).join(", ")]),
   );
   const values = draft ?? current;
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
   const dirty = !!draft || Object.values(inputs).some((v) => v.trim());
+  useUnsaved("categories", dirty);
   const change = (id: string, value: string) => {
-    setDraft({ ...values, [id]: value });
+    valuesRef.current = { ...valuesRef.current, [id]: value };
+    setDraft(valuesRef.current);
     setSaved(false);
     setError(null);
   };
-  const add = (id: string, text = inputs[id] ?? "") => {
+  const add = (id: string, text = inputs[id] ?? "", fromDrop = false) => {
     if (!text.trim()) return;
     const extensions = parse(text);
     for (const ext of extensions) {
@@ -40,15 +49,57 @@ export default function CategorySettings() {
         setError(t("无效扩展名：{0}", [ext || t("空后缀")]));
         return;
       }
-      const owner = categories.find((c) => c.id !== id && parse(values[c.id]).includes(ext));
+      const owner = categories.find((c) => c.id !== id && parse(valuesRef.current[c.id]).includes(ext));
       if (owner) {
         setError(t("扩展名 .{0} 已属于“{1}”，请先从该类型中移除", [ext, owner.name]));
         return;
       }
     }
-    change(id, [...new Set([...parse(values[id]), ...extensions])].join(", "));
-    setInputs((prev) => ({ ...prev, [id]: "" }));
+    change(id, [...new Set([...parse(valuesRef.current[id]), ...extensions])].join(", "));
+    if (!fromDrop) setInputs((prev) => ({ ...prev, [id]: "" }));
+    return true;
   };
+  const addRef = useRef(add);
+  addRef.current = add;
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  useEffect(() => {
+    let active = true;
+    const receive = (event: Event) => {
+      const drop = (event as CustomEvent<CategoryDrop>).detail;
+      setDropTarget(drop.type === "enter" || drop.type === "over" ? drop.category : null);
+      if (drop.type !== "drop" || !drop.category || busyRef.current) return;
+      if (!drop.paths.length) {
+        setError(t("未能读取拖入的文件，请重新拖入或点击添加文件"));
+        return;
+      }
+      const id = drop.category;
+      setPendingDrops((n) => n + 1);
+      setError(null);
+      setDropNote(null);
+      void api
+        .droppedExtensions(drop.paths)
+        .then((result) => {
+          if (!active) return;
+          if (!result.extensions.length) {
+            setError(t("未找到可添加的扩展名，请拖入带后缀的文件；文件夹不会添加。"));
+          } else if (addRef.current(id, result.extensions.join(", "), true)) {
+            setDropNote(t("已识别 {0} 种扩展名，跳过 {1} 个项目；点击保存更改后生效。", [result.extensions.length, result.ignored]));
+          }
+        })
+        .catch((e) => {
+          if (active) setError(errorText(e));
+        })
+        .finally(() => {
+          if (active) setPendingDrops((n) => n - 1);
+        });
+    };
+    window.addEventListener(CATEGORY_DROP, receive);
+    return () => {
+      active = false;
+      window.removeEventListener(CATEGORY_DROP, receive);
+    };
+  }, []);
   const submit = async () => {
     setBusy(true);
     setError(null);
@@ -69,6 +120,7 @@ export default function CategorySettings() {
       setDraft(null);
       setInputs({});
       setSaved(true);
+      setDropNote(null);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -84,12 +136,19 @@ export default function CategorySettings() {
       </div>
       <p className="category-help muted" id="extension-help">
         {t("输入后按回车添加，支持粘贴多个扩展名。点击 × 移除，保存后重新扫描生效。")}
+        <br />
+        {t("也可把文件拖到对应分类，自动提取扩展名；不会移动文件。")}
       </p>
       {categories.map((c) => {
         const extensions = parse(values[c.id]);
         const custom = !same(extensions, c.extensions);
         return (
-          <section className="category-setting-row" key={c.id} aria-labelledby={`category-${c.id}`}>
+          <section
+            className={`category-setting-row${dropTarget === c.id ? " drop-target" : ""}`}
+            data-category-drop={c.id}
+            key={c.id}
+            aria-labelledby={`category-${c.id}`}
+          >
             <div className="category-setting-heading">
               <FileIcon category={c.name} size={32} />
               <div>
@@ -176,16 +235,22 @@ export default function CategorySettings() {
                   {t("恢复默认")}
                 </button>
               )}
+              {dropTarget === c.id && <div className="category-drop-hint">{t("松开以添加扩展名")}</div>}
             </div>
           </section>
         );
       })}
-      {error && (
-        <div className="banner error category-error" role="alert">
-          {error}
-        </div>
-      )}
       <div className="category-settings-footer">
+        {error && (
+          <div className="banner error category-feedback" role="alert">
+            {error}
+          </div>
+        )}
+        {dropNote && !error && (
+          <div className="muted category-feedback" role="status">
+            {dropNote}
+          </div>
+        )}
         <span className={`category-save-status${saved ? " saved" : ""}`} role="status">
           {saved ? (
             <>
@@ -201,18 +266,19 @@ export default function CategorySettings() {
         <div className="row">
           <button
             className="btn sm"
-            disabled={busy || !dirty}
+            disabled={busy || pendingDrops > 0 || !dirty}
             onClick={() => {
               setDraft(null);
               setInputs({});
               setError(null);
               setSaved(false);
+              setDropNote(null);
             }}
           >
             {t("取消修改")}
           </button>
-          <button className="btn sm primary" disabled={busy || !dirty || !categories.length} onClick={submit}>
-            {busy && <Spinner size={14} />}
+          <button className="btn sm primary" disabled={busy || pendingDrops > 0 || !dirty || !categories.length} onClick={submit}>
+            {(busy || pendingDrops > 0) && <Spinner size={14} />}
             {t("保存更改")}
           </button>
         </div>

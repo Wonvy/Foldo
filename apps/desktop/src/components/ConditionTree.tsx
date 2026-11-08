@@ -5,6 +5,8 @@ import type { Explain, FieldDef } from "../api";
 import { OPS, PERIODS, defaultValue, group, newTest, type CondNode, type FieldMap, type GroupNode, type TestNode } from "../rules";
 import RegexTester from "./RegexTester";
 import FieldPicker from "./FieldPicker";
+import CategoryPicker from "./CategoryPicker";
+import FolderConditionInput from "./FolderConditionInput";
 import { useMenu } from "./ui";
 import { t, tv } from "../i18n";
 
@@ -342,6 +344,9 @@ function ValueInput({
   if (ty === "bool") return boolSelect(tv("是"), tv("否"));
 
   if (ty === "enum") {
+    if (field?.key === "category") {
+      return <CategoryPicker options={field.options} value={value} multiple={op === "in" || op === "not_in"} onChange={onChange} />;
+    }
     if (op === "in" || op === "not_in") {
       const sel = new Set(Array.isArray(value) ? (value as string[]) : []);
       return (
@@ -376,6 +381,9 @@ function ValueInput({
 
   if (ty === "text" || ty === "list") {
     if (op === "in" || op === "not_in") return <ListInput value={value} onChange={onChange} mono={field?.key === "ext"} />;
+    if (field?.key === "parent" && !["matches", "glob"].includes(op)) {
+      return <FolderConditionInput value={String(value ?? "")} onChange={onChange} />;
+    }
     const mono = op === "matches" || op === "glob";
     const placeholder =
       op === "matches"

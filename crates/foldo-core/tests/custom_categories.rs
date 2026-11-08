@@ -2,6 +2,30 @@ use foldo_core::meta::FileCtx;
 use foldo_core::{RuleSet, build_plan, build_plan_for_paths, parse_rule_file};
 
 #[test]
+fn appinstaller_is_recognized_after_saving_the_custom_extension() {
+    let tmp = tempfile::tempdir_in(std::env::current_dir().unwrap()).unwrap();
+    let path = tmp.path().join("Shapr3D.Package.appinstaller");
+    std::fs::write(&path, b"untouched").unwrap();
+    let yaml = "version: 2\nrules:\n  - name: 软件\n    conditions: [{category: 安装包}]\n    actions: [keep]\n";
+    let before = RuleSet::from_yaml(yaml).unwrap();
+    assert_eq!(
+        build_plan_for_paths(&before, std::slice::from_ref(&path), chrono::Local::now()).matched,
+        0
+    );
+    let mut config = parse_rule_file(yaml).unwrap();
+    config
+        .settings
+        .category_extensions
+        .insert("installer".into(), vec!["appinstaller".into()]);
+    let after = RuleSet::from_yaml(&config.to_yaml().unwrap()).unwrap();
+    assert_eq!(
+        build_plan_for_paths(&after, std::slice::from_ref(&path), chrono::Local::now()).matched,
+        1
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), b"untouched");
+}
+
+#[test]
 fn custom_categories_apply_to_scan_drop_and_metadata() {
     let tmp = tempfile::tempdir_in(std::env::current_dir().unwrap()).unwrap();
     let file = tmp.path().join("photo.JXL");

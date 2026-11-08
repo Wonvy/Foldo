@@ -163,10 +163,8 @@ fn switch_profile_at(app: &AppHandle, index: usize) {
     let Ok(file) = current_config() else {
         return;
     };
-    if let Some(name) = file.profiles.get(index).map(|p| p.name.clone())
-        && crate::commands::switch_profile_to(app, &name).is_ok()
-    {
-        let _ = app.emit("config-changed", ());
+    if let Some(name) = file.profiles.get(index).map(|p| p.name.clone()) {
+        let _ = crate::commands::switch_profile_to(app, &name);
     }
 }
 

@@ -1,6 +1,7 @@
 // 与 Rust 端（src-tauri/src/commands.rs）对应的类型和调用封装。
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "./i18n";
+import { withSaveStatus } from "./saveStatus";
 
 // ---------- 配置（与 foldo-core 的 config.rs 对应） ----------
 
@@ -262,11 +263,12 @@ export const api = {
   testRegex: (pattern: string, samples: string, caseSensitive: boolean) =>
     invoke<RegexSample[]>("test_regex", { pattern, samples, caseSensitive }),
   getConfig: () => invoke<ConfigView>("get_config"),
-  saveConfig: (config: RuleFile) => invoke<ConfigView>("save_config", { config }),
-  addProtect: (entry: string) => invoke<ConfigView>("add_protect", { entry }),
+  saveConfig: (config: RuleFile) => withSaveStatus(() => invoke<ConfigView>("save_config", { config })),
+  addProtect: (entry: string) => withSaveStatus(() => invoke<ConfigView>("add_protect", { entry })),
   getYaml: () => invoke<string>("get_yaml"),
-  saveYaml: (text: string) => invoke<ConfigView>("save_yaml", { text }),
+  saveYaml: (text: string) => withSaveStatus(() => invoke<ConfigView>("save_yaml", { text })),
   categories: () => invoke<Category[]>("categories"),
+  droppedExtensions: (paths: string[]) => invoke<{ extensions: string[]; ignored: number }>("dropped_extensions", { paths }),
   suggestedFolders: () => invoke<FolderSuggestion[]>("suggested_folders"),
   scan: () => invoke<PlanView>("scan"),
   scanPaths: (paths: string[], mode: "all" | "file" | "folder" = "all") => invoke<PlanView>("scan_paths", { paths, mode }),
@@ -277,7 +279,7 @@ export const api = {
   executePlan: (planId: number, groups: number[]) => invoke<ExecView>("execute_plan", { planId, groups }),
   history: (limit = 100) => invoke<Batch[]>("history", { limit }),
   stats: () => invoke<Stats>("stats"),
-  switchProfile: (name: string) => invoke<ConfigView>("switch_profile", { name }),
+  switchProfile: (name: string) => withSaveStatus(() => invoke<ConfigView>("switch_profile", { name })),
   batchOps: (id: number) => invoke<OpRecord[]>("batch_ops", { id }),
   undoPreview: (id: number) => invoke<UndoCheck[]>("undo_preview", { id }),
   undo: (id: number) => invoke<UndoView>("undo", { id }),
@@ -288,13 +290,16 @@ export const api = {
   toggleFloat: () => invoke<boolean>("toggle_float"),
   floatVisible: () => invoke<boolean>("float_visible"),
   floatResize: (width: number, height: number) => invoke<void>("float_resize", { width, height }),
-  floatIconSize: (diameter?: number) => invoke<number>("float_icon_size", { diameter }),
+  floatIconSize: (diameter?: number) =>
+    diameter === undefined
+      ? invoke<number>("float_icon_size", { diameter })
+      : withSaveStatus(() => invoke<number>("float_icon_size", { diameter })),
   showMain: () => invoke<void>("show_main"),
   watchStatus: () => invoke<WatchStatus>("watch_status"),
   watchNow: () => invoke<void>("watch_now"),
   autostartEnabled: () => invoke<boolean>("autostart_enabled"),
-  setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
-  exportRules: (names: string[], path: string) => invoke<number>("export_rules", { names, path }),
+  setAutostart: (enabled: boolean) => withSaveStatus(() => invoke<boolean>("set_autostart", { enabled })),
+  exportRules: (names: string[], path: string) => withSaveStatus(() => invoke<number>("export_rules", { names, path })),
   readRulesFile: (path: string) => invoke<RuleDef[]>("read_rules_file", { path }),
   setLocale: (lang: string) => invoke<void>("set_locale", { lang }),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),

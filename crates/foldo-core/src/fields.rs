@@ -283,7 +283,7 @@ pub static FIELDS: std::sync::LazyLock<Vec<FieldDef>> = std::sync::LazyLock::new
             "基本",
             Text,
             None,
-            "上一级文件夹的名字",
+            "上一级文件夹的名字；也可比较完整路径或系统文件夹变量",
             |f| {
                 f.path
                     .parent()

@@ -77,6 +77,7 @@ fn main() {
             commands::get_yaml,
             commands::save_yaml,
             commands::categories,
+            commands::dropped_extensions,
             commands::suggested_folders,
             commands::scan,
             commands::scan_paths,

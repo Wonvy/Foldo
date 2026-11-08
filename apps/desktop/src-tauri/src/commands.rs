@@ -184,9 +184,11 @@ pub(crate) fn prune_history(state: &AppState) {
 
 /// 配置改变后：让后台立即按新配置检查，失败记录清零。
 pub(crate) fn config_changed(app: &tauri::AppHandle) {
+    use tauri::Emitter;
     crate::watch::reset_failures(app);
     crate::watch::wake();
     crate::tray::refresh_profiles(app);
+    let _ = app.emit("config-changed", ());
 }
 
 /// 切换到另一套配置方案（整理页和托盘都用）。
@@ -200,9 +202,7 @@ pub(crate) fn switch_profile_to(app: &tauri::AppHandle, name: &str) -> CmdResult
 
 #[tauri::command]
 pub async fn switch_profile(app: tauri::AppHandle, name: String) -> CmdResult<ConfigView> {
-    use tauri::Emitter;
     let view = switch_profile_to(&app, &name)?;
-    let _ = app.emit("config-changed", ());
     Ok(view)
 }
 
@@ -256,6 +256,37 @@ pub async fn save_yaml(app: tauri::AppHandle, text: String) -> CmdResult<ConfigV
 #[tauri::command]
 pub async fn categories() -> CmdResult<Vec<&'static Category>> {
     Ok(CATEGORIES.iter().collect())
+}
+
+#[derive(Serialize)]
+pub struct DroppedExtensions {
+    extensions: Vec<String>,
+    ignored: usize,
+}
+
+/// Only inspect file names and metadata; dropping into category settings never organizes files.
+#[tauri::command]
+pub async fn dropped_extensions(paths: Vec<String>) -> DroppedExtensions {
+    let mut extensions = std::collections::BTreeSet::new();
+    let mut ignored = 0;
+    for path in paths {
+        let path = PathBuf::from(path);
+        let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+        if !path.symlink_metadata().is_ok_and(|m| m.is_file())
+            || extension.is_empty()
+            || extension
+                .chars()
+                .any(|ch| ch.is_whitespace() || ".*/\\:?\"<>|".contains(ch))
+        {
+            ignored += 1;
+        } else {
+            extensions.insert(extension.to_lowercase());
+        }
+    }
+    DroppedExtensions {
+        extensions: extensions.into_iter().collect(),
+        ignored,
+    }
 }
 
 #[derive(Serialize)]
@@ -458,6 +489,34 @@ fn filter_drop_paths(paths: Vec<PathBuf>, mode: DropMode) -> Vec<PathBuf> {
 #[cfg(test)]
 mod drop_mode_tests {
     use super::*;
+    #[test]
+    fn category_drop_extracts_last_suffix_ignores_directories_and_never_moves_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let names = [
+            "Shapr3D.Package.appinstaller",
+            "other.APPINSTALLER",
+            "README",
+            ".hidden",
+        ];
+        let mut paths = Vec::new();
+        for name in names {
+            let path = dir.path().join(name);
+            std::fs::write(&path, "untouched").unwrap();
+            paths.push(path.to_string_lossy().into_owned());
+        }
+        let folder = dir.path().join("folder.exe");
+        std::fs::create_dir(&folder).unwrap();
+        paths.push(folder.to_string_lossy().into_owned());
+        let result = tauri::async_runtime::block_on(dropped_extensions(paths));
+        assert_eq!(result.extensions, vec!["appinstaller"]);
+        assert_eq!(result.ignored, 3);
+        for name in names {
+            assert_eq!(
+                std::fs::read_to_string(dir.path().join(name)).unwrap(),
+                "untouched"
+            );
+        }
+    }
     #[test]
     fn filtering_uses_real_file_types_not_extensions() {
         let dir = tempfile::tempdir().unwrap();

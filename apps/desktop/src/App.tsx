@@ -10,6 +10,9 @@ import TidyPage from "./pages/TidyPage";
 import { StoreProvider, useStore } from "./store";
 import { applyTheme, loadTheme, type ThemePref } from "./theme";
 import { t } from "./i18n";
+import { createCategoryDropRouter } from "./categoryDrop";
+import StatusBar from "./components/StatusBar";
+import { withSaveStatus } from "./saveStatus";
 
 type Page = "tidy" | "rules" | "history" | "settings";
 
@@ -142,8 +145,13 @@ function Shell() {
     (async () => {
       try {
         const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+        const categoryDrop = createCategoryDropRouter();
         const un = await getCurrentWebview().onDragDropEvent((e) => {
           const p = e.payload;
+          if (categoryDrop(p)) {
+            setDragging(false);
+            return;
+          }
           if (p.type === "enter" || p.type === "over") setDragging(true);
           else if (p.type === "leave") setDragging(false);
           else if (p.type === "drop") {
@@ -251,53 +259,61 @@ function Shell() {
         onDoubleClick={() => setSide((s) => ({ ...s, collapsed: !s.collapsed }))}
       />
 
-      <main className="content">
-        {loadError && (
-          <div className="banner error" style={{ margin: 24 }}>
-            {t("读取配置失败：{0}", [loadError])}
+      <div className="workspace-main">
+        <main className="content">
+          {loadError && (
+            <div className="banner error" style={{ margin: 24 }}>
+              {t("读取配置失败：{0}", [loadError])}
+            </div>
+          )}
+          <div hidden={page !== "tidy"}>
+            <TidyPage
+              dropped={dropped}
+              scanRequest={scanRequest}
+              watch={watch}
+              onNewRule={(folder) => {
+                setPage("rules");
+                setRuleRequest({ n: Date.now(), assignTo: folder });
+              }}
+              onEditRule={(name) => {
+                setPage("rules");
+                setRuleRequest({ n: Date.now(), edit: name });
+              }}
+            />
           </div>
-        )}
-        <div hidden={page !== "tidy"}>
-          <TidyPage
-            dropped={dropped}
-            scanRequest={scanRequest}
-            watch={watch}
-            onNewRule={(folder) => {
-              setPage("rules");
-              setRuleRequest({ n: Date.now(), assignTo: folder });
-            }}
-            onEditRule={(name) => {
-              setPage("rules");
-              setRuleRequest({ n: Date.now(), edit: name });
-            }}
-          />
-        </div>
-        <div hidden={page !== "rules"}>
-          <RulesPage
-            request={ruleRequest}
-            dropped={rulesDrop}
-            onOpenAdvanced={() => {
-              setShowAdvanced(true);
-              setAdvancedRequest((n) => n + 1);
-              setPage("settings");
-            }}
-          />
-        </div>
-        <div hidden={page !== "history"}>
-          <HistoryPage active={page === "history"} />
-        </div>
-        <div hidden={page !== "settings"}>
-          <SettingsPage
-            update={update}
-            onUpdate={setUpdate}
-            theme={theme}
-            onTheme={setTheme}
-            showAdvanced={showAdvanced}
-            onShowAdvanced={setShowAdvanced}
-            advancedRequest={advancedRequest}
-          />
-        </div>
-      </main>
+          <div hidden={page !== "rules"}>
+            <RulesPage
+              request={ruleRequest}
+              dropped={rulesDrop}
+              onOpenAdvanced={() => {
+                setShowAdvanced(true);
+                setAdvancedRequest((n) => n + 1);
+                setPage("settings");
+              }}
+            />
+          </div>
+          <div hidden={page !== "history"}>
+            <HistoryPage active={page === "history"} />
+          </div>
+          <div hidden={page !== "settings"}>
+            <SettingsPage
+              update={update}
+              onUpdate={setUpdate}
+              theme={theme}
+              onTheme={(next) => {
+                setTheme(next);
+                void withSaveStatus(async () => {
+                  localStorage.setItem("foldo.theme", next);
+                }).catch(() => {});
+              }}
+              showAdvanced={showAdvanced}
+              onShowAdvanced={setShowAdvanced}
+              advancedRequest={advancedRequest}
+            />
+          </div>
+        </main>
+        <StatusBar />
+      </div>
 
       {dragging && (
         <div className="drop-overlay">

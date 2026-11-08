@@ -25,6 +25,7 @@ import { useStore } from "../store";
 import type { ThemePref } from "../theme";
 import { t } from "../i18n";
 import { useIconSize } from "../float/useIconSize";
+import { useUnsaved } from "../saveStatus";
 
 export default function SettingsPage({
   update,
@@ -392,6 +393,7 @@ function YamlEditor() {
   const [text, setText] = useState("");
   const [saved, setSaved] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useUnsaved("yaml", text !== saved);
 
   useEffect(() => {
     api.getYaml().then((yaml) => {

@@ -682,6 +682,7 @@ impl Test {
                 let (Some(lhs), Some(rhs)) = (text(), self.resolve(rhs, f, ctx)) else {
                     return false;
                 };
+                let (lhs, rhs) = self.parent_comparison(lhs, rhs, f);
                 match op {
                     TextOp::Eq => lhs == rhs,
                     TextOp::Ne => lhs != rhs,
@@ -693,9 +694,12 @@ impl Test {
             }
             Check::In(items, negate) => {
                 let Some(lhs) = text() else { return false };
-                let hit = items
-                    .iter()
-                    .any(|o| self.resolve(o, f, ctx).is_some_and(|r| r == lhs));
+                let hit = items.iter().any(|o| {
+                    self.resolve(o, f, ctx).is_some_and(|rhs| {
+                        let (lhs, rhs) = self.parent_comparison(lhs.clone(), rhs, f);
+                        lhs == rhs
+                    })
+                });
                 hit != *negate
             }
             Check::Glob(g) => match value {
@@ -763,6 +767,29 @@ impl Test {
             },
             Check::Bool(b) => matches!(value, Some(Value::Bool(v)) if v == b),
         }
+    }
+
+    /// Existing name comparisons remain valid; absolute locations compare the actual parent path.
+    fn parent_comparison(&self, lhs: String, rhs: String, f: &FileCtx) -> (String, String) {
+        if self.field.key != "parent" || !std::path::Path::new(&rhs).is_absolute() {
+            return (lhs, rhs);
+        }
+        let lhs = f
+            .path
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let normalize = |s: String| {
+            #[cfg(windows)]
+            let s = s.replace('\\', "/");
+            let s = s.trim_end_matches('/').to_string();
+            if self.case_sensitive {
+                s
+            } else {
+                s.to_lowercase()
+            }
+        };
+        (normalize(lhs), normalize(rhs))
     }
 }
 
@@ -880,6 +907,36 @@ mod tests {
             Local.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
         );
         assert!(hit(&cond("parent: { eq: '{modified.year}' }"), &g));
+    }
+
+    #[test]
+    fn parent_location_variables_compare_full_paths_without_breaking_name_rules() {
+        let home = dirs::home_dir().unwrap();
+        let mut info = file("example.txt", 1, now()).info().clone();
+        info.path = home.join("example.txt");
+        let f: FileCtx = info.clone().into();
+        assert!(hit(&cond("parent: { eq: '{dir.home}' }"), &f));
+        assert!(!hit(&cond("parent: { ne: '{dir.home}' }"), &f));
+        assert!(hit(
+            &cond("parent: { in: ['not-this-folder', '{dir.home}'] }"),
+            &f
+        ));
+        let name = home.file_name().unwrap().to_string_lossy();
+        let plain = format!(
+            "parent: {{ eq: {} }}",
+            serde_json::to_string(&name).unwrap()
+        );
+        assert!(hit(&cond(&plain), &f));
+        info.path = home.join("subfolder").join("example.txt");
+        let child: FileCtx = info.into();
+        assert!(!hit(&cond("parent: { eq: '{dir.home}' }"), &child));
+        assert!(hit(&cond("parent: { starts_with: '{dir.home}' }"), &child));
+        let path = home.to_string_lossy().replace('\\', "/") + "/";
+        let full = format!(
+            "parent: {{ eq: {} }}",
+            serde_json::to_string(&path).unwrap()
+        );
+        assert!(hit(&cond(&full), &f));
     }
 
     #[test]

@@ -7,7 +7,7 @@ import { t } from "../i18n";
 
 type Item = { key: string; label: string; group: string; desc: string; insert: string };
 
-export default function VarMenu({ onInsert }: { onInsert: (text: string) => void }) {
+export default function VarMenu({ onInsert, foldersOnly = false }: { onInsert: (text: string) => void; foldersOnly?: boolean }) {
   const { fields, vars } = useStore();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -28,7 +28,9 @@ export default function VarMenu({ onInsert }: { onInsert: (text: string) => void
     ],
     [fields, vars],
   );
-  const shown = items.filter((i) => !q || `${i.label} ${i.key} ${i.group}`.toLowerCase().includes(q.toLowerCase()));
+  const shown = items.filter(
+    (i) => (!foldersOnly || i.key.startsWith("dir.")) && (!q || `${i.label} ${i.key} ${i.group}`.toLowerCase().includes(q.toLowerCase())),
+  );
   const groups = [...new Set(shown.map((i) => i.group))];
 
   useLayoutEffect(() => {
@@ -46,7 +48,18 @@ export default function VarMenu({ onInsert }: { onInsert: (text: string) => void
       if (!pop.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) setOpen(false);
     };
     window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        setOpen(false);
+        btn.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", key, true);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", key, true);
+    };
   }, [open]);
 
   return (
@@ -56,6 +69,7 @@ export default function VarMenu({ onInsert }: { onInsert: (text: string) => void
         className="icon-btn"
         title={t("插入变量（文件属性、拍摄时间、系统文件夹……）")}
         aria-label={t("插入变量")}
+        aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
         <Braces size={16} />

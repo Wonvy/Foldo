@@ -254,6 +254,7 @@ svg.lucide {
 
 .content {
   flex: 1;
+  min-height: 0;
   min-width: 0;
   overflow: auto;
   position: relative;
@@ -926,6 +927,9 @@ button.stat:hover {
   margin: 12px 16px;
 }
 .category-settings-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -935,6 +939,70 @@ button.stat:hover {
   border-top: 1px solid var(--border);
   background: var(--surface-2);
   border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.workspace-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.app-status-bar {
+  flex: none;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 16px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.app-status-message {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: 1;
+}
+.app-status-message svg,
+.app-status-message time {
+  flex: none;
+}
+.app-status-message time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.app-status-bar.success .app-status-message {
+  color: var(--ok);
+}
+.app-status-bar.error .app-status-message {
+  color: var(--danger);
+}
+.app-status-bar.saving .app-status-message {
+  color: var(--accent);
+}
+.status-unsaved {
+  color: var(--warn);
+  flex: none;
+}
+.app-status-profile {
+  max-width: 25%;
+}
+.category-setting-row.drop-target {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.category-drop-hint {
+  margin-top: 8px;
+  color: var(--accent);
+  font-size: 12px;
+}
+.category-feedback {
+  flex-basis: 100%;
+  margin: 0;
 }
 
 .category-save-status {
@@ -3320,4 +3388,73 @@ html.float #root {
   box-shadow:
     0 0 0 4px rgba(233, 171, 71, 0.3),
     0 8px 22px rgba(199, 119, 32, 0.35);
+}
+
+.category-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+.category-select .chev {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.category-picker {
+  display: grid;
+  grid-template-columns: minmax(130px, 36%) minmax(0, 1fr);
+  height: min(360px, calc(100vh - 40px));
+}
+.category-picker-list {
+  overflow-y: auto;
+  padding-right: 6px;
+  outline: none;
+}
+.category-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.category-picker-option.active {
+  background: var(--hover);
+}
+.category-picker-list:focus-visible .category-picker-option.active {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.category-selected {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.category-picker-details {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 8px 8px 14px;
+  border-left: 1px solid var(--border);
+}
+.category-picker-extensions {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 4px;
+}
+.category-picker-extensions code {
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  font-size: 11px;
 }
