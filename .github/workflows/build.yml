@@ -289,6 +289,17 @@ jobs:
           else
             gh release create "$TAG" --target "$GITHUB_SHA" --title "Foldo $TAG" --generate-notes --draft
           fi
-          gh release upload "$TAG" dist/* --clobber
+          # Upload the signed packages first so their stable asset IDs are known.
+          # The updater already sends Accept: application/octet-stream; these API
+          # URLs avoid the release-download gateway that can return persistent 504s.
+          packages=()
+          for file in dist/*; do
+            case "${file##*/}" in latest.json|SHA256SUMS.txt) continue ;; esac
+            packages+=("$file")
+          done
+          gh release upload "$TAG" "${packages[@]}" --clobber
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets' > release-assets.json
+          python3 scripts/release.py link-assets --tag "$TAG" --repo "$GITHUB_REPOSITORY" --release-assets release-assets.json
+          gh release upload "$TAG" dist/latest.json dist/SHA256SUMS.txt --clobber
           if [[ "$TAG" == *-* ]]; then gh release edit "$TAG" --draft=false --prerelease
           else gh release edit "$TAG" --draft=false --latest; fi

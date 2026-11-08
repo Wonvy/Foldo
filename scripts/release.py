@@ -18,13 +18,17 @@ def version():
     return rust
 
 
-def manifest(directory, tag, repo):
-    assert tag == "v" + version(), "Tag must match the application version"
-    assets = {
+def updater_assets(tag):
+    return {
         "windows-x86_64": f"foldo-desktop-{tag}-windows-x64-setup.exe",
         "darwin-aarch64": f"foldo-desktop-{tag}-macos-arm64.app.tar.gz",
         "linux-x86_64": f"foldo-desktop-{tag}-linux-x64.AppImage",
     }
+
+
+def manifest(directory, tag, repo):
+    assert tag == "v" + version(), "Tag must match the application version"
+    assets = updater_assets(tag)
     required = list(assets.values()) + [
         f"foldo-desktop-{tag}-macos-arm64.dmg", f"foldo-desktop-{tag}-linux-x64.deb",
         f"foldo-{tag}-windows-x64.zip", f"foldo-{tag}-macos-arm64.tar.gz",
@@ -47,6 +51,37 @@ def manifest(directory, tag, repo):
         "platforms": platforms,
     }
     (directory / "latest.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    write_checksums(directory)
+
+
+def asset_download_urls(metadata, tag, repo, uploaded_assets):
+    """Use GitHub's binary asset API, supported by the updater in existing clients."""
+    assert metadata["version"] == tag.removeprefix("v"), "Manifest version must match tag"
+    assets = updater_assets(tag)
+    assert set(metadata["platforms"]) == set(assets), "Incomplete updater platforms"
+    urls = {}
+    for platform, name in assets.items():
+        matches = [asset for asset in uploaded_assets if asset["name"] == name]
+        assert len(matches) == 1, f"Missing or duplicate uploaded asset: {name}"
+        asset = matches[0]
+        assert asset["state"] == "uploaded" and asset["size"] > 0, f"Incomplete uploaded asset: {name}"
+        assert type(asset["id"]) is int and asset["id"] > 0, f"Invalid asset ID: {name}"
+        expected = f"https://github.com/{repo}/releases/download/{tag}/{name}"
+        assert asset["browser_download_url"] == expected, f"Asset belongs to another release: {name}"
+        urls[platform] = f"https://api.github.com/repos/{repo}/releases/assets/{asset['id']}"
+    for platform, url in urls.items():
+        metadata["platforms"][platform]["url"] = url
+    return metadata
+
+
+def link_assets(directory, tag, repo, uploaded_assets):
+    path = directory / "latest.json"
+    metadata = asset_download_urls(json.loads(path.read_text(encoding="utf-8")), tag, repo, uploaded_assets)
+    path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    write_checksums(directory)
+
+
+def write_checksums(directory):
     checksums = []
     for file in sorted(directory.iterdir()):
         if file.is_file() and file.name != "SHA256SUMS.txt":
@@ -58,12 +93,18 @@ def manifest(directory, tag, repo):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["version", "manifest"])
+    parser.add_argument("command", choices=["version", "manifest", "link-assets"])
     parser.add_argument("--directory", type=pathlib.Path, default=ROOT / "dist")
     parser.add_argument("--tag")
     parser.add_argument("--repo", default="Wonvy/Foldo")
+    parser.add_argument("--release-assets", type=pathlib.Path)
     args = parser.parse_args()
     if args.command == "version":
         print(version())
-    else:
+    elif args.command == "manifest":
         manifest(args.directory, args.tag, args.repo)
+    else:
+        if args.release_assets is None:
+            parser.error("link-assets requires --release-assets")
+        link_assets(args.directory, args.tag, args.repo,
+                    json.loads(args.release_assets.read_text(encoding="utf-8")))

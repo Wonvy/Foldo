@@ -2,7 +2,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod float_window;
 mod tray;
+mod updates;
 mod watch;
 
 use tauri::{Manager, WindowEvent};
@@ -26,6 +28,7 @@ fn main() {
             Some(vec!["--hidden"]),
         ))
         .manage(commands::AppState::default())
+        .manage(float_window::ResizeState::default())
         .manage(watch::WatchState::default())
         .setup(|app| {
             commands::load_locale();
@@ -55,6 +58,11 @@ fn main() {
         })
         // 关闭主窗口时收到托盘里继续运行；从托盘菜单“退出 Foldo”才真正退出
         .on_window_event(|window, event| {
+            if window.label() == float_window::LABEL
+                && matches!(event, WindowEvent::CloseRequested { .. })
+            {
+                float_window::remember(window.app_handle());
+            }
             if window.label() == "main"
                 && let WindowEvent::CloseRequested { api, .. } = event
             {
@@ -107,6 +115,9 @@ fn main() {
         .expect("Foldo 启动失败");
 
     app.run(|app, event| {
+        if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+            float_window::remember(app);
+        }
         // macOS：点击程序坞图标时重新显示主窗口
         #[cfg(target_os = "macos")]
         if let tauri::RunEvent::Reopen { .. } = event {

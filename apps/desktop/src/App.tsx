@@ -103,6 +103,12 @@ function Shell() {
         const add = (u: () => void) => (disposed ? u() : uns.push(u));
         add(await listen<WatchStatus>("watch-status", (e) => setWatch(e.payload)));
         add(await listen("config-changed", () => void reload()));
+        add(
+          await listen<{ path: string }>("float-new-rule", (event) => {
+            setPage("rules");
+            setRuleRequest({ n: Date.now(), testPath: event.payload.path });
+          }),
+        );
         const scanNow = () => {
           setPage("tidy");
           setScanRequest((n) => n + 1);

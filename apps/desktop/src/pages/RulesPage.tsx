@@ -52,7 +52,7 @@ const ACTION_ICON: Record<ActionKind, LucideIcon> = {
 const MAX_CHIPS = 3;
 
 /** 其他页面请求打开规则编辑：编辑某条规则，或新建（可指定保存后加入的文件夹）。 */
-export type RuleRequest = { n: number; edit?: string; assignTo?: string };
+export type RuleRequest = { n: number; edit?: string; assignTo?: string; testPath?: string };
 
 export default function RulesPage({
   request,
@@ -86,6 +86,7 @@ export default function RulesPage({
 
   useEffect(() => {
     if (!request) return;
+    if (request.testPath) setTestDrop({ path: request.testPath, n: request.n });
     if (request.edit !== undefined) {
       const i = rules.findIndex((r) => r.name === request.edit);
       if (i >= 0) setEditing(i);

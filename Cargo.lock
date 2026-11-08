@@ -1337,7 +1337,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "foldo-cli"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -1348,7 +1348,7 @@ dependencies = [
 
 [[package]]
 name = "foldo-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chrono",
  "dirs 7.0.0",
@@ -1381,12 +1381,13 @@ dependencies = [
 
 [[package]]
 name = "foldo-desktop"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chrono",
  "dirs 7.0.0",
  "foldo-core",
  "notify",
+ "reqwest",
  "serde",
  "serde_json",
  "tauri",

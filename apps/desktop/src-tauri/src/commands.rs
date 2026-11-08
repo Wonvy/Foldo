@@ -855,7 +855,7 @@ pub async fn debug_file(path: String) -> CmdResult<DebugView> {
 
 // ---------- 悬浮窗 ----------
 
-const FLOAT: &str = "float";
+const FLOAT: &str = crate::float_window::LABEL;
 
 /// 打开或关闭悬浮窗，返回操作后是否显示。
 #[tauri::command]
@@ -869,13 +869,13 @@ pub(crate) fn toggle_float_window(app: &tauri::AppHandle) -> CmdResult<bool> {
         w.close().map_err(err)?;
         return Ok(false);
     }
-    tauri::WebviewWindowBuilder::new(
+    let window = tauri::WebviewWindowBuilder::new(
         app,
         FLOAT,
         tauri::WebviewUrl::App("index.html#float".into()),
     )
     .title("Foldo")
-    .inner_size(84.0, 84.0)
+    .inner_size(crate::float_window::SIZE, crate::float_window::SIZE)
     .resizable(false)
     .decorations(false)
     .transparent(true)
@@ -883,8 +883,10 @@ pub(crate) fn toggle_float_window(app: &tauri::AppHandle) -> CmdResult<bool> {
     .always_on_top(true)
     .skip_taskbar(true)
     .visible_on_all_workspaces(true)
+    // WebView2 must create its native drop targets while the window is visible.
     .build()
     .map_err(err)?;
+    crate::float_window::show(&window).map_err(err)?;
     Ok(true)
 }
 
@@ -899,8 +901,7 @@ pub async fn float_visible(app: tauri::AppHandle) -> CmdResult<bool> {
 pub async fn float_resize(app: tauri::AppHandle, width: f64, height: f64) -> CmdResult<()> {
     use tauri::Manager;
     if let Some(w) = app.get_webview_window(FLOAT) {
-        w.set_size(tauri::LogicalSize::new(width, height))
-            .map_err(err)?;
+        crate::float_window::resize(&w, width, height).map_err(err)?;
     }
     Ok(())
 }
@@ -992,14 +993,8 @@ pub async fn open_releases(app: tauri::AppHandle) -> CmdResult<()> {
 /// 检查 GitHub Releases 上有没有新版本。
 #[tauri::command]
 pub async fn check_update(app: tauri::AppHandle) -> CmdResult<UpdateInfo> {
-    use tauri_plugin_updater::UpdaterExt;
     let current = app.package_info().version.to_string();
-    let update = app
-        .updater_builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(err)?
-        .check()
+    let update = crate::updates::check(&app, Duration::from_secs(120))
         .await
         .map_err(|e| foldo_core::t!("暂时无法检查更新：{e}", e = e))?;
     Ok(UpdateInfo {
@@ -1024,32 +1019,23 @@ struct UpdateProgress {
 #[tauri::command]
 pub async fn install_update(app: tauri::AppHandle) -> CmdResult<()> {
     use tauri::Emitter;
-    use tauri_plugin_updater::UpdaterExt;
     if !can_install_update() {
         return Err(foldo_core::t!(
             "此安装方式请前往 GitHub 下载新版安装包；AppImage 支持应用内更新"
         ));
     }
-    let update = app
-        .updater_builder()
-        .timeout(Duration::from_secs(120))
-        .build()
-        .map_err(err)?
-        .check()
+    let mut update = crate::updates::check(&app, Duration::from_secs(120))
         .await
         .map_err(err)?
         .ok_or_else(|| foldo_core::t!("已经是最新版本"))?;
-    let mut downloaded = 0u64;
     let progress = app.clone();
+    let bytes = crate::updates::download(&mut update, move |downloaded, total| {
+        let _ = progress.emit("update-progress", UpdateProgress { downloaded, total });
+    })
+    .await
+    .map_err(|e| foldo_core::t!("更新失败：{e}", e = e))?;
     update
-        .download_and_install(
-            move |chunk, total| {
-                downloaded += chunk as u64;
-                let _ = progress.emit("update-progress", UpdateProgress { downloaded, total });
-            },
-            || {},
-        )
-        .await
+        .install(bytes)
         .map_err(|e| foldo_core::t!("更新失败：{e}", e = e))?;
     app.restart()
 }
