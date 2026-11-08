@@ -151,12 +151,25 @@ pub struct SettingsDef {
         skip_serializing_if = "is_default_history_days"
     )]
     pub keep_history_days: u32,
+    /// 可撤销的最近整理批次数：1（默认）至 3，按从新到旧的顺序撤销。
+    #[serde(
+        default = "default_undo_depth",
+        skip_serializing_if = "is_default_undo_depth"
+    )]
+    pub undo_depth: u8,
     /// 定时整理：每天或每周固定时间整理一次（只做可以撤销的操作）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<crate::schedule::ScheduleDef>,
 }
 
 pub const DEFAULT_HISTORY_DAYS: u32 = 365;
+
+fn default_undo_depth() -> u8 {
+    1
+}
+fn is_default_undo_depth(depth: &u8) -> bool {
+    *depth == 1
+}
 
 fn default_history_days() -> u32 {
     DEFAULT_HISTORY_DAYS
@@ -174,6 +187,7 @@ impl Default for SettingsDef {
             auto: AutoMode::Off,
             keep_empty_folders: false,
             keep_history_days: DEFAULT_HISTORY_DAYS,
+            undo_depth: 1,
             schedule: None,
         }
     }

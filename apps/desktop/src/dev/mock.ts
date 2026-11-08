@@ -299,9 +299,33 @@ function makePlan(list: Planned[], skipped: SkipView[]): PlanView {
 }
 
 const batches: Batch[] = [
-  { id: 3, started_at: "2026-11-06 18:20:11", finished_at: "2026-11-06 18:20:12", source: "gui", status: "done", op_count: 14 },
-  { id: 2, started_at: "2026-11-05 09:02:47", finished_at: "2026-11-05 09:02:47", source: "gui", status: "partial", op_count: 6 },
-  { id: 1, started_at: "2026-11-03 21:14:05", finished_at: "2026-11-03 21:14:05", source: "cli", status: "undone", op_count: 9 },
+  {
+    id: 3,
+    started_at: "2026-11-06 18:20:11",
+    finished_at: "2026-11-06 18:20:12",
+    source: "gui",
+    status: "done",
+    op_count: 14,
+    can_undo: true,
+  },
+  {
+    id: 2,
+    started_at: "2026-11-05 09:02:47",
+    finished_at: "2026-11-05 09:02:47",
+    source: "gui",
+    status: "partial",
+    op_count: 6,
+    can_undo: false,
+  },
+  {
+    id: 1,
+    started_at: "2026-11-03 21:14:05",
+    finished_at: "2026-11-03 21:14:05",
+    source: "cli",
+    status: "undone",
+    op_count: 9,
+    can_undo: false,
+  },
 ];
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -403,6 +427,7 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
         source: "gui",
         status: "done",
         op_count: n,
+        can_undo: true,
       });
       return {
         batch_id: batches[0].id,
@@ -411,8 +436,10 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
         failed: [],
       };
     }
-    case "history":
-      return batches;
+    case "history": {
+      const next = batches.slice(0, config?.settings?.undo_depth ?? 1).find((b) => b.status !== "undone");
+      return batches.map((b) => ({ ...b, can_undo: b.id === next?.id }));
+    }
     case "batch_ops":
       return PLANNED.slice(0, 5).map((p, i) => ({
         id: i,

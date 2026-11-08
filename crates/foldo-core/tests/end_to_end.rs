@@ -117,6 +117,110 @@ rules:
 }
 
 #[test]
+fn only_latest_batch_can_be_undone_even_after_it_is_undone() {
+    let e = env();
+    let a = touch(&e.inbox, "a.txt", "first");
+    let rs = rules(&format!(
+        "version: 1\nrules:\n  - name: move\n    locations: [{}]\n    actions:\n      - move: {}\n",
+        q(&e.inbox),
+        q(&e.out)
+    ));
+    let journal = Journal::open_in_memory().unwrap();
+    let first = execute(&build_plan(&rs, None).unwrap(), &journal, "gui").unwrap();
+    assert!(foldo_core::preview_undo(&journal, first.batch_id).is_ok());
+    let b = touch(&e.inbox, "b.txt", "second");
+    let second = execute(&build_plan(&rs, None).unwrap(), &journal, "watch").unwrap();
+    assert_eq!(journal.last_undoable().unwrap(), Some(second.batch_id));
+    // 即使用户在新一轮整理前已打开撤销预览，执行时仍必须拒绝旧批次。
+    assert!(foldo_core::preview_undo(&journal, first.batch_id).is_err());
+    assert!(undo_batch(&journal, first.batch_id).is_err());
+    assert!(!a.exists() && !b.exists());
+    assert_eq!(fs::read_to_string(e.out.join("a.txt")).unwrap(), "first");
+    assert_eq!(fs::read_to_string(e.out.join("b.txt")).unwrap(), "second");
+    assert_eq!(undo_batch(&journal, second.batch_id).unwrap().restored, 1);
+    assert!(b.exists() && !a.exists());
+    assert_eq!(journal.last_undoable().unwrap(), None);
+    assert!(undo_batch(&journal, first.batch_id).is_err());
+    assert!(undo_batch(&journal, second.batch_id).is_err());
+    assert_eq!(journal.batches(1).unwrap()[0].id, second.batch_id);
+}
+
+#[test]
+fn three_level_undo_is_ordered_bounded_and_keeps_history() {
+    let e = env();
+    let rs = rules(&format!(
+        "version: 1\nrules:\n  - name: move\n    locations: [{}]\n    actions:\n      - move: {}\n",
+        q(&e.inbox),
+        q(&e.out)
+    ));
+    let journal = Journal::open_in_memory().unwrap();
+    let mut ids = Vec::new();
+    for i in 0..4 {
+        touch(&e.inbox, &format!("{i}.txt"), &format!("file-{i}"));
+        ids.push(
+            execute(&build_plan(&rs, None).unwrap(), &journal, "gui")
+                .unwrap()
+                .batch_id,
+        );
+    }
+    assert!(foldo_core::undo_batch_with_depth(&journal, ids[2], 3).is_err());
+    // 原位置有新文件时，只能继续处理最新一批，不能跳过部分撤销的批次。
+    let occupied = touch(&e.inbox, "3.txt", "new-file");
+    assert_eq!(
+        foldo_core::undo_batch_with_depth(&journal, ids[3], 3)
+            .unwrap()
+            .failed
+            .len(),
+        1
+    );
+    assert!(foldo_core::undo_batch_with_depth(&journal, ids[2], 3).is_err());
+    fs::remove_file(occupied).unwrap();
+    for i in (1..4).rev() {
+        assert_eq!(journal.next_undoable(3).unwrap(), Some(ids[i]));
+        assert!(foldo_core::preview_undo_with_depth(&journal, ids[i], 3).is_ok());
+        assert_eq!(
+            foldo_core::undo_batch_with_depth(&journal, ids[i], 3)
+                .unwrap()
+                .restored,
+            1
+        );
+        assert_eq!(
+            fs::read_to_string(e.inbox.join(format!("{i}.txt"))).unwrap(),
+            format!("file-{i}")
+        );
+    }
+    assert_eq!(journal.next_undoable(3).unwrap(), None);
+    assert!(foldo_core::undo_batch_with_depth(&journal, ids[0], 3).is_err());
+    assert_eq!(fs::read_to_string(e.out.join("0.txt")).unwrap(), "file-0");
+    assert_eq!(journal.batches(100).unwrap().len(), 4);
+    assert_eq!(journal.stats("2000-01-01 00:00:00").unwrap().manual_runs, 4);
+}
+
+#[test]
+fn undo_depth_defaults_to_one_and_validates_range() {
+    let original = foldo_core::parse_rule_file("version: 1\nrules: []").unwrap();
+    assert_eq!(original.settings.undo_depth, 1);
+    for depth in 1..=3 {
+        let mut file = original.clone();
+        file.settings.undo_depth = depth;
+        let saved = file.to_yaml().unwrap();
+        assert_eq!(
+            foldo_core::parse_rule_file(&saved)
+                .unwrap()
+                .settings
+                .undo_depth,
+            depth
+        );
+        assert!(RuleSet::from_file(file).is_ok());
+    }
+    for depth in [0, 4, 255] {
+        let mut file = original.clone();
+        file.settings.undo_depth = depth;
+        assert!(RuleSet::from_file(file).is_err());
+    }
+}
+
+#[test]
 fn conflict_policies() {
     let e = env();
     touch(&e.inbox, "r.txt", "new");
@@ -564,6 +668,14 @@ rules:
     #[cfg(unix)]
     assert_eq!(fs::read_link(&link).unwrap(), doc);
 
+    // 第一轮仍是最新记录时，可以预览压缩包和快捷方式的撤销。
+    let preview = foldo_core::preview_undo(&journal, report.batch_id).unwrap();
+    assert!(
+        preview
+            .iter()
+            .all(|c| c.outcome == foldo_core::UndoOutcome::Restore)
+    );
+
     // 第二轮：解压刚生成的 zip 到同名文件夹
     let second = execute(&build_plan(&rs, Some("解压")).unwrap(), &journal, "test").unwrap();
     assert_eq!(second.done, 1, "{second:?}");
@@ -572,8 +684,9 @@ rules:
         "季度报告内容"
     );
 
-    // 撤销第一轮：快捷方式删除、压缩包进回收站（测试里只检查快捷方式，避免真的往回收站放文件）
-    let preview = foldo_core::preview_undo(&journal, report.batch_id).unwrap();
+    // 新一轮整理后不能越过它撤销第一轮；这里只预览，不往系统回收站放测试文件。
+    assert!(foldo_core::preview_undo(&journal, report.batch_id).is_err());
+    let preview = foldo_core::preview_undo(&journal, second.batch_id).unwrap();
     assert!(
         preview
             .iter()

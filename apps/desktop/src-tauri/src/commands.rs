@@ -12,7 +12,7 @@ use foldo_core::scan::classify_file;
 use foldo_core::units::Span;
 use foldo_core::{
     Journal, OpKind, Plan, RuleSet, SkipKind, UndoOutcome, build_plan, build_plan_for_paths,
-    execute, load_rule_file, preview_undo, undo_batch,
+    execute, load_rule_file, preview_undo_with_depth, undo_batch_with_depth,
 };
 use serde::Serialize;
 use std::collections::{HashSet, VecDeque};
@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
-use tauri::State;
+use tauri::{Emitter, State};
 
 type CmdResult<T> = Result<T, String>;
 
@@ -599,6 +599,7 @@ pub struct ExecView {
 
 #[tauri::command]
 pub async fn execute_plan(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     plan_id: u64,
     groups: Vec<usize>,
@@ -615,7 +616,9 @@ pub async fn execute_plan(
     if subset.is_empty() {
         return Err(foldo_core::t!("没有选中任何文件"));
     }
-    let report = state.with_journal(|j| execute(&subset, j, "gui"))?;
+    let result = state.with_journal(|j| execute(&subset, j, "gui"));
+    let _ = app.emit("history-changed", ());
+    let report = result?;
     prune_history(&state);
     let problems = |list: Vec<(foldo_core::Op, String)>| {
         list.into_iter()
@@ -636,9 +639,26 @@ pub async fn execute_plan(
 
 // ---------- 历史与撤销 ----------
 
+#[derive(Serialize)]
+pub struct HistoryBatch {
+    #[serde(flatten)]
+    batch: BatchSummary,
+    can_undo: bool,
+}
+
 #[tauri::command]
-pub async fn history(state: State<'_, AppState>, limit: usize) -> CmdResult<Vec<BatchSummary>> {
-    state.with_journal(|j| j.batches(limit))
+pub async fn history(state: State<'_, AppState>, limit: usize) -> CmdResult<Vec<HistoryBatch>> {
+    let depth = current_config()?.settings.undo_depth;
+    state.with_journal(|j| {
+        let next = j.next_undoable(depth)?;
+        Ok(j.batches(limit)?
+            .into_iter()
+            .map(|batch| HistoryBatch {
+                can_undo: Some(batch.id) == next,
+                batch,
+            })
+            .collect())
+    })
 }
 
 #[derive(Serialize)]
@@ -676,7 +696,8 @@ pub struct UndoCheckView {
 
 #[tauri::command]
 pub async fn undo_preview(state: State<'_, AppState>, id: i64) -> CmdResult<Vec<UndoCheckView>> {
-    let checks = state.with_journal(|j| preview_undo(j, id))?;
+    let depth = current_config()?.settings.undo_depth;
+    let checks = state.with_journal(|j| preview_undo_with_depth(j, id, depth))?;
     Ok(checks
         .into_iter()
         .map(|c| UndoCheckView {
@@ -699,8 +720,15 @@ pub struct UndoView {
 }
 
 #[tauri::command]
-pub async fn undo(state: State<'_, AppState>, id: i64) -> CmdResult<UndoView> {
-    let report = state.with_journal(|j| undo_batch(j, id))?;
+pub async fn undo(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: i64,
+) -> CmdResult<UndoView> {
+    let depth = current_config()?.settings.undo_depth;
+    let result = state.with_journal(|j| undo_batch_with_depth(j, id, depth));
+    let _ = app.emit("history-changed", ());
+    let report = result?;
     Ok(UndoView {
         batch_id: report.batch_id,
         restored: report.restored,

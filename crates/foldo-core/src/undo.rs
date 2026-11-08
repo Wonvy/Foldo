@@ -40,7 +40,12 @@ pub struct UndoCheck {
     pub reason: Option<String>,
 }
 
-fn ensure_undoable(journal: &Journal, batch_id: i64) -> Result<()> {
+fn ensure_undoable(journal: &Journal, batch_id: i64, depth: u8) -> Result<()> {
+    if journal.next_undoable(depth)? != Some(batch_id) {
+        return Err(Error::Other(crate::t!(
+            "该记录不在可撤销范围内，或需要先撤销更新的整理。请刷新历史记录。"
+        )));
+    }
     let batch = journal
         .batch(batch_id)?
         .ok_or_else(|| Error::Other(crate::t!("找不到批次 #{batch_id}", batch_id = batch_id)))?;
@@ -102,7 +107,15 @@ fn creates_only(kind: &str) -> bool {
 
 /// 撤销预览：逐项说明能否恢复。按真实撤销的顺序模拟文件状态，所以“改名 → 移动”这样的链条也能正确判断。
 pub fn preview_undo(journal: &Journal, batch_id: i64) -> Result<Vec<UndoCheck>> {
-    ensure_undoable(journal, batch_id)?;
+    preview_undo_with_depth(journal, batch_id, 1)
+}
+
+pub fn preview_undo_with_depth(
+    journal: &Journal,
+    batch_id: i64,
+    depth: u8,
+) -> Result<Vec<UndoCheck>> {
+    ensure_undoable(journal, batch_id, depth)?;
     let ops = journal.ops(batch_id)?;
     // 模拟的文件状态：key → 是否存在；没有记录的路径看真实磁盘
     let mut overlay: HashMap<String, bool> = HashMap::new();
@@ -152,7 +165,11 @@ pub fn preview_undo(journal: &Journal, batch_id: i64) -> Result<Vec<UndoCheck>> 
 }
 
 pub fn undo_batch(journal: &Journal, batch_id: i64) -> Result<UndoReport> {
-    ensure_undoable(journal, batch_id)?;
+    undo_batch_with_depth(journal, batch_id, 1)
+}
+
+pub fn undo_batch_with_depth(journal: &Journal, batch_id: i64, depth: u8) -> Result<UndoReport> {
+    ensure_undoable(journal, batch_id, depth)?;
     let mut report = UndoReport {
         batch_id,
         ..Default::default()

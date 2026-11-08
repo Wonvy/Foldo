@@ -258,6 +258,24 @@ step("新建规则并加到文件夹后生效", async () => {
   assert.match(yaml, /rules:\s*\n?\s*- 文档归档\s*\n\s*- 图片归档|rules: \[文档归档, 图片归档\]/);
 });
 
+step("历史保留所有记录，撤销范围设置保存后只允许按顺序撤销", async () => {
+  await click(byTest("nav-history"));
+  const rows = By.css(".content > div:not([hidden]) .list-row.clickable");
+  await driver.wait(async () => (await driver.findElements(rows)).length >= 2, 10_000);
+  assert.equal((await driver.findElements(By.css(".content > div:not([hidden]) .list-row.clickable button"))).length, 1);
+  const count = (await driver.findElements(rows)).length;
+  await click(byTest("nav-settings"));
+  await click(By.id("settings-tab-tidy"));
+  assert.equal(await (await find(By.css('select[aria-label="可撤销次数"]'))).getAttribute("value"), "1");
+  await click(By.css('select[aria-label="可撤销次数"] option[value="3"]'));
+  await eventually(() => /undo_depth: 3/.test(fs.readFileSync(rulesFile, "utf8")), "可撤销次数没有保存");
+  await click(byTest("nav-history"));
+  await click(By.css(".content > div:not([hidden]) .list-row.clickable button"));
+  await click(byTest("undo-confirm"));
+  await driver.wait(async () => (await driver.findElements(By.css(".content > div:not([hidden]) .list-row.clickable button"))).length === 0, 10_000);
+  assert.equal((await driver.findElements(rows)).length, count);
+});
+
 step("从新建规则打开正则助手子窗口，生成表达式并回填当前条件", async () => {
   await click(byTest("nav-rules"));
   assert.equal((await driver.findElements(By.css('button[title="正则助手"]'))).length, 0);
@@ -288,6 +306,7 @@ step("从新建规则打开正则助手子窗口，生成表达式并回填当�
 
 step("切换语言后界面和后台都换过来", async () => {
   await click(byTest("nav-settings"));
+  await click(By.id("settings-tab-general"));
   const select = await find(By.xpath(`//select[option[@value="ja"]]`));
   await select.findElement(By.css('option[value="ja"]')).click();
   // 切换后窗口重新加载

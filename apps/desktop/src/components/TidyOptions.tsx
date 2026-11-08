@@ -168,6 +168,27 @@ export default function TidyOptions() {
         </div>
         <div className="card-body row" style={{ borderTop: "1px solid var(--border)" }}>
           <div style={{ flex: 1 }}>
+            <div>{t("可撤销次数")}</div>
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              {t("默认只允许撤销最近一次整理，最多 3 次，按从新到旧的顺序撤销；不会删除历史记录。")}
+            </div>
+          </div>
+          <select
+            className="input"
+            style={{ width: "auto" }}
+            aria-label={t("可撤销次数")}
+            value={config.settings?.undo_depth ?? 1}
+            onChange={(e) => update({ ...config, settings: { ...config.settings, undo_depth: Number(e.target.value) } })}
+          >
+            {[1, 2, 3].map((depth) => (
+              <option key={depth} value={depth}>
+                {t("{0} 次", [depth])}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="card-body row" style={{ borderTop: "1px solid var(--border)" }}>
+          <div style={{ flex: 1 }}>
             <div>{t("历史记录保留")}</div>
             <div className="muted" style={{ fontSize: 12.5 }}>
               {t("更早的整理记录会自动清理，清理后不能再撤销")}

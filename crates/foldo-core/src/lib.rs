@@ -38,4 +38,7 @@ pub use plan::{
 pub use progress::ScanControl;
 pub use protect::SkipKind;
 pub use rule::{Folder, Rule, RuleSet, load_rule_file, migrate, parse_rule_file};
-pub use undo::{UndoCheck, UndoOutcome, UndoReport, preview_undo, undo_batch};
+pub use undo::{
+    UndoCheck, UndoOutcome, UndoReport, preview_undo, preview_undo_with_depth, undo_batch,
+    undo_batch_with_depth,
+};

@@ -189,6 +189,9 @@ impl RuleSet {
     pub fn from_file(mut file: RuleFile) -> Result<Self> {
         let config_err = |msg: String| Error::Other(crate::t!("配置无效: {msg}", msg = msg));
         migrate(&mut file)?;
+        if !(1..=3).contains(&file.settings.undo_depth) {
+            return Err(config_err(crate::t!("可撤销次数必须为 1 至 3 次。")));
+        }
 
         let categories = std::sync::Arc::new(
             crate::categories::CategoryMap::compile(&file.settings.category_extensions)

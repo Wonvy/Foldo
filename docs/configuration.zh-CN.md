@@ -25,6 +25,7 @@ settings:
   auto: notify               # 后台自动整理：off（默认）/ notify 发现文件时提醒 / run 直接整理（移到回收站仍需确认）
   keep_empty_folders: false  # true 时保留整理后变空的文件夹（默认删除，撤销时重建）
   keep_history_days: 365     # 历史记录保留天数，更早的自动清理（清理后不能撤销）；0 表示一直保留
+  undo_depth: 1             # 可撤销最近几次整理：1（默认）至 3，按从新到旧顺序撤销；不删除历史记录
   schedule:                  # 定时整理（可选）：到点整理一次，只做可以撤销的操作；关机错过的时间点下次打开时补上
     every: weekly            # daily 每天 / weekly 每周
     weekday: 1               # 每周时必填：1 = 周一 … 7 = 周日

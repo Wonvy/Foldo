@@ -1077,5 +1077,11 @@
  "重复方式": "Repetition",
  "预查语法：当前引擎不支持，请改写并测试": "Lookaround is unsupported; rewrite and test",
  "；优先匹配较短内容": "; prefer shorter matches",
- "；当前引擎不支持占有式重复": "; possessive repetition is unsupported"
+ "；当前引擎不支持占有式重复": "; possessive repetition is unsupported",
+ "可撤销次数": "Undo depth",
+ "{0} 次": "{0} times",
+ "默认只允许撤销最近一次整理，最多 3 次，按从新到旧的顺序撤销；不会删除历史记录。": "By default, only the latest run can be undone. Allow up to 3 recent runs, undone from newest to oldest. History is kept.",
+ "保留整理记录；默认只能撤销最近一次，可在设置中增加至 3 次，按从新到旧的顺序撤销。": "History is kept. By default, only the latest run can be undone. Settings allow up to 3 recent runs, undone from newest to oldest.",
+ "可撤销次数必须为 1 至 3 次。": "Undo depth must be between 1 and 3.",
+ "该记录不在可撤销范围内，或需要先撤销更新的整理。请刷新历史记录。": "This run is outside the undo range, or a newer run must be undone first. Refresh history."
 }

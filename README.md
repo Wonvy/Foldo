@@ -40,7 +40,7 @@ Builds are not Windows Authenticode-signed or Apple-notarized, so your OS may di
 | **Profiles** | Keep separate folder and rule setups, e.g. for work and personal, and switch from the Tidy page or the tray. |
 | **Large folders** | Scans show progress and can be cancelled; lists with thousands of files still scroll smoothly. |
 | **Local configuration** | A readable YAML file and local SQLite journal; GUI and CLI share the same engine. |
-| **History** | Every run can be undone; records older than a year (configurable) are cleaned up automatically. The History page shows this month's statistics. |
+| **History** | Keep all records within the configured retention period and view monthly statistics. Only the latest run can be undone by default; Settings → Organizing allows up to 3 recent runs, undone from newest to oldest. |
 | **Four languages** | English, 简体中文, 繁體中文 and 日本語. Follows the system language by default; switch in Settings. |
 
 ## A quick tour

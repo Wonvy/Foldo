@@ -283,6 +283,7 @@ fn cycle(
             if !safe.is_empty() {
                 let state = app.state::<AppState>();
                 let result = state.with_journal(|j| execute(&safe, j, "watch"));
+                let _ = app.emit("history-changed", ());
                 let _ = state.with_journal(|j| j.prune(set.keep_history_days));
                 match result {
                     Ok(report) => {

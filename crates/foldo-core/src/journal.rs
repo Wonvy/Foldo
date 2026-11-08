@@ -267,13 +267,21 @@ impl Journal {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// 最近一个还可以撤销的批次。
+    /// 只允许撤销最后一个批次；撤销后不回退到更早的批次。
     pub fn last_undoable(&self) -> Result<Option<i64>> {
+        self.next_undoable(1)
+    }
+
+    /// 最近 depth 批中的下一次撤销。已撤销的批次仍占窗口名额，避免无限回退。
+    pub fn next_undoable(&self, depth: u8) -> Result<Option<i64>> {
         Ok(self
             .conn
             .query_row(
-                "SELECT id FROM batches WHERE status != ?1 ORDER BY id DESC LIMIT 1",
-                [status::UNDONE],
+                "SELECT b.id FROM (SELECT id, status FROM batches ORDER BY id DESC LIMIT ?1) b
+                 WHERE b.status != ?2 AND EXISTS
+                   (SELECT 1 FROM ops o WHERE o.batch_id = b.id AND o.status = ?3 AND o.kind != ?4)
+                 ORDER BY b.id DESC LIMIT 1",
+                params![depth.clamp(1, 3), status::UNDONE, status::DONE, KIND_MKDIR],
                 |r| r.get(0),
             )
             .optional()?)

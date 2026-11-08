@@ -78,6 +78,7 @@ export type RuleFile = {
     keep_empty_folders?: boolean;
     /** 历史记录保留天数，默认 365；0 表示一直保留 */
     keep_history_days?: number;
+    undo_depth?: number;
     /** 定时整理：每天或每周固定时间 */
     schedule?: { every: "daily" | "weekly"; at: string; weekday?: number };
     category_extensions?: Record<string, string[]>;
@@ -199,6 +200,7 @@ export type Batch = {
   source: string;
   status: string;
   op_count: number;
+  can_undo: boolean;
 };
 
 export type OpRecord = {

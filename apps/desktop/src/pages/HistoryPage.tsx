@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, Clock, RefreshCw, RotateCcw, TriangleAlert } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { api, errorText, KIND_LABEL, STATUS_LABEL, type Batch, type OpRecord, type Stats, type UndoView } from "../api";
 import { formatBytes } from "../rules";
 import UndoDialog from "../components/UndoDialog";
@@ -24,22 +25,47 @@ export default function HistoryPage({ active }: { active: boolean }) {
   const [lastUndo, setLastUndo] = useState<UndoView | null>(null);
 
   const [stats, setStats] = useState<Stats | null>(null);
+  const refreshId = useRef(0);
   const refresh = useCallback(() => {
+    const id = ++refreshId.current;
     api
       .stats()
-      .then(setStats)
-      .catch(() => setStats(null));
+      .then((value) => {
+        if (id === refreshId.current) setStats(value);
+      })
+      .catch(() => {
+        if (id === refreshId.current) setStats(null);
+      });
     api
       .history()
       .then((b) => {
+        if (id !== refreshId.current) return;
         setBatches(b);
+        setLastUndo((previous) =>
+          previous && b.some((batch) => batch.id === previous.batch_id && batch.status.includes("undone")) ? previous : null,
+        );
         setError(null);
       })
-      .catch((e) => setError(errorText(e)));
+      .catch((e) => {
+        if (id === refreshId.current) setError(errorText(e));
+      });
   }, []);
 
   useEffect(() => {
-    if (active) refresh();
+    if (!active) return;
+    let alive = true;
+    const update = () => {
+      if (alive) refresh();
+    };
+    const listeners = [listen("history-changed", update), listen("config-changed", update)];
+    void Promise.all(listeners)
+      .then(update)
+      .catch(() => {});
+    refresh();
+    return () => {
+      alive = false;
+      for (const listener of listeners) void listener.then((unlisten) => unlisten()).catch(() => {});
+    };
   }, [active, refresh]);
 
   const expand = async (id: number) => {
@@ -58,7 +84,7 @@ export default function HistoryPage({ active }: { active: boolean }) {
       <div className="page-head">
         <div>
           <h1>{t("历史")}</h1>
-          <p className="sub">{t("每次整理都会记录下来，可以查看明细或撤销。")}</p>
+          <p className="sub">{t("保留整理记录；默认只能撤销最近一次，可在设置中增加至 3 次，按从新到旧的顺序撤销。")}</p>
         </div>
         <button className="btn" onClick={refresh}>
           <RefreshCw size={15} /> {t("刷新")}
@@ -135,7 +161,7 @@ export default function HistoryPage({ active }: { active: boolean }) {
                   <div className="row-sub">{t("{0} 项操作", [b.op_count])}</div>
                 </div>
                 <span className={`chip ${STATUS_CHIP[b.status] ?? ""}`}>{STATUS_LABEL[b.status] ?? b.status}</span>
-                {b.status !== "undone" && b.op_count > 0 && (
+                {b.can_undo && (
                   <button
                     className="btn sm"
                     onClick={(e) => {

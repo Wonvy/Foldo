@@ -3,7 +3,8 @@ use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use foldo_core::journal::status;
 use foldo_core::paths::{default_data_dir, default_rules_path, display};
 use foldo_core::{
-    EXAMPLE_RULES, Journal, OpKind, Plan, RuleSet, SkipKind, build_plan, execute, undo_batch,
+    EXAMPLE_RULES, Journal, OpKind, Plan, RuleSet, SkipKind, build_plan, execute,
+    undo_batch_with_depth,
 };
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -200,7 +201,14 @@ fn run() -> Result<()> {
             Ok(())
         }
         Cmd::History { limit } => history(&data_dir, limit),
-        Cmd::Undo { batch, yes } => undo(&data_dir, batch, yes),
+        Cmd::Undo { batch, yes } => {
+            let depth = if rules_path.exists() {
+                foldo_core::load_rule_file(&rules_path)?.settings.undo_depth
+            } else {
+                1
+            };
+            undo(&data_dir, batch, yes, depth)
+        }
         Cmd::Inspect { path, all } => inspect(&path, all, &rules_path),
     }
 }
@@ -405,11 +413,11 @@ fn status_label(s: &str) -> String {
     })
 }
 
-fn undo(data_dir: &Path, batch: Option<i64>, yes: bool) -> Result<()> {
+fn undo(data_dir: &Path, batch: Option<i64>, yes: bool, depth: u8) -> Result<()> {
     let journal = Journal::open_in(data_dir)?;
     let id = match batch {
         Some(id) => id,
-        None => match journal.last_undoable()? {
+        None => match journal.next_undoable(depth)? {
             Some(id) => id,
             None => {
                 println!("{}", foldo_core::t!("没有可以撤销的执行记录。"));
@@ -431,7 +439,7 @@ fn undo(data_dir: &Path, batch: Option<i64>, yes: bool) -> Result<()> {
         println!("{}", foldo_core::t!("已取消。"));
         return Ok(());
     }
-    let report = undo_batch(&journal, id)?;
+    let report = undo_batch_with_depth(&journal, id, depth)?;
     println!(
         "{}",
         foldo_core::t!("✓ 已恢复 {a0} 个文件。", a0 = report.restored)
