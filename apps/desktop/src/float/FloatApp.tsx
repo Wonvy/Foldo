@@ -14,6 +14,7 @@ type Phase = "idle" | "busy" | "plan" | "done";
 
 const COLLAPSED: [number, number] = [84, 84];
 const EXPANDED: [number, number] = [340, 380];
+const RESIZE_EDGES = ["North", "South", "East", "West", "NorthEast", "NorthWest", "SouthEast", "SouthWest"] as const;
 
 export default function FloatApp() {
   const [hover, setHover] = useState(false);
@@ -307,6 +308,27 @@ export default function FloatApp() {
 
   return (
     <div className={`float-panel ${hover ? "hover" : ""}`} onContextMenu={openMenu}>
+      {RESIZE_EDGES.map((direction) => (
+        <div
+          key={direction}
+          className={`float-resize ${direction}`}
+          aria-hidden="true"
+          title={direction === "SouthEast" ? t("调整窗口大小") : undefined}
+          onMouseDown={(event) => {
+            event.stopPropagation();
+            if (event.button === 0)
+              void getCurrentWindow()
+                .startResizeDragging(direction)
+                .catch((e) => setError(errorText(e)));
+          }}
+        >
+          {direction === "SouthEast" && (
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M5 13 13 5M10 13l3-3" />
+            </svg>
+          )}
+        </div>
+      ))}
       <div className="float-head" onMouseDown={drag}>
         {target(true)}
         <strong className="ellipsis">

@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   close: vi.fn(),
   show: vi.fn(),
   drag: vi.fn(),
+  resize: vi.fn().mockResolvedValue(undefined),
   emit: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/window", () => ({
@@ -20,6 +21,7 @@ vi.mock("@tauri-apps/api/window", () => ({
       return () => {};
     },
     startDragging: mocks.drag,
+    startResizeDragging: mocks.resize,
     setAlwaysOnTop: vi.fn().mockResolvedValue(undefined),
   }),
 }));
@@ -85,6 +87,27 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("悬浮窗文件列表", () => {
+  it("展开窗口可以从边角调整大小，收起后没有调整手柄", async () => {
+    const { container } = render(<FloatApp />);
+    expect(container.querySelector(".float-resize")).toBeNull();
+    await drop(["D:/files/a.pdf"]);
+    fireEvent.mouseDown(screen.getByTitle("调整窗口大小"), { button: 0 });
+    expect(mocks.resize).toHaveBeenCalledWith("SouthEast");
+    expect(mocks.drag).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTitle("收起面板"));
+    expect(container.querySelector(".float-resize")).toBeNull();
+  });
+
+  it("关闭分组后连未匹配条目也恢复普通列表，再点分组图标可以切换", async () => {
+    const { container } = render(<FloatApp />);
+    await drop(["D:/files/a.pdf", "D:/files/b.unknown"]);
+    fireEvent.click(screen.getByRole("button", { name: "按类型分组" }));
+    expect(screen.getByRole("button", { name: "列表" }).getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector(".float-group-head")).toBeNull();
+    expect(screen.getByText("b.unknown")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "按扩展名分组" }));
+    expect(screen.getByRole("checkbox", { name: ".pdf" })).toBeTruthy();
+  });
   it("展开后继续拖入会追加、去重，并保留已经排除的文件", async () => {
     render(<FloatApp />);
     await drop(["D:/files/b.pdf"]);
@@ -109,11 +132,12 @@ describe("悬浮窗文件列表", () => {
   it("切换扩展名和列表视图保留排除状态", async () => {
     render(<FloatApp />);
     await drop(["D:/files/a.pdf", "D:/files/b.pdf", "D:/files/c.png"]);
-    fireEvent.change(screen.getByRole("combobox", { name: "文件视图" }), { target: { value: "extension" } });
+    fireEvent.click(screen.getByRole("button", { name: "按扩展名分组" }));
     fireEvent.click(screen.getByRole("checkbox", { name: ".pdf" }));
-    fireEvent.change(screen.getByRole("combobox", { name: "文件视图" }), { target: { value: "none" } });
+    fireEvent.click(screen.getByRole("button", { name: "列表" }));
     expect((screen.getByRole("checkbox", { name: "a.pdf" }) as HTMLInputElement).checked).toBe(false);
     expect(screen.getByRole("button", { name: "整理 1 个文件" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "折叠全部" })).toBeNull();
   });
 
   it("清空会放弃当前预览，迟到的扫描结果不会重新填回列表", async () => {
@@ -162,5 +186,36 @@ describe("悬浮窗文件列表", () => {
     fireEvent.click(screen.getByTitle("为此文件添加规则"));
     await waitFor(() => expect(mocks.emit).toHaveBeenCalledWith("main", "float-new-rule", { path: "D:/files/a.unknown" }));
     expect(mocks.show).toHaveBeenCalled();
+  });
+
+  it("已在目标位置的文件仍显示，且不能重复整理", async () => {
+    const p = plan([]);
+    p.in_place = 1;
+    p.skipped.push({
+      path: "D:/files/done.pdf",
+      name: "done.pdf",
+      display: "D:/files/done.pdf",
+      kind: "in_place",
+      label: "已在目标位置",
+      reason: "已在目标位置，无需整理",
+      rule: "文档",
+    });
+    mocks.scan.mockResolvedValueOnce(p);
+    render(<FloatApp />);
+    await drop(["D:/files/done.pdf"]);
+    expect(screen.getByText("done.pdf")).toBeTruthy();
+    expect(screen.getByText("已在目标位置")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "没有可整理的文件" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText("拖入文件或文件夹")).toBeNull();
+    expect(mocks.execute).not.toHaveBeenCalled();
+  });
+
+  it("找不到拖入的文件时显示扫描警告", async () => {
+    const p = plan([]);
+    p.warnings.push("找不到 D:/files/gone.pdf");
+    mocks.scan.mockResolvedValueOnce(p);
+    render(<FloatApp />);
+    await drop(["D:/files/gone.pdf"]);
+    expect(screen.getByText("找不到 D:/files/gone.pdf")).toBeTruthy();
   });
 });

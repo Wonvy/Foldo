@@ -217,6 +217,30 @@ rules:
 }
 
 #[test]
+fn dropped_files_already_at_destination_still_appear_with_a_reason() {
+    let (_t, inbox) = setup();
+    let file = touch(&inbox, "done.pdf", "unchanged");
+    let rs = rules(&format!(
+        "version: 1\nsettings:\n  buffer: 0s\nfolders:\n  - path: {}\nrules:\n  - name: Documents\n    actions: [{{ move: {} }}]\n",
+        q(&inbox),
+        q(&inbox)
+    ));
+    let plan = build_plan_for_paths(&rs, &[file.clone(), file.clone()], chrono::Local::now());
+    assert!(plan.ops.is_empty());
+    assert_eq!(plan.in_place, 1);
+    assert_eq!(plan.skipped.len(), 1);
+    assert_eq!(plan.skipped[0].path, file);
+    assert_eq!(plan.skipped[0].kind, SkipKind::InPlace);
+    assert_eq!(plan.skipped[0].rule.as_deref(), Some("Documents"));
+    assert!(!plan.skipped[0].reason.is_empty());
+    assert_eq!(fs::read_to_string(&file).unwrap(), "unchanged");
+    // Normal folder scans retain their compact count, without adding list rows.
+    let normal = build_plan(&rs, None).unwrap();
+    assert_eq!(normal.in_place, 1);
+    assert!(normal.skipped.is_empty());
+}
+
+#[test]
 fn retarget_group_replaces_chain_and_avoids_conflicts() {
     let (_t, inbox) = setup();
     touch(&inbox, "IMG_1.jpg", "");

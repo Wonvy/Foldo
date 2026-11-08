@@ -924,5 +924,9 @@
  "拖入文件或文件夹": "Drop files or folders here",
  "添加文件": "Add files",
  "原位置": "Original location",
- "无法接收拖入文件，请使用添加文件按钮：{0}": "Could not enable file drops. Use Add files: {0}"
+ "无法接收拖入文件，请使用添加文件按钮：{0}": "Could not enable file drops. Use Add files: {0}",
+ "已在目标位置": "Already at destination",
+ "已在目标位置，无需整理": "Already at the destination; no action needed",
+ "仅支持普通文件或文件夹，不跟随符号链接": "Only regular files and folders are supported; symbolic links are not followed",
+ "调整窗口大小": "Resize window"
 }

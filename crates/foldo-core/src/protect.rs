@@ -30,6 +30,8 @@ pub enum SkipKind {
     Folder,
     /// 没有匹配的规则
     NoMatch,
+    /// 命中规则，但已经在目标位置
+    InPlace,
     /// 目标位置冲突且规则要求跳过
     Conflict,
     /// 规则无法应用到这个文件（如路径模板缺少信息）
@@ -49,6 +51,7 @@ impl SkipKind {
             SkipKind::InUse => "正在使用",
             SkipKind::Folder => "文件夹",
             SkipKind::NoMatch => "没有匹配的规则",
+            SkipKind::InPlace => "已在目标位置",
             SkipKind::Conflict => "目标冲突",
             SkipKind::Invalid => "无法应用规则",
         }

@@ -289,6 +289,8 @@ jobs:
           else
             gh release create "$TAG" --target "$GITHUB_SHA" --title "Foldo $TAG" --generate-notes --draft
           fi
+          # A retry may reuse a draft from an older commit of the same version.
+          gh release edit "$TAG" --target "$GITHUB_SHA"
           # Upload the signed packages first so their stable asset IDs are known.
           # The updater already sends Accept: application/octet-stream; these API
           # URLs avoid the release-download gateway that can return persistent 504s.

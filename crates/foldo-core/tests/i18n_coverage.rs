@@ -141,7 +141,7 @@ fn rs_keys() -> BTreeSet<String> {
     use foldo_core::SkipKind::*;
     for k in [
         Protected, Credential, Shortcut, System, Hidden, Partial, Buffer, InUse, Folder, NoMatch,
-        Conflict, Invalid,
+        InPlace, Conflict, Invalid,
     ] {
         keys.insert(k.label().to_string());
     }

@@ -1,4 +1,16 @@
-import { ArrowRight, ChevronDown, ChevronRight, Trash, WandSparkles, X } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronDown,
+  ChevronRight,
+  FileType,
+  FolderOpen,
+  Layers,
+  List,
+  ListFilter,
+  Trash,
+  WandSparkles,
+  X,
+} from "lucide-react";
 import { useMemo, useState, type MouseEvent } from "react";
 import { baseName, type SkipView } from "../api";
 import { Checkbox, FileIcon } from "../components/ui";
@@ -33,6 +45,13 @@ export default function FileList({
     { key: "kept", title: t("保持原位"), files: skipped.filter((file) => file.kind !== "no_match") },
   ].filter((group) => group.files.length);
   const keys = [...(view === "none" ? [] : groups.map((group) => group.key)), ...skippedGroups.map((group) => group.key)];
+  const views = [
+    { value: "none", label: t("列表"), Icon: List },
+    { value: "category", label: t("按类型分组"), Icon: Layers },
+    { value: "extension", label: t("按扩展名分组"), Icon: FileType },
+    { value: "target", label: t("按目标位置分组"), Icon: FolderOpen },
+    { value: "rule", label: t("按规则分组"), Icon: ListFilter },
+  ] as const;
   const toggleCollapsed = (key: string) =>
     setCollapsed((previous) => {
       const next = new Set(previous);
@@ -80,24 +99,30 @@ export default function FileList({
   return (
     <>
       <div className="float-list-tools">
-        <label>
-          {t("视图")}
-          <select aria-label={t("文件视图")} value={view} onChange={(event) => onView(event.target.value as View)}>
-            <option value="none">{t("列表")}</option>
-            <option value="category">{t("按类型分组")}</option>
-            <option value="extension">{t("按扩展名分组")}</option>
-            <option value="target">{t("按目标位置分组")}</option>
-            <option value="rule">{t("按规则分组")}</option>
-          </select>
-        </label>
-        <button
-          className="icon-btn"
-          disabled={!keys.length}
-          title={collapsed.size ? t("展开全部") : t("折叠全部")}
-          onClick={() => setCollapsed(collapsed.size ? new Set() : new Set(keys))}
-        >
-          {collapsed.size ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-        </button>
+        <div className="segmented float-view-switch" role="group" aria-label={t("文件视图")}>
+          {views.map(({ value, label, Icon }) => (
+            <button
+              key={value}
+              className={view === value ? "on" : ""}
+              title={label}
+              aria-label={label}
+              aria-pressed={view === value}
+              onClick={() => onView(view === value ? "none" : value)}
+            >
+              <Icon size={15} />
+            </button>
+          ))}
+        </div>
+        {view !== "none" && (
+          <button
+            className="icon-btn"
+            disabled={!keys.length}
+            title={collapsed.size ? t("展开全部") : t("折叠全部")}
+            onClick={() => setCollapsed(collapsed.size ? new Set() : new Set(keys))}
+          >
+            {collapsed.size ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+          </button>
+        )}
       </div>
       {groups.map((group) => {
         if (view === "none") return <div key={group.key}>{group.items.map(row)}</div>;
@@ -120,7 +145,7 @@ export default function FileList({
                 {collapsed.has(group.key) ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                 <span className="ellipsis">{group.title}</span>
                 <span className="spacer" />
-                <span className="muted">
+                <span className="float-group-count">
                   {count}/{group.items.length}
                 </span>
               </button>
@@ -130,19 +155,21 @@ export default function FileList({
         );
       })}
       {skippedGroups.map((group) => (
-        <section className="float-group" key={group.key}>
-          <div className="float-group-head">
-            <button className="float-group-toggle" aria-expanded={!collapsed.has(group.key)} onClick={() => toggleCollapsed(group.key)}>
-              {collapsed.has(group.key) ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-              <span className="ellipsis">{group.title}</span>
-              <span className="spacer" />
-              <span className="muted">{group.files.length}</span>
-            </button>
-            <button className="icon-btn" title={t("从列表中移除此组")} onClick={() => onRemove(group.files.map((file) => file.path))}>
-              <X size={13} />
-            </button>
-          </div>
-          {!collapsed.has(group.key) &&
+        <section className={view === "none" ? "" : "float-group"} key={group.key}>
+          {view !== "none" && (
+            <div className="float-group-head">
+              <button className="float-group-toggle" aria-expanded={!collapsed.has(group.key)} onClick={() => toggleCollapsed(group.key)}>
+                {collapsed.has(group.key) ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                <span className="ellipsis">{group.title}</span>
+                <span className="spacer" />
+                <span className="float-group-count">{group.files.length}</span>
+              </button>
+              <button className="icon-btn" title={t("从列表中移除此组")} onClick={() => onRemove(group.files.map((file) => file.path))}>
+                <X size={13} />
+              </button>
+            </div>
+          )}
+          {(view === "none" || !collapsed.has(group.key)) &&
             group.files.map((file) => (
               <div
                 key={file.path}

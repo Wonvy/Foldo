@@ -321,6 +321,7 @@ pub fn build_plan_with(
 /// 处理拖入的文件（类似 DropIt）：不受规则适用范围限制；没有匹配的文件标记为“没有匹配的规则”。
 pub fn build_plan_for_paths(set: &RuleSet, paths: &[PathBuf], now: DateTime<Local>) -> Plan {
     let mut p = Planner::new(set, now);
+    p.report_in_place = true;
     let rules: Vec<&Rule> = set.rules.iter().filter(|r| r.enabled).collect();
     let mut files: Vec<FileCtx> = Vec::new();
     for path in paths {
@@ -363,6 +364,12 @@ pub fn build_plan_for_paths(set: &RuleSet, paths: &[PathBuf], now: DateTime<Loca
             continue;
         }
         if !md.is_file() {
+            p.add_skip(
+                path,
+                SkipKind::Invalid,
+                crate::t!("仅支持普通文件或文件夹，不跟随符号链接"),
+                None,
+            );
             continue;
         }
         if let Some((kind, reason)) = classify_file(path, &name, &md, false, &set.protect) {
@@ -389,6 +396,8 @@ pub fn build_plan_for_paths(set: &RuleSet, paths: &[PathBuf], now: DateTime<Loca
 
 struct Planner<'a> {
     set: &'a RuleSet,
+    /// Explicit drops should explain every item, even if no operation is needed.
+    report_in_place: bool,
     /// 进度和取消（只有整理文件夹的扫描用）
     ctrl: Option<&'a crate::progress::ScanControl>,
     now: DateTime<Local>,
@@ -413,6 +422,7 @@ impl<'a> Planner<'a> {
     fn new(set: &'a RuleSet, now: DateTime<Local>) -> Self {
         Self {
             set,
+            report_in_place: false,
             ctrl: None,
             now,
             plan: Plan::default(),
@@ -580,7 +590,17 @@ impl<'a> Planner<'a> {
                     .ops
                     .extend(ops.into_iter().map(|op| Op { group, ..op }));
             }
-            Outcome::InPlace => self.plan.in_place += 1,
+            Outcome::InPlace => {
+                self.plan.in_place += 1;
+                if self.report_in_place {
+                    self.add_skip(
+                        &f.path,
+                        SkipKind::InPlace,
+                        crate::t!("已在目标位置，无需整理"),
+                        Some(rule),
+                    );
+                }
+            }
             Outcome::Skipped(kind, reason) => {
                 // 已计入 claimed_src，这里直接记录，不走去重
                 self.skipped_keys.insert(path_key(&f.path));

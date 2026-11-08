@@ -6,6 +6,48 @@ use tauri::{Manager, PhysicalPosition, PhysicalSize};
 pub const LABEL: &str = "float";
 pub const SIZE: f64 = 84.0;
 const MARGIN: f64 = 16.0;
+const MIN_PANEL_WIDTH: f64 = 340.0;
+const MIN_PANEL_HEIGHT: f64 = 300.0;
+
+#[derive(Deserialize, Serialize)]
+struct PanelSize {
+    width: f64,
+    height: f64,
+}
+
+fn panel_size_file() -> std::path::PathBuf {
+    foldo_core::paths::default_data_dir().join("float-size.json")
+}
+
+fn remember_size(window: &tauri::WebviewWindow) {
+    if let (Ok(size), Ok(scale)) = (window.inner_size(), window.scale_factor()) {
+        let size = size.to_logical::<f64>(scale);
+        if size.width >= MIN_PANEL_WIDTH && size.height >= MIN_PANEL_HEIGHT {
+            let saved = PanelSize {
+                width: size.width,
+                height: size.height,
+            };
+            let path = panel_size_file();
+            if let Some(parent) = path.parent()
+                && std::fs::create_dir_all(parent).is_ok()
+                && let Ok(bytes) = serde_json::to_vec(&saved)
+            {
+                let _ = std::fs::write(path, bytes);
+            }
+        }
+    }
+}
+
+fn fit_panel(saved: PanelSize, available: tauri::LogicalSize<f64>) -> tauri::LogicalSize<f64> {
+    let fit = |value: f64, min: f64, max: f64| {
+        let value = if value.is_finite() { value } else { min };
+        value.clamp(min.min(max), max)
+    };
+    tauri::LogicalSize::new(
+        fit(saved.width, MIN_PANEL_WIDTH, available.width),
+        fit(saved.height, MIN_PANEL_HEIGHT, available.height),
+    )
+}
 
 #[derive(Clone, Copy)]
 struct Anchor {
@@ -111,6 +153,9 @@ pub fn show(window: &tauri::WebviewWindow) -> tauri::Result<()> {
 }
 
 pub fn remember(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(LABEL) {
+        remember_size(&window);
+    }
     if let Some(window) = app.get_webview_window(LABEL)
         && let Ok(position) = window.outer_position()
         && let Ok(bytes) = serde_json::to_vec(&Position::from(position))
@@ -156,8 +201,31 @@ pub fn resize(window: &tauri::WebviewWindow, width: f64, height: f64) -> tauri::
     let old = window.outer_size()?;
     let position = window.outer_position()?;
     let scale = window.scale_factor()?;
-    let size = tauri::LogicalSize::new(width, height);
-    let next = window.current_monitor()?.map(|monitor| {
+    let expanded = width > SIZE || height > SIZE;
+    let monitor = window.current_monitor()?;
+    let mut size = tauri::LogicalSize::new(width, height);
+    if expanded {
+        let saved = std::fs::read(panel_size_file())
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or(PanelSize { width, height });
+        let available = monitor
+            .as_ref()
+            .map(|m| m.work_area().size.to_logical::<f64>(scale))
+            .unwrap_or(tauri::LogicalSize::new(4096.0, 4096.0));
+        size = fit_panel(saved, available);
+        window.set_min_size(Some(tauri::LogicalSize::new(
+            MIN_PANEL_WIDTH.min(available.width),
+            MIN_PANEL_HEIGHT.min(available.height),
+        )))?;
+        window.set_max_size(Some(available))?;
+    } else {
+        remember_size(window);
+        window.set_min_size(None::<tauri::LogicalSize<f64>>)?;
+        window.set_max_size(None::<tauri::LogicalSize<f64>>)?;
+    }
+    window.set_resizable(expanded)?;
+    let next = monitor.map(|monitor| {
         let screen = Screen::from(&monitor);
         let state = window.state::<ResizeState>();
         let mut saved_anchor = state.0.lock().unwrap_or_else(|e| e.into_inner());
@@ -167,7 +235,7 @@ pub fn resize(window: &tauri::WebviewWindow, width: f64, height: f64) -> tauri::
             bottom: i64::from(position.y) * 2 + i64::from(old.height)
                 >= i64::from(screen.y) * 2 + i64::from(screen.height),
         });
-        *saved_anchor = (width > SIZE || height > SIZE).then_some(anchor);
+        *saved_anchor = expanded.then_some(anchor);
         resize_position(
             position.into(),
             old,
@@ -186,6 +254,35 @@ pub fn resize(window: &tauri::WebviewWindow, width: f64, height: f64) -> tauri::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expanded_size_restores_and_fits_the_current_display() {
+        let saved: PanelSize = serde_json::from_str(r#"{"width":520,"height":640}"#).unwrap();
+        assert_eq!(
+            fit_panel(saved, tauri::LogicalSize::new(1920.0, 1040.0)),
+            tauri::LogicalSize::new(520.0, 640.0)
+        );
+        assert_eq!(
+            fit_panel(
+                PanelSize {
+                    width: 5000.0,
+                    height: 2000.0
+                },
+                tauri::LogicalSize::new(1280.0, 720.0)
+            ),
+            tauri::LogicalSize::new(1280.0, 720.0)
+        );
+        assert_eq!(
+            fit_panel(
+                PanelSize {
+                    width: -1.0,
+                    height: 20.0
+                },
+                tauri::LogicalSize::new(1280.0, 720.0)
+            ),
+            tauri::LogicalSize::new(340.0, 300.0)
+        );
+    }
 
     fn primary() -> Screen {
         Screen {

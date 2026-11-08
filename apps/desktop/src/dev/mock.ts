@@ -238,6 +238,7 @@ const LABEL: Record<SkipKind, string> = {
   in_use: "正在使用",
   folder: "文件夹",
   no_match: "没有匹配的规则",
+  in_place: "已在目标位置",
   conflict: "目标冲突",
   invalid: "无法应用规则",
 };

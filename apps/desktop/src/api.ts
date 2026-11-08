@@ -160,6 +160,7 @@ export type SkipKind =
   | "in_use"
   | "folder"
   | "no_match"
+  | "in_place"
   | "conflict"
   | "invalid";
 
