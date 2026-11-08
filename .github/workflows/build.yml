@@ -147,6 +147,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: desktop
+          cache-on-failure: true
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -187,7 +188,7 @@ jobs:
           # 打包工具从上游下载；短暂的 429/5xx 或连接超时不应直接中断整次发布。
           # 只重试网络故障，编译、签名和配置错误仍立即失败。
           for attempt in 1 2 3; do
-            if npx tauri build --bundles '${{ matrix.bundles }}' --config '{"bundle":{"createUpdaterArtifacts":true}}' \
+            if npx tauri build --verbose --bundles '${{ matrix.bundles }}' --config '{"bundle":{"createUpdaterArtifacts":true}}' \
               2>&1 | tee "$RUNNER_TEMP/foldo-installer-build.log"; then
               break
             fi
