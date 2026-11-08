@@ -6,7 +6,6 @@
 //! move / copy 的目标如果是相对路径，以规则的扫描位置（location）为基准；
 //! 拖入的文件没有扫描位置，以文件所在文件夹为基准。
 
-use crate::categories;
 use crate::condition::MatchCtx;
 use crate::config::OnConflict;
 use crate::error::{Error, Result};
@@ -222,7 +221,7 @@ pub fn build_plan(rules: &RuleSet, only: Option<&str>) -> Result<Plan> {
 
 /// 同 [`build_plan`]，但可以指定“现在”的时间，便于测试。
 ///
-/// 逐个文件夹扫描，每个文件按规则列表的顺序交给这个文件夹使用的规则，第一条命中的规则处理它。
+/// 逐个文件夹扫描，每个文件按该文件夹自己的规则顺序匹配，第一条命中的规则处理它。
 /// `only` 只运行指定的规则（即使它被禁用），用在使用它的文件夹上；还没有文件夹使用它时，试用在全部文件夹上。
 pub fn build_plan_at(set: &RuleSet, only: Option<&str>, now: DateTime<Local>) -> Result<Plan> {
     let only = match only {
@@ -311,6 +310,9 @@ pub fn build_plan_for_paths(set: &RuleSet, paths: &[PathBuf], now: DateTime<Loca
     }
     // 拖入的文件之间也能判断重复
     crate::scan::attach_peers(&mut files);
+    for f in &mut files {
+        f.set_categories(&set.categories);
+    }
     for f in &files {
         p.see(f);
         for rule in &rules {
@@ -398,7 +400,11 @@ impl<'a> Planner<'a> {
         if let Some(r) = self.scan_cache.get(&key) {
             return r.clone();
         }
-        let res = Rc::new(scan(loc, recursive, include_hidden, &self.set.protect));
+        let mut res = scan(loc, recursive, include_hidden, &self.set.protect);
+        for f in &mut res.files {
+            f.set_categories(&self.set.categories);
+        }
+        let res = Rc::new(res);
         self.plan.warnings.extend(res.warnings.iter().cloned());
         for (path, kind, reason) in &res.skipped {
             self.add_skip(path, *kind, reason.clone(), None);
@@ -493,7 +499,7 @@ impl<'a> Planner<'a> {
         let mut ops: Vec<Op> = Vec::new();
         let mut local: HashSet<String> = HashSet::new();
         let mut cur = f.path.clone();
-        let category = categories::by_extension(&f.ext).map(|c| c.name.to_string());
+        let category = f.category().map(|c| c.name.to_string());
         let op = |kind: OpKind, src: &Path, dst: Option<PathBuf>, note: Option<String>| Op {
             group: 0, // 计划汇总时再分配
             origin: f.path.clone(),

@@ -1,5 +1,6 @@
 import { Clock, FolderTree, PictureInPicture2, Settings, Sparkles, Upload, WandSparkles } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
+import { version } from "../package.json";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type UpdateInfo, type WatchStatus } from "./api";
 import HistoryPage from "./pages/HistoryPage";
@@ -209,7 +210,7 @@ function Shell() {
             <PictureInPicture2 size={16} />
           </button>
           <span className="muted label" style={{ fontSize: 12 }}>
-            v0.1
+            v{version}
           </span>
         </div>
       </nav>

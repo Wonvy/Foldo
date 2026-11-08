@@ -435,7 +435,9 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
     case "watch_now":
       return null;
     case "check_update":
-      return { current: "0.1.0", version: "0.2.0", notes: "· 后台自动整理与托盘\n· 整理后删除变空的文件夹", date: "2026-11-07" };
+      return { current: "0.2.0", version: null, notes: null, date: null, can_install: true };
+    case "open_releases":
+      return null;
     case "install_update":
       throw "模拟后端不能安装更新";
     case "float_resize":

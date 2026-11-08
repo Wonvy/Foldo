@@ -1,34 +1,50 @@
-# 测试 → 打包 → 发布
-#
-# - 每次推送 / PR：在 Windows、macOS、Linux 上运行格式检查、clippy 和测试
-# - 推送到 main 或手动触发：额外打包命令行版压缩包和图形界面安装包（Windows .exe / macOS .dmg / Linux .deb），
-#   作为 Actions 产物保留 30 天
-# - 推送 v* 标签（如 v0.1.0）：额外创建 GitHub Release，并附上安装包；版本号取自标签
-# - 自动更新：仓库配置了 TAURI_SIGNING_PRIVATE_KEY 密钥时，Windows 和 macOS 额外生成签名的更新包，
-#   发布时生成 latest.json，已安装的 Foldo 会从最新的正式版 Release 读取它
-
 name: Build
-
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
+  cancel-in-progress: false
 env:
   CARGO_TERM_COLOR: always
-
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      publish: ${{ steps.version.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate versions and select release
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          version=$(python3 scripts/release.py version)
+          tag="v$version"
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "$tag" ]]; then
+            echo '::error::Tag must match Cargo.toml and desktop application versions'
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          publish=false
+          if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
+            # Publish each version once; normal main builds still produce downloadable artifacts.
+            status=$(curl -sS -o release.json -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$tag")
+            if [[ "$status" == 404 ]]; then publish=true
+            elif [[ "$status" == 200 ]]; then
+              publish=$(python3 -c 'import json; print(str(json.load(open("release.json"))["draft"]).lower())')
+            else echo "::error::Cannot query releases (HTTP $status)"; exit 1; fi
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
   test:
-    name: 测试 (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -40,45 +56,36 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: 格式检查
+      - name: Formatting
         if: runner.os == 'Linux'
         run: cargo fmt --all --check
-      - name: Clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
-      - name: 测试
-        shell: bash
-        run: |
-          set -o pipefail
-          cargo test --locked 2>&1 | tee test-output.txt
-      - name: 汇报失败的测试
-        if: failure()
-        shell: bash
-        run: |
-          # 把失败的测试和断言写成检查注解，不登录也能在 API 里看到
-          grep -E "^test .* FAILED|panicked at|^  left|^ right|assertion|^error" test-output.txt | head -40 | while IFS= read -r line; do
-            echo "::error title=测试失败::${line}"
-          done || true
-
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+        working-directory: apps/desktop
+      - run: npm run build
+        working-directory: apps/desktop
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
   package:
-    name: 打包 (${{ matrix.name }})
-    needs: test
+    needs: [test, frontend, version]
     if: github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: windows-x64
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
-          - name: macos-arm64
-            os: macos-latest
-            target: aarch64-apple-darwin
-          - name: macos-x64
-            os: macos-latest
-            target: x86_64-apple-darwin
-          - name: linux-x64
-            os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+          - {name: windows-x64, os: windows-latest, target: x86_64-pc-windows-msvc}
+          - {name: macos-arm64, os: macos-latest, target: aarch64-apple-darwin}
+          - {name: macos-x64, os: macos-latest, target: x86_64-apple-darwin}
+          - {name: linux-x64, os: ubuntu-latest, target: x86_64-unknown-linux-gnu}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -88,76 +95,48 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      - name: 构建
-        run: cargo build --release --locked -p foldo-cli --target ${{ matrix.target }}
-      - name: 打包
+      - run: cargo build --release --locked -p foldo-cli --target ${{ matrix.target }}
+      - name: Package CLI
         shell: bash
         run: |
-          # 标签构建用版本号命名，其他构建用提交哈希命名
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then ver="$GITHUB_REF_NAME"; else ver="${GITHUB_SHA::7}"; fi
-          pkg="foldo-${ver}-${{ matrix.name }}"
+          pkg="foldo-${{ needs.version.outputs.tag }}-${{ matrix.name }}"
           bin=foldo
-          if [[ "$RUNNER_OS" == "Windows" ]]; then bin=foldo.exe; fi
-
+          if [[ "$RUNNER_OS" == Windows ]]; then bin=foldo.exe; fi
           mkdir -p "dist/$pkg"
-          cp "target/${{ matrix.target }}/release/$bin" README.md "dist/$pkg/"
+          cp "target/${{ matrix.target }}/release/$bin" README.md README.zh-CN.md "dist/$pkg/"
           cp examples/rules.yaml "dist/$pkg/rules.example.yaml"
-
           cd dist
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            7z a -tzip "$pkg.zip" "$pkg" > /dev/null
-            echo "ASSET=dist/$pkg.zip" >> "$GITHUB_ENV"
-          else
-            tar czf "$pkg.tar.gz" "$pkg"
-            echo "ASSET=dist/$pkg.tar.gz" >> "$GITHUB_ENV"
-          fi
+          if [[ "$RUNNER_OS" == Windows ]]; then 7z a -tzip "$pkg.zip" "$pkg" > /dev/null
+          else tar czf "$pkg.tar.gz" "$pkg"; fi
       - uses: actions/upload-artifact@v7
         with:
-          path: ${{ env.ASSET }}
-          # 直接上传打好的压缩包，下载时不会再多套一层 zip
-          archive: false
-          retention-days: 30
+          name: cli-${{ matrix.name }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
           if-no-files-found: error
-
+          retention-days: 30
   desktop:
-    name: 安装包 (${{ matrix.name }})
-    needs: test
+    needs: [test, frontend, version]
     if: github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: windows-x64
-            os: windows-latest
-            bundles: nsis
-            output: nsis/*.exe
-            suffix: -setup.exe
-            # 自动更新包及其签名：NSIS 安装包本身就是更新包
-            update: nsis/*.exe
-            update_suffix: -setup.exe
-          - name: macos-arm64
-            os: macos-latest
-            bundles: app,dmg
-            output: dmg/*.dmg
-            suffix: .dmg
-            update: macos/*.app.tar.gz
-            update_suffix: .app.tar.gz
-          - name: linux-x64
-            os: ubuntu-latest
-            bundles: deb
-            output: deb/*.deb
-            suffix: .deb
+          - {name: windows-x64, os: windows-latest, bundles: nsis, output: 'nsis/*.exe', suffix: '-setup.exe', update: 'nsis/*.exe', update_suffix: '-setup.exe'}
+          - {name: macos-arm64, os: macos-latest, bundles: 'app,dmg', output: 'dmg/*.dmg', suffix: '.dmg', update: 'macos/*.app.tar.gz', update_suffix: '.app.tar.gz'}
+          - {name: linux-x64, os: ubuntu-latest, bundles: 'deb,appimage', output: 'deb/*.deb', suffix: '.deb', update: 'appimage/*.AppImage', update_suffix: '.AppImage'}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v7
-      - name: 安装 Linux 系统依赖
+      - name: Linux prerequisites
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libfuse2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -167,111 +146,71 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
-      - name: 安装前端依赖
+      - run: npm ci
         working-directory: apps/desktop
-        run: npm ci
-      - name: 构建安装包
+      - name: Desktop command tests
+        run: cargo test --locked -p foldo-desktop
+      - name: Build signed installer
         working-directory: apps/desktop
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPIMAGE_EXTRACT_AND_RUN: '1'
         run: |
-          parts=()
-          # 标签构建：应用版本号取自标签（v0.2.0 → 0.2.0），自动更新靠它判断新旧
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then parts+=("\"version\":\"${GITHUB_REF_NAME#v}\""); fi
-          # 有签名私钥时才生成更新包，否则构建会因缺少私钥而失败
-          if [[ -n "$TAURI_SIGNING_PRIVATE_KEY" && -n "${{ matrix.update }}" ]]; then
-            parts+=("\"bundle\":{\"createUpdaterArtifacts\":true}")
+          if [[ -z "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+            echo '::error::Configure TAURI_SIGNING_PRIVATE_KEY before publishing updates'
+            exit 1
           fi
-          conf="{$(IFS=,; echo "${parts[*]}")}"
-          echo "配置覆盖：$conf"
-          npx tauri build --bundles ${{ matrix.bundles }} --config "$conf"
-      - name: 整理文件名
+          npx tauri build --bundles '${{ matrix.bundles }}' --config '{"bundle":{"createUpdaterArtifacts":true}}'
+      - name: Collect installer and updater assets
         run: |
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then ver="$GITHUB_REF_NAME"; else ver="${GITHUB_SHA::7}"; fi
-          base="dist/foldo-desktop-${ver}-${{ matrix.name }}"
-          src=$(ls target/release/bundle/${{ matrix.output }} | head -n 1)
           mkdir -p dist
+          base="dist/foldo-desktop-${{ needs.version.outputs.tag }}-${{ matrix.name }}"
+          src=$(find target/release/bundle -path '*/${{ matrix.output }}' -type f | head -n 1)
+          upd=$(find target/release/bundle -path '*/${{ matrix.update }}' -type f | head -n 1)
+          test -n "$src" && test -n "$upd" && test -s "$upd.sig"
           cp "$src" "$base${{ matrix.suffix }}"
-          echo "ASSET=$base${{ matrix.suffix }}" >> "$GITHUB_ENV"
-          # 自动更新包和签名
-          if [[ -n "${{ matrix.update }}" ]]; then
-            upd=$(ls target/release/bundle/${{ matrix.update }} 2>/dev/null | head -n 1 || true)
-            if [[ -n "$upd" && -f "$upd.sig" ]]; then
-              if [[ "$base${{ matrix.update_suffix }}" != "$base${{ matrix.suffix }}" ]]; then
-                cp "$upd" "$base${{ matrix.update_suffix }}"
-                echo "UPDATE=$base${{ matrix.update_suffix }}" >> "$GITHUB_ENV"
-              fi
-              cp "$upd.sig" "$base${{ matrix.update_suffix }}.sig"
-              echo "UPDATE_SIG=$base${{ matrix.update_suffix }}.sig" >> "$GITHUB_ENV"
-            fi
-          fi
+          if [[ '${{ matrix.update_suffix }}' != '${{ matrix.suffix }}' ]]; then cp "$upd" "$base${{ matrix.update_suffix }}"; fi
+          cp "$upd.sig" "$base${{ matrix.update_suffix }}.sig"
       - uses: actions/upload-artifact@v7
         with:
-          path: ${{ env.ASSET }}
-          archive: false
-          retention-days: 30
+          name: desktop-${{ matrix.name }}
+          path: dist/*
           if-no-files-found: error
-      - uses: actions/upload-artifact@v7
-        if: env.UPDATE != ''
-        with:
-          path: ${{ env.UPDATE }}
-          archive: false
           retention-days: 30
-      - uses: actions/upload-artifact@v7
-        if: env.UPDATE_SIG != ''
-        with:
-          path: ${{ env.UPDATE_SIG }}
-          archive: false
-          retention-days: 30
-
   release:
-    name: 发布 Release
-    needs: [package, desktop]
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, package, desktop]
+    if: needs.version.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    concurrency:
+      group: release-${{ needs.version.outputs.tag }}
+      cancel-in-progress: false
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           path: dist
-          pattern: foldo-*
+          pattern: '*-*'
           merge-multiple: true
-      - name: 生成自动更新清单 latest.json
+      - name: Verify all assets and create signed-update manifest
+        run: python3 scripts/release.py manifest --tag '${{ needs.version.outputs.tag }}' --repo '${{ github.repository }}'
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+        shell: bash
         run: |
-          python3 - <<'PY'
-          import datetime, json, os, pathlib
-          tag = os.environ["GITHUB_REF_NAME"]
-          repo = os.environ["GITHUB_REPOSITORY"]
-          platforms = {}
-          for sig in sorted(pathlib.Path("dist").glob("*.sig")):
-              asset = sig.name[: -len(".sig")]
-              if asset.endswith("-windows-x64-setup.exe"):
-                  key = "windows-x86_64"
-              elif asset.endswith("-macos-arm64.app.tar.gz"):
-                  key = "darwin-aarch64"
-              else:
-                  continue
-              platforms[key] = {
-                  "signature": sig.read_text().strip(),
-                  "url": f"https://github.com/{repo}/releases/download/{tag}/{asset}",
-              }
-          if platforms:
-              manifest = {
-                  "version": tag.removeprefix("v"),
-                  "notes": f"更新说明见 https://github.com/{repo}/releases/tag/{tag}",
-                  "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                  "platforms": platforms,
-              }
-              pathlib.Path("dist/latest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2))
-              print(json.dumps(manifest, ensure_ascii=False, indent=2))
-          else:
-              print("没有签名的更新包（未配置 TAURI_SIGNING_PRIVATE_KEY），跳过 latest.json")
-          PY
-      - uses: softprops/action-gh-release@v3
-        with:
-          files: dist/*
-          generate_release_notes: true
-          # v0.2.0-beta.1 这类带连字符的标签标记为预发布版本
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          # Keep incomplete uploads hidden; publish only after every asset is attached.
+          if gh release view "$TAG" --json isDraft > release-state.json 2>/dev/null; then
+            if [[ $(python3 -c 'import json; print(json.load(open("release-state.json"))["isDraft"])') == False ]]; then
+              echo 'Release already published; keeping it immutable.'
+              exit 0
+            fi
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Foldo $TAG" --generate-notes --draft
+          fi
+          gh release upload "$TAG" dist/* --clobber
+          if [[ "$TAG" == *-* ]]; then gh release edit "$TAG" --draft=false --prerelease
+          else gh release edit "$TAG" --draft=false --latest; fi

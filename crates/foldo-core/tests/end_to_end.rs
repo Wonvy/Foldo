@@ -418,7 +418,7 @@ fn example_rules_file_is_valid() {
     assert_eq!(rs.rules.len(), 5);
     assert_eq!(rs.folders.len(), 2);
     assert!(!rs.get("清理旧的小压缩包").unwrap().enabled);
-    // 每个文件夹使用各自的规则，顺序以规则列表为准
+    // 每个文件夹使用各自的规则与顺序
     let invoice = rs.index_of("发票归档").unwrap();
     assert_eq!(rs.folders_using(invoice).count(), 2);
     assert_eq!(

@@ -144,7 +144,7 @@ fn run() -> Result<()> {
         }
         Cmd::History { limit } => history(&data_dir, limit),
         Cmd::Undo { batch, yes } => undo(&data_dir, batch, yes),
-        Cmd::Inspect { path, all } => inspect(&path, all),
+        Cmd::Inspect { path, all } => inspect(&path, all, &rules_path),
     }
 }
 
@@ -365,10 +365,13 @@ fn undo(data_dir: &Path, batch: Option<i64>, yes: bool) -> Result<()> {
     Ok(())
 }
 
-fn inspect(path: &Path, all: bool) -> Result<()> {
+fn inspect(path: &Path, all: bool, rules_path: &Path) -> Result<()> {
     use foldo_core::fields::{self, Value};
-    let file = foldo_core::meta::FileCtx::from_path(path)
+    let mut file = foldo_core::meta::FileCtx::from_path(path)
         .with_context(|| format!("无法读取 {}", display(path)))?;
+    if rules_path.exists() {
+        file.set_categories(&load(rules_path)?.categories);
+    }
     println!("{}", display(path));
     let mut group = "";
     for (def, value) in fields::inspect(&file) {

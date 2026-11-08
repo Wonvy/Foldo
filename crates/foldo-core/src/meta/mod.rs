@@ -20,6 +20,7 @@ pub use media::MediaMeta;
 
 #[derive(Debug)]
 pub struct FileCtx {
+    category_override: Option<Option<&'static categories::Category>>,
     info: FileInfo,
     image_size: OnceCell<Option<(u32, u32)>>,
     media: OnceCell<Option<MediaMeta>>,
@@ -46,6 +47,7 @@ impl Deref for FileCtx {
 impl From<FileInfo> for FileCtx {
     fn from(info: FileInfo) -> Self {
         Self {
+            category_override: None,
             info,
             image_size: OnceCell::new(),
             media: OnceCell::new(),
@@ -73,7 +75,12 @@ impl FileCtx {
 
     /// 按扩展名判断的内置类型（只是判断依据，不会据此自动整理）。
     pub fn category(&self) -> Option<&'static categories::Category> {
-        categories::by_extension(&self.ext)
+        self.category_override
+            .unwrap_or_else(|| categories::by_extension(&self.ext))
+    }
+
+    pub fn set_categories(&mut self, categories: &categories::CategoryMap) {
+        self.category_override = Some(categories.get(&self.ext));
     }
 
     fn is_category(&self, id: &str) -> bool {

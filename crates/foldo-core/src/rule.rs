@@ -16,6 +16,7 @@ pub const SUPPORTED_VERSION: u32 = 2;
 /// 编译后的完整配置。只有用户建的规则会移动文件；没有规则命中的文件保持原位。
 #[derive(Debug)]
 pub struct RuleSet {
+    pub categories: crate::categories::CategoryMap,
     /// 用户规则，按优先级排列。
     pub rules: Vec<Rule>,
     /// 整理的文件夹，以及各自使用的规则。
@@ -34,7 +35,7 @@ pub struct Folder {
     pub path: PathBuf,
     pub recursive: bool,
     pub include_hidden: bool,
-    /// 使用的规则在 `RuleSet::rules` 中的位置，从小到大（即按优先级）。
+    /// 使用的规则在 `RuleSet::rules` 中的位置，保持文件夹配置的优先级顺序。
     pub rules: Vec<usize>,
 }
 
@@ -182,6 +183,10 @@ impl RuleSet {
         let config_err = |msg: String| Error::Other(format!("配置无效: {msg}"));
         migrate(&mut file)?;
 
+        let categories =
+            crate::categories::CategoryMap::compile(&file.settings.category_extensions)
+                .map_err(config_err)?;
+
         let protect = Protect::compile(&file.protect).map_err(config_err)?;
         let buffer = file.settings.buffer.map(|s| s.0).unwrap_or_default();
 
@@ -228,15 +233,18 @@ impl RuleSet {
             };
             folder.recursive |= f.recursive;
             folder.include_hidden |= f.include_hidden;
-            folder.rules.extend(used);
-            folder.rules.sort_unstable();
-            folder.rules.dedup();
+            for i in used {
+                if !folder.rules.contains(&i) {
+                    folder.rules.push(i);
+                }
+            }
         }
         for f in &folders {
             check_location(&f.path, f.recursive).map_err(config_err)?;
         }
 
         Ok(Self {
+            categories,
             rules,
             folders,
             protect,

@@ -5,7 +5,7 @@ mod commands;
 mod tray;
 mod watch;
 
-use tauri::{Manager, RunEvent, WindowEvent};
+use tauri::{Manager, WindowEvent};
 
 fn main() {
     let app = tauri::Builder::default()
@@ -77,6 +77,7 @@ fn main() {
             commands::autostart_enabled,
             commands::set_autostart,
             commands::check_update,
+            commands::open_releases,
             commands::export_rules,
             commands::read_rules_file,
             commands::install_update,
@@ -88,7 +89,7 @@ fn main() {
     app.run(|app, event| {
         // macOS：点击程序坞图标时重新显示主窗口
         #[cfg(target_os = "macos")]
-        if let RunEvent::Reopen { .. } = event {
+        if let tauri::RunEvent::Reopen { .. } = event {
             tray::show_main(app);
         }
         let _ = (app, event);

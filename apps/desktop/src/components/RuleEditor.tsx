@@ -84,6 +84,8 @@ export default function RuleEditor({
   const [preview, setPreview] = useState<{ count: number; names: string[] } | null>(null);
   const [testPath, setTestPath] = useState<string | null>(null);
   const [testView, setTestView] = useState<TestView | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
   const [inspecting, setInspecting] = useState(false);
 
   useEffect(() => {
@@ -97,6 +99,8 @@ export default function RuleEditor({
 
   // 整理文件夹里有多少文件符合
   useEffect(() => {
+    setPreview(null);
+    setPreviewError(null);
     if (!rule) return setPreview(null);
     let cancelled = false;
     const t = setTimeout(() => {
@@ -107,7 +111,7 @@ export default function RuleEditor({
           const names = [...new Set([...p.ops.map((o) => o.origin_name), ...p.skipped.filter((s) => s.rule === "__试运行__").map((s) => s.name)])];
           setPreview({ count: p.matched, names: names.slice(0, 8) });
         })
-        .catch(() => !cancelled && setPreview(null));
+        .catch((e) => !cancelled && setPreviewError(errorText(e)));
     }, 450);
     return () => {
       cancelled = true;
@@ -118,13 +122,15 @@ export default function RuleEditor({
 
   // 用选定的文件测试
   useEffect(() => {
+    setTestView(null);
+    setTestError(null);
     if (!rule || !testPath) return setTestView(null);
     let cancelled = false;
     const t = setTimeout(() => {
       api
         .testRule({ ...rule, enabled: true }, testPath)
         .then((v) => !cancelled && setTestView(v))
-        .catch(() => !cancelled && setTestView(null));
+        .catch((e) => !cancelled && setTestError(errorText(e)));
     }, 300);
     return () => {
       cancelled = true;
@@ -233,10 +239,11 @@ export default function RuleEditor({
       width={760}
       footer={
         <>
-          <MatchChip preview={preview} invalid={!rule} />
+          <MatchChip preview={preview} invalid={!rule} error={previewError} />
           <TestChip
             path={testPath}
             view={testView}
+            error={testError ?? (!rule ? "请先补全规则条件和动作" : null)}
             onPick={async () => {
               const p = await pickFile("选择一个用来测试的文件");
               if (p) setTestPath(p);
@@ -318,10 +325,11 @@ export default function RuleEditor({
 
 // ---------- 底栏的两个小标签 ----------
 
-function MatchChip({ preview, invalid }: { preview: { count: number; names: string[] } | null; invalid: boolean }) {
+function MatchChip({ preview, invalid, error }: { preview: { count: number; names: string[] } | null; invalid: boolean; error: string | null }) {
   const ref = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   if (invalid) return <span className="foot-chip muted">命中 —</span>;
+  if (error) return <span className="foot-chip" title={error}><TriangleAlert size={13} /> 预览失败</span>;
   if (!preview)
     return (
       <span className="foot-chip muted">
@@ -352,12 +360,14 @@ function MatchChip({ preview, invalid }: { preview: { count: number; names: stri
 function TestChip({
   path,
   view,
+  error,
   onPick,
   onInspect,
   onClear,
 }: {
   path: string | null;
   view: TestView | null;
+  error: string | null;
   onPick: () => void;
   onInspect: () => void;
   onClear: () => void;
@@ -372,11 +382,12 @@ function TestChip({
   const ok = !!view?.destination;
   return (
     <span className={`foot-chip test ${view ? (ok ? "ok" : "no") : ""}`}>
-      {!view ? <Spinner size={13} /> : ok ? <CircleCheck size={14} /> : <CircleX size={14} />}
+      {error ? <TriangleAlert size={14} /> : !view ? <Spinner size={13} /> : ok ? <CircleCheck size={14} /> : <CircleX size={14} />}
       <button className="link-plain ellipsis" title={`${path}\n点击查看属性`} onClick={onInspect}>
         {baseName(path)}
       </button>
-      {view && (
+      {error && <span className="ellipsis" role="alert" title={error} style={{ maxWidth: 220 }}>{error}</span>}
+      {!error && view && (
         <span className="ellipsis" title={view.destination ?? view.reason ?? ""} style={{ maxWidth: 220 }}>
           {ok ? `→ ${tilde(view.destination!)}` : (view.reason ?? "不满足")}
         </span>

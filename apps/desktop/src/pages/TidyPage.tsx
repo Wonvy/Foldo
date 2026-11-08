@@ -119,11 +119,13 @@ export default function TidyPage({
   const [groupBy, setGroupBy] = useState<"target" | "rule">("target");
   const [confirmTrash, setConfirmTrash] = useState(false);
   const [showKept, setShowKept] = useState(false);
+  const [expandedExtensions, setExpandedExtensions] = useState<Set<string>>(new Set());
   const [inspectPath, setInspectPath] = useState<string | null>(null);
   const menu = useMenu();
 
   const applyPlan = (p: PlanView) => {
     setPlan(p);
+    setExpandedExtensions(new Set());
     setSelected(new Set(p.ops.map((o) => o.group)));
     setResult(null);
     setUndone(null);
@@ -192,6 +194,24 @@ export default function TidyPage({
 
   const skipped = plan?.skipped ?? [];
   const noMatch = skipped.filter((s) => s.kind === "no_match");
+  const noMatchByExtension = useMemo(() => {
+    const groups = new Map<string, SkipView[]>();
+    for (const file of plan?.skipped ?? []) {
+      if (file.kind !== "no_match") continue;
+      const dot = file.name.lastIndexOf(".");
+      const extension = dot > 0 && dot < file.name.length - 1
+        ? file.name.slice(dot).toLowerCase()
+        : "";
+      const group = groups.get(extension);
+      if (group) group.push(file);
+      else groups.set(extension, [file]);
+    }
+    return [...groups.entries()].sort(([a], [b]) => {
+      if (!a) return 1;
+      if (!b) return -1;
+      return a.localeCompare(b);
+    });
+  }, [plan]);
   const attention = skipped.filter((s) => ATTENTION.has(s.kind));
   const kept = skipped.filter((s) => s.kind !== "no_match" && !ATTENTION.has(s.kind));
   const keptByLabel = useMemo(() => {
@@ -531,16 +551,37 @@ export default function TidyPage({
                   <WandSparkles size={14} /> 新建规则
                 </button>
               </div>
-              {noMatch.map((s) => (
-                <div key={s.path} className="list-row">
-                  <FileIcon category={null} />
-                  <div className="row-main">
-                    <div className="row-title ellipsis">{s.name}</div>
-                    <div className="row-sub ellipsis">{s.display}</div>
-                  </div>
-                  <button className="icon-btn" aria-label="更多" onClick={(e) => skipMenu(e.currentTarget, s)}>
-                    <Ellipsis size={17} />
+              {noMatchByExtension.map(([extension, files]) => (
+                <div key={extension}>
+                  <button
+                    type="button"
+                    className="group-head path-link"
+                    style={{ width: "100%", textAlign: "left", textDecoration: "none", color: "inherit" }}
+                    aria-expanded={expandedExtensions.has(extension)}
+                    onClick={() => setExpandedExtensions((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(extension)) next.delete(extension);
+                      else next.add(extension);
+                      return next;
+                    })}
+                  >
+                    {expandedExtensions.has(extension) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    <span className="title">{extension || "无扩展名"}</span>
+                    <span className="spacer" />
+                    <span className="muted">{files.length} 个</span>
                   </button>
+                  {expandedExtensions.has(extension) && files.map((s) => (
+                    <div key={s.path} className="list-row">
+                      <FileIcon category={null} />
+                      <div className="row-main">
+                        <div className="row-title ellipsis">{s.name}</div>
+                        <div className="row-sub ellipsis">{s.display}</div>
+                      </div>
+                      <button className="icon-btn" aria-label="更多" onClick={(e) => skipMenu(e.currentTarget, s)}>
+                        <Ellipsis size={17} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>

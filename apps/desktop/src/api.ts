@@ -36,11 +36,12 @@ export type FolderDef = {
   /** 连子文件夹里的文件一起整理 */
   recursive?: boolean;
   include_hidden?: boolean;
-  /** 这个文件夹使用的规则名称；执行顺序以规则列表为准 */
+  /** 这个文件夹使用的规则名称；按本列表顺序匹配，第一条命中的生效 */
   rules?: string[];
 };
 
 export type UpdateInfo = {
+  can_install: boolean;
   current: string;
   /** 有新版本时为新版本号 */
   version: string | null;
@@ -65,7 +66,7 @@ export type RuleFile = {
   version: number;
   folders?: FolderDef[];
   protect?: string[];
-  settings?: { buffer?: string; auto?: AutoMode; keep_empty_folders?: boolean };
+  settings?: { buffer?: string; auto?: AutoMode; keep_empty_folders?: boolean; category_extensions?: Record<string, string[]> };
   rules?: RuleDef[];
 };
 
@@ -250,6 +251,7 @@ export const api = {
   exportRules: (names: string[], path: string) => invoke<number>("export_rules", { names, path }),
   readRulesFile: (path: string) => invoke<RuleDef[]>("read_rules_file", { path }),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
+  openReleases: () => invoke<void>("open_releases"),
   installUpdate: () => invoke<void>("install_update"),
   reveal: (path: string) => invoke<void>("reveal", { path }),
 };

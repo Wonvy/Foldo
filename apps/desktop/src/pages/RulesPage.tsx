@@ -340,7 +340,7 @@ export default function RulesPage({
               >
                 <span
                   className="grip"
-                  title={query ? "清空搜索后可拖动排序" : "拖动调整优先级"}
+                  title={query ? "清空搜索后可拖动排序" : "拖动调整列表及拖入文件的匹配顺序；文件夹优先级在整理页调整"}
                   onPointerDown={(e) => !query && startDrag(e, i)}
                   onClick={(e) => e.stopPropagation()}
                 >

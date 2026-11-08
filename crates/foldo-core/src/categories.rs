@@ -114,6 +114,60 @@ pub fn by_extension(ext: &str) -> Option<&'static Category> {
         .find(|c| c.extensions.iter().any(|e| *e == ext))
 }
 
+/// 每份配置独立的分类表，避免多个配置互相影响。
+#[derive(Debug)]
+pub struct CategoryMap(std::collections::HashMap<String, &'static Category>);
+
+impl CategoryMap {
+    pub fn compile(
+        overrides: &std::collections::BTreeMap<String, Vec<String>>,
+    ) -> Result<Self, String> {
+        let mut map = std::collections::HashMap::new();
+        for c in CATEGORIES {
+            if !overrides.contains_key(c.id) {
+                for ext in c.extensions {
+                    map.insert((*ext).to_string(), c);
+                }
+            }
+        }
+        let mut custom = std::collections::HashMap::new();
+        for (id, extensions) in overrides {
+            let c = CATEGORIES
+                .iter()
+                .find(|c| c.id == id)
+                .ok_or_else(|| format!("未知文件类型：{id}"))?;
+            for raw in extensions {
+                let ext = raw.trim().trim_start_matches('.').to_lowercase();
+                if ext.is_empty()
+                    || ext
+                        .chars()
+                        .any(|ch| ch.is_whitespace() || ".*/\\:?\"<>|".contains(ch))
+                {
+                    return Err(format!("无效扩展名：{raw}（填写最后一个点后的后缀）"));
+                }
+                if let Some(previous) = custom.insert(ext.clone(), c.id)
+                    && previous != c.id
+                {
+                    return Err(format!("扩展名 {ext} 同时属于多个自定义类型"));
+                }
+                if let Some(previous) = map.insert(ext.clone(), c)
+                    && previous.id != c.id
+                {
+                    return Err(format!(
+                        "扩展名 {ext} 同时属于“{}”和“{}”，请只保留一处",
+                        previous.name, c.name
+                    ));
+                }
+            }
+        }
+        Ok(Self(map))
+    }
+
+    pub fn get(&self, ext: &str) -> Option<&'static Category> {
+        self.0.get(&ext.to_lowercase()).copied()
+    }
+}
+
 /// 按分类名、英文标识或同义词找分类（不区分大小写）。
 pub fn find(name: &str) -> Option<&'static Category> {
     let n = name.trim().to_lowercase();

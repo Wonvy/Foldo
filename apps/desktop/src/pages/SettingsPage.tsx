@@ -1,8 +1,10 @@
 import { CircleCheck, Code, Download, FolderOpen, Monitor, Moon, RefreshCw, Sun, TriangleAlert } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
+import { version } from "../../package.json";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { api, errorText, type UpdateInfo } from "../api";
 import TidyOptions from "../components/TidyOptions";
+import CategorySettings from "../components/CategorySettings";
 import { Segmented, Spinner, Switch } from "../components/ui";
 import { useStore } from "../store";
 import type { ThemePref } from "../theme";
@@ -55,6 +57,7 @@ export default function SettingsPage({
 
       <h3 className="section-title">整理选项</h3>
       <TidyOptions />
+      <CategorySettings />
 
       <h3 className="section-title">关于</h3>
       <UpdateCard update={update} onUpdate={onUpdate} />
@@ -134,7 +137,7 @@ function UpdateCard({ update, onUpdate }: { update: UpdateInfo | null; onUpdate:
     <div className="card">
       <div className="card-head">
         <h2>版本与更新</h2>
-        {update && <span className="muted">当前版本 {update.current}</span>}
+        <span className="muted">当前版本 {update?.current ?? version}</span>
       </div>
       <div className="card-body" style={{ display: "grid", gap: 10 }}>
         {update?.version ? (
@@ -145,9 +148,9 @@ function UpdateCard({ update, onUpdate }: { update: UpdateInfo | null; onUpdate:
                 新版本 <b>{update.version}</b>
                 {update.date && <span className="muted"> · {update.date}</span>}
               </span>
-              <button className="btn sm primary" disabled={!!busy} onClick={install}>
+              <button className="btn sm primary" disabled={!!busy} onClick={update.can_install ? install : () => api.openReleases().catch((e) => setError(errorText(e)))}>
                 {busy === "install" ? <Spinner size={14} /> : <Download size={14} />}
-                {busy === "install" ? (progress !== null ? `下载中 ${progress}%` : "正在安装…") : "下载并重启"}
+                {busy === "install" ? (progress !== null && progress < 100 ? `下载中 ${progress}%` : "正在安装…") : update.can_install ? "下载并重启" : "下载安装包"}
               </button>
             </div>
             {update.notes && <div className="update-notes selectable">{update.notes}</div>}
@@ -156,7 +159,7 @@ function UpdateCard({ update, onUpdate }: { update: UpdateInfo | null; onUpdate:
           <div className="row">
             {checked && !error && <CircleCheck size={16} color="var(--ok)" />}
             <span className="text-2" style={{ flex: 1 }}>
-              {checked && !error ? "已经是最新版本" : "新版本发布在 GitHub，安装后自动替换旧版本，规则和历史都会保留"}
+              {checked && !error ? "已经是最新版本" : "从 GitHub 检查正式版，验证更新签名后安装，规则和历史都会保留"}
             </span>
             <button className="btn sm" disabled={!!busy} onClick={check}>
               {busy === "check" ? <Spinner size={14} /> : <RefreshCw size={14} />} 检查更新
@@ -164,6 +167,13 @@ function UpdateCard({ update, onUpdate }: { update: UpdateInfo | null; onUpdate:
           </div>
         )}
         {error && <div className="banner error selectable">{error}</div>}
+        <div className="row">
+          <span className="muted" style={{ flex: 1, fontSize: 12.5 }}>
+            {update?.can_install === false ? "当前安装方式需手动安装新版；Linux AppImage 支持应用内更新。" : "只检查正式发布版本，不自动下载或安装。"}
+          </span>
+          {update?.version && <button className="btn sm" disabled={!!busy} onClick={check}><RefreshCw size={14} />检查更新</button>}
+          <button className="btn ghost sm" disabled={!!busy} onClick={() => api.openReleases().catch((e) => setError(errorText(e)))}>GitHub Releases</button>
+        </div>
       </div>
     </div>
   );

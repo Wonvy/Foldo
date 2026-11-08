@@ -345,6 +345,15 @@ pub async fn scan_paths(state: State<'_, AppState>, paths: Vec<String>) -> CmdRe
     state.store_plan(build_plan_for_paths(&set, &paths, Local::now()))
 }
 
+/// 临时测试规则应用到所有整理文件夹，避免保留对已移除规则的引用。
+fn single_rule_config(mut config: RuleFile, rule: RuleDef) -> RuleFile {
+    for folder in &mut config.folders {
+        folder.rules = Some(vec![rule.name.clone()]);
+    }
+    config.rules = vec![rule];
+    config
+}
+
 /// 试运行一条尚未保存的规则：看看它会命中哪些文件。
 /// `paths` 不为空时只在这些文件上试（拖入的文件），否则在规则的适用范围内扫描。
 #[tauri::command]
@@ -353,9 +362,8 @@ pub async fn try_rule(
     rule: RuleDef,
     paths: Option<Vec<String>>,
 ) -> CmdResult<PlanView> {
-    let mut config = current_config()?;
     let name = rule.name.clone();
-    config.rules = vec![rule];
+    let config = single_rule_config(current_config()?, rule);
     let set = RuleSet::from_file(config).map_err(err)?;
     let plan = match paths.filter(|p| !p.is_empty()) {
         Some(paths) => {
@@ -558,7 +566,11 @@ fn attr_value(v: foldo_core::fields::Value) -> String {
 /// 一个文件的全部属性（读不到的值为空）。
 #[tauri::command]
 pub async fn inspect(path: String) -> CmdResult<Vec<AttrView>> {
-    let file = FileCtx::from_path(&path).map_err(err)?;
+    let mut file = FileCtx::from_path(&path).map_err(err)?;
+    let categories = foldo_core::categories::CategoryMap::compile(
+        &current_config()?.settings.category_extensions,
+    )?;
+    file.set_categories(&categories);
     Ok(foldo_core::fields::inspect(&file)
         .into_iter()
         .map(|(d, v)| AttrView {
@@ -590,7 +602,11 @@ pub struct TestView {
 /// 用一个真实文件测试规则：每个条件是否成立、最终会被放到哪里。只读，不改动文件。
 #[tauri::command]
 pub async fn test_rule(rule: RuleDef, path: String) -> CmdResult<TestView> {
-    let file = FileCtx::from_path(&path).map_err(err)?;
+    let config = current_config()?;
+    let categories =
+        foldo_core::categories::CategoryMap::compile(&config.settings.category_extensions)?;
+    let mut file = FileCtx::from_path(&path).map_err(err)?;
+    file.set_categories(&categories);
     let now = Local::now();
     let mut ctx = MatchCtx::new(now);
     let conditions: Vec<Explain> = rule
@@ -606,13 +622,15 @@ pub async fn test_rule(rule: RuleDef, path: String) -> CmdResult<TestView> {
         .collect();
 
     // 用这条规则单独处理这个文件，得到目标位置或跳过原因
-    let mut config = current_config()?;
     let name = "__测试__".to_string();
-    config.rules = vec![RuleDef {
-        name: name.clone(),
-        enabled: true,
-        ..rule
-    }];
+    let config = single_rule_config(
+        config,
+        RuleDef {
+            name: name.clone(),
+            enabled: true,
+            ..rule
+        },
+    );
     let set = RuleSet::from_file(config).map_err(err)?;
     let plan = build_plan_for_paths(&set, &[PathBuf::from(&path)], now);
     let destination = plan.ops.iter().rev().find_map(|o| match o.kind {
@@ -694,7 +712,8 @@ pub async fn debug_file(path: String) -> CmdResult<DebugView> {
     if let Some((_, reason)) = classify_file(&p, &view.name, &md, false, &set.protect) {
         view.excluded = Some(reason);
     }
-    let file = FileCtx::from_path(&p).map_err(err)?;
+    let mut file = FileCtx::from_path(&p).map_err(err)?;
+    file.set_categories(&set.categories);
     view.category = file.category().map(|c| c.name.to_string());
     let now = Local::now();
     view.rules = set
@@ -867,6 +886,22 @@ pub struct UpdateInfo {
     pub version: Option<String>,
     pub notes: Option<String>,
     pub date: Option<String>,
+    pub can_install: bool,
+}
+
+fn can_install_update() -> bool {
+    !cfg!(target_os = "linux") || std::env::var_os("APPIMAGE").is_some()
+}
+
+#[tauri::command]
+pub async fn open_releases(app: tauri::AppHandle) -> CmdResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(
+            "https://github.com/Wonvy/Foldo/releases/latest",
+            None::<&str>,
+        )
+        .map_err(err)
 }
 
 /// 检查 GitHub Releases 上有没有新版本。
@@ -875,13 +910,16 @@ pub async fn check_update(app: tauri::AppHandle) -> CmdResult<UpdateInfo> {
     use tauri_plugin_updater::UpdaterExt;
     let current = app.package_info().version.to_string();
     let update = app
-        .updater()
+        .updater_builder()
+        .timeout(Duration::from_secs(30))
+        .build()
         .map_err(err)?
         .check()
         .await
         .map_err(|e| format!("暂时无法检查更新：{e}"))?;
     Ok(UpdateInfo {
         current,
+        can_install: can_install_update(),
         version: update.as_ref().map(|u| u.version.clone()),
         notes: update.as_ref().and_then(|u| u.body.clone()),
         date: update
@@ -902,8 +940,13 @@ struct UpdateProgress {
 pub async fn install_update(app: tauri::AppHandle) -> CmdResult<()> {
     use tauri::Emitter;
     use tauri_plugin_updater::UpdaterExt;
+    if !can_install_update() {
+        return Err("此安装方式请前往 GitHub 下载新版安装包；AppImage 支持应用内更新".into());
+    }
     let update = app
-        .updater()
+        .updater_builder()
+        .timeout(Duration::from_secs(120))
+        .build()
         .map_err(err)?
         .check()
         .await
@@ -971,6 +1014,29 @@ pub async fn read_rules_file(path: String) -> CmdResult<Vec<RuleDef>> {
 mod tests {
     use super::*;
     use tauri::async_runtime::block_on;
+
+    #[test]
+    fn single_rule_preview_replaces_folder_references() {
+        let tmp = tempfile::tempdir_in(std::env::current_dir().unwrap()).unwrap();
+        let path = tmp.path().join("photo.jpg");
+        std::fs::write(&path, b"test").unwrap();
+        let mut config = foldo_core::parse_rule_file(
+            "version: 2\nfolders:\n  - path: inbox\n    rules: [old]\nrules:\n  - name: old\n    actions: [keep]\n",
+        ).unwrap();
+        config.folders[0].path = tmp.path().to_string_lossy().into_owned();
+        let mut rule = config.rules[0].clone();
+        rule.name = "__测试__".into();
+        RuleSet::from_file(single_rule_config(config.clone(), rule.clone())).unwrap();
+        let config = single_rule_config(config, rule);
+        assert_eq!(config.folders[0].rules, Some(vec!["__测试__".into()]));
+        let set = RuleSet::from_file(config).unwrap();
+        let plan = build_plan_for_paths(&set, &[path], Local::now());
+        assert!(
+            plan.skipped
+                .iter()
+                .any(|s| s.rule.as_deref() == Some("__测试__"))
+        );
+    }
 
     /// 用真实的命令函数走一遍：读取旧版配置（自动迁移）→ 保存为新写法 → 导出规则 → 读取导入文件。
     #[test]

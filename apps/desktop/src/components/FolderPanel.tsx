@@ -1,10 +1,11 @@
 // 整理页顶部的文件夹列表：每个文件夹添加 / 移除规则，设置是否含子文件夹和隐藏文件。
-import { Check, Ellipsis, Folder, FolderPlus, Plus, Search, Trash, WandSparkles, X } from "lucide-react";
+import { Check, Ellipsis, Folder, FolderPlus, Plus, Search, Trash, WandSparkles } from "lucide-react";
 import { useState } from "react";
 import { api, baseName, errorText, type FolderDef, type RuleFile, type WatchStatus } from "../api";
 import { tilde } from "../rules";
 import { pickFolder, useStore } from "../store";
 import { Modal, useMenu, type MenuItem } from "./ui";
+import FolderRuleList from "./FolderRuleList";
 
 export default function FolderPanel({
   watch,
@@ -23,6 +24,7 @@ export default function FolderPanel({
   const folders = config.folders ?? [];
   const rules = config.rules ?? [];
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const menu = useMenu();
   // 自动整理开着时，添加规则或文件夹会立即生效：先确认
   const auto = config.settings?.auto === "run";
@@ -30,12 +32,16 @@ export default function FolderPanel({
   const confirmIfAuto = (text: string, run: () => void) => (auto ? setPending({ text, run }) : run());
 
   const update = async (next: RuleFile) => {
+    if (saving) return;
     setError(null);
+    setSaving(true);
     try {
       await save(next);
       onAdded();
     } catch (e) {
       setError(errorText(e));
+    } finally {
+      setSaving(false);
     }
   };
   const setFolder = (i: number, patch: Partial<FolderDef>) =>
@@ -48,8 +54,11 @@ export default function FolderPanel({
     await update({ ...config, folders: [...folders, { path: dir, rules: [] }] });
   };
 
-  // 按规则列表的顺序显示（也是执行顺序）
-  const used = (f: FolderDef) => rules.filter((r) => f.rules?.includes(r.name));
+  // 每个文件夹独立排序，左侧优先。
+  const used = (f: FolderDef) => [...new Set(f.rules ?? [])].flatMap((name) => {
+    const rule = rules.find((r) => r.name === name);
+    return rule ? [rule] : [];
+  });
 
   const addRuleMenu = (el: HTMLElement, i: number) => {
     const f = folders[i];
@@ -126,31 +135,22 @@ export default function FolderPanel({
             </div>
             <div className="folder-rules">
               {list.length === 0 && <span className="muted" style={{ fontSize: 12.5 }}>还没有规则，这里的文件不会被整理</span>}
-              {list.map((r) => (
-                <span key={r.name} className={`rule-chip ${r.enabled === false ? "off" : ""}`} title={r.enabled === false ? "已停用" : "编辑规则"}>
-                  <button className="rule-chip-name" onClick={() => onEditRule(r.name)}>
-                    {r.name}
-                  </button>
-                  <button
-                    className="rule-chip-x"
-                    aria-label={`从 ${baseName(f.path)} 移除 ${r.name}`}
-                    onClick={() => setFolder(i, { rules: (f.rules ?? []).filter((n) => n !== r.name) })}
-                  >
-                    <X size={12} />
-                  </button>
-                </span>
-              ))}
-              <button className="add-btn" onClick={(e) => addRuleMenu(e.currentTarget, i)}>
+              {list.length > 0 && <FolderRuleList rules={list} folder={baseName(f.path)} disabled={saving || !!pending}
+                onEdit={onEditRule}
+                onRemove={(name) => setFolder(i, { rules: (f.rules ?? []).filter((n) => n !== name) })}
+                onReorder={(names) => confirmIfAuto(`自动整理已开启：调整顺序后，「${baseName(f.path)}」会立即按新的优先级整理。`, () => setFolder(i, { rules: names }))} />}
+              <button className="add-btn" disabled={saving || !!pending} onClick={(e) => addRuleMenu(e.currentTarget, i)}>
                 <Plus size={14} /> 规则
               </button>
             </div>
-            <button className="icon-btn" aria-label="文件夹选项" onClick={(e) => folderMenu(e.currentTarget, i)}>
+            <button className="icon-btn" disabled={saving || !!pending} aria-label="文件夹选项" onClick={(e) => folderMenu(e.currentTarget, i)}>
               <Ellipsis size={16} />
             </button>
           </div>
         );
       })}
-      <button className="folder-add" onClick={addFolder}>
+      <div className="folder-order-hint">拖动规则左侧的手柄调整顺序，越靠左越优先；每个文件夹独立生效。</div>
+      <button className="folder-add" disabled={saving || !!pending} onClick={addFolder}>
         <FolderPlus size={15} /> 添加文件夹
       </button>
       {menu.node}

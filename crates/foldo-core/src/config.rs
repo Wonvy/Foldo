@@ -67,7 +67,7 @@ pub struct FolderDef {
     /// 是否处理隐藏文件。
     #[serde(default, skip_serializing_if = "is_false")]
     pub include_hidden: bool,
-    /// 用在这个文件夹的规则名称。执行顺序以 `rules` 列表的顺序为准。
+    /// 用在这个文件夹的规则名称。按本列表顺序执行，第一条命中的规则生效。
     /// 没有写（或为空）时这个文件夹不整理任何文件。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rules: Option<Vec<String>>,
@@ -76,6 +76,9 @@ pub struct FolderDef {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SettingsDef {
+    /// 按内置类型 ID 覆盖扩展名列表；未配置的类型仍使用默认值。
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub category_extensions: std::collections::BTreeMap<String, Vec<String>>,
     /// 新文件缓冲期：最近这段时间内新增或修改的文件暂不整理。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub buffer: Option<Span>,

@@ -5,3 +5,5 @@ node_modules/
 
 # 签名私钥绝不提交
 *.key
+__pycache__/
+*.pyc
