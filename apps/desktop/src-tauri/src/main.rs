@@ -9,6 +9,13 @@ use tauri::{Manager, WindowEvent};
 
 fn main() {
     let app = tauri::Builder::default()
+        // 必须先拦截重复启动，避免创建第二套托盘、文件监听和定时任务。
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // 手动打开时唤起已有窗口；开机自启仍保持静默。
+            if !args.iter().skip(1).any(|arg| arg == "--hidden") {
+                tray::show_main(app);
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())

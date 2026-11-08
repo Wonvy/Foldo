@@ -68,6 +68,8 @@ In **Settings → File types and extensions** (`设置 → 文件类型与扩展
 
 Files with no matching rule stay where they are. Existing folders are kept intact unless you enable recursion. Protected files, system locations, incomplete downloads and files within the buffer period are excluded. Files sent to the recycle bin must be restored there manually; undo previews explain other limitations.
 
+Only one desktop instance runs at a time. Opening Foldo again restores the existing main window, including when it is minimized or hidden in the tray, without starting another background organizer. To fully quit, choose **Quit Foldo** from the tray menu.
+
 ## Updates
 
 Foldo checks the latest stable GitHub Release on startup. You can also open **Settings → Version and updates** (`设置 → 版本与更新`) and click **Check for updates**. **Download and restart** downloads the signed package, verifies it and installs it. Download progress is displayed; rules and history are retained. Checking does not automatically install an update.

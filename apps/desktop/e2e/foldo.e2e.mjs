@@ -8,13 +8,14 @@
 //   TAURI_DRIVER   tauri-driver 路径，默认从 PATH 里找
 //   NATIVE_DRIVER  Windows 上 msedgedriver.exe 的路径
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { Builder, By, Capabilities, until } from "selenium-webdriver";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -22,6 +23,7 @@ const repo = path.resolve(here, "../../..");
 const exe = process.platform === "win32" ? ".exe" : "";
 const app = process.env.FOLDO_APP ?? path.join(repo, "target/debug", `foldo-desktop${exe}`);
 const artifacts = path.join(here, "artifacts");
+const execFileAsync = promisify(execFile);
 
 // ---------- 沙盒 ----------
 
@@ -184,6 +186,22 @@ step("整理页列出按规则整理的文件", async () => {
   // 打开就会自动扫描：报告.pdf 有整理建议；照片.jpg 没有匹配的规则（按扩展名分组，默认折叠）
   await find(byText("报告.pdf"), 40_000);
   await find(By.css("#no-match"));
+  await find(byTest("execute"));
+});
+
+step("重复打开只保留已有实例", async () => {
+  const window = await driver.getWindowHandle();
+  // 同时重复手动启动和静默自启；第二批进程必须正常退出，原窗口继续可用。
+  await Promise.all(
+    [[], [], ["--hidden"]].map((args) =>
+      execFileAsync(app, args, {
+        env: { ...process.env, FOLDO_RULES: rulesFile, FOLDO_HOME: data },
+        timeout: 15_000,
+        windowsHide: true,
+      }),
+    ),
+  );
+  assert.equal(await driver.getWindowHandle(), window);
   await find(byTest("execute"));
 });
 
