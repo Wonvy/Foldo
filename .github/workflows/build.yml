@@ -157,23 +157,35 @@ jobs:
         working-directory: apps/desktop
       - name: Desktop command tests
         run: cargo test --locked -p foldo-desktop
-      - name: Download verified AppImage tool
+      - name: Download verified AppImage tools
         if: runner.os == 'Linux'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Tauri CLI 2.12.4 uses linuxdeploy 07333c6. The release-download URL
-          # can return persistent 504s; fetch the same upstream asset via the API.
+          # Tauri CLI 2.12.4 uses linuxdeploy 07333c6 and apprun-old.
+          # Pre-fetch from official asset APIs: release-download URLs can return
+          # persistent 504s, including downloads made internally by appimagetool.
           tools="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
           mkdir -p "$tools"
-          tool="$tools/linuxdeploy-07333c6-x86_64.AppImage"
-          curl --fail --location --retry 3 --retry-all-errors --connect-timeout 15 --max-time 120 \
-            -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/octet-stream' \
-            'https://api.github.com/repos/tauri-apps/binary-releases/releases/assets/576945544' \
-            --output "$tool.part"
-          echo "36a2d7e274d12e1050d0e9ecfe11d339ed54720b2bec464c286d53f8b07f5c62  $tool.part" | sha256sum --check
-          chmod +x "$tool.part"
-          mv "$tool.part" "$tool"
+          download_tool() {
+            local repo="$1" asset="$2" file="$tools/$3" expected="$4"
+            curl --fail --location --retry 3 --retry-all-errors --connect-timeout 15 --max-time 120 \
+              -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/octet-stream' \
+              "https://api.github.com/repos/$repo/releases/assets/$asset" --output "$file.part"
+            echo "$expected  $file.part" | sha256sum --check
+            chmod +x "$file.part"
+            mv "$file.part" "$file"
+          }
+          download_tool tauri-apps/binary-releases 274691722 AppRun-x86_64 \
+            f30140a43a0a59e46db21bdefdf749b9e9f2c6946e92afabbacf98b8ae73fb4f
+          download_tool tauri-apps/binary-releases 576945544 linuxdeploy-07333c6-x86_64.AppImage \
+            36a2d7e274d12e1050d0e9ecfe11d339ed54720b2bec464c286d53f8b07f5c62
+          # Versioned releases: appimage plugin 1-alpha-20250213-1, runtime 20251108.
+          download_tool linuxdeploy/linuxdeploy-plugin-appimage 228937581 linuxdeploy-plugin-appimage.AppImage \
+            992d502a248e14ab185448ddf6f6e7d25558cb84d4623c354c3af350c25fccb3
+          download_tool AppImage/type2-runtime 326011592 runtime-x86_64 \
+            2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+          echo "LDAI_RUNTIME_FILE=$tools/runtime-x86_64" >> "$GITHUB_ENV"
       - name: Download verified Windows installer tools
         if: runner.os == 'Windows'
         shell: pwsh
