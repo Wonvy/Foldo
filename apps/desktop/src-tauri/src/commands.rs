@@ -208,6 +208,8 @@ pub async fn categories() -> CmdResult<Vec<&'static Category>> {
 
 #[derive(Serialize)]
 pub struct FolderSuggestion {
+    /// downloads / desktop / documents
+    key: &'static str,
     path: String,
     display: String,
     label: String,
@@ -217,14 +219,15 @@ pub struct FolderSuggestion {
 #[tauri::command]
 pub async fn suggested_folders() -> CmdResult<Vec<FolderSuggestion>> {
     let candidates = [
-        (dirs::download_dir(), foldo_core::t!("下载")),
-        (dirs::desktop_dir(), foldo_core::t!("桌面")),
-        (dirs::document_dir(), foldo_core::t!("文稿")),
+        ("downloads", dirs::download_dir(), foldo_core::t!("下载")),
+        ("desktop", dirs::desktop_dir(), foldo_core::t!("桌面")),
+        ("documents", dirs::document_dir(), foldo_core::t!("文稿")),
     ];
     Ok(candidates
         .into_iter()
-        .filter_map(|(p, label)| p.filter(|p| p.is_dir()).map(|p| (p, label)))
-        .map(|(p, label)| FolderSuggestion {
+        .filter_map(|(key, p, label)| p.filter(|p| p.is_dir()).map(|p| (key, p, label)))
+        .map(|(key, p, label)| FolderSuggestion {
+            key,
             path: path_string(&p),
             display: display(&p),
             label,

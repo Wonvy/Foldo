@@ -635,5 +635,17 @@
  "否#value": "No",
  "菜单栏": "menu bar",
  "托盘": "system tray",
- "空后缀": "empty extension"
+ "空后缀": "empty extension",
+ "下一步": "Next",
+ "建第一条规则": "Create your first rule",
+ "预览并整理": "Preview and tidy",
+ "把规则添加到文件夹": "Add rules to your folders",
+ "看看预览": "Check the preview",
+ "知道了": "Got it",
+ "全部添加": "Add all",
+ "第一步：选要整理的文件夹。接下来建规则，写明哪些文件或文件夹放到哪里；每次都先给你看预览，执行后也能撤销。": "First, choose the folders to tidy. Next you'll create rules that say which files or folders go where. You always see a preview first, and you can undo afterwards.",
+ "规则写明“什么样的文件 → 怎么处理”，例如“扩展名是 pdf → 移到 文档/”。新建的规则会直接用在上面的文件夹里，执行前都会先给你看预览。": "A rule says “which files → what to do”, for example “extension is pdf → move to Documents/”. New rules are added to the folders above, and you always see a preview before anything runs.",
+ "已有 {0} 条规则，还没有用在任何文件夹里。可以一次全部加上，也可以在下面的文件夹里点“+ 规则”逐个添加。": "You have {0} rules that aren't used by any folder yet. Add them all at once, or click “+ Rules” on a folder below to add them one by one.",
+ "规则都停用了。到“规则”页启用后，再添加到文件夹。": "All rules are turned off. Turn them on in Rules, then add them to a folder.",
+ "下面是按规则给出的整理建议，什么都还没动。确认后勾选，点底部的按钮执行；执行过的可以在“历史”里撤销。": "Below are the suggestions from your rules — nothing has been moved yet. Check the ones you want and click the button at the bottom. You can undo anything in History."
 }

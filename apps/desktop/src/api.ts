@@ -222,7 +222,7 @@ export type DebugView = {
   reason: string | null;
 };
 
-export type FolderSuggestion = { path: string; display: string; label: string };
+export type FolderSuggestion = { key: "downloads" | "desktop" | "documents"; path: string; display: string; label: string };
 
 export const api = {
   getConfig: () => invoke<ConfigView>("get_config"),

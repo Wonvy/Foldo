@@ -74,7 +74,7 @@ export default function RuleEditor({
   onOpenAdvanced,
 }: {
   /** 新建时：保存后把规则加入这个文件夹。 */
-  assignTo?: string;
+  assignTo?: string | string[];
   /** 编辑第几条规则；null 表示新建。 */
   index: number | null;
   /** 拖进面板的文件：直接作为测试文件。 */
@@ -179,7 +179,9 @@ export default function RuleEditor({
         ? {
             ...config,
             folders: (config.folders ?? []).map((f) =>
-              f.path === assignTo ? { ...f, rules: [...(f.rules ?? []), b.rule.name] } : f,
+              (Array.isArray(assignTo) ? assignTo.includes(f.path) : f.path === assignTo)
+                ? { ...f, rules: [...(f.rules ?? []), b.rule.name] }
+                : f,
             ),
           }
         : renameInFolders(config, rules[index].name, b.rule.name);

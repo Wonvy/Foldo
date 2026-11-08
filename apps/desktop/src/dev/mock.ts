@@ -306,9 +306,9 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       return CATEGORIES;
     case "suggested_folders":
       return [
-        { path: DL, display: "~/Downloads", label: "下载" },
-        { path: DESK, display: "~/Desktop", label: "桌面" },
-        { path: `${HOME}/Documents`, display: "~/Documents", label: "文稿" },
+        { key: "downloads", path: DL, display: "~/Downloads", label: "下载" },
+        { key: "desktop", path: DESK, display: "~/Desktop", label: "桌面" },
+        { key: "documents", path: `${HOME}/Documents`, display: "~/Documents", label: "文稿" },
       ];
     case "scan":
       await sleep(450);

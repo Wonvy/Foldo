@@ -166,8 +166,36 @@ impl FolderMeta {
     }
 }
 
+/// 文件夹总大小的缓存：后台每次检查都会重新扫描，大文件夹不必每次都遍历。
+/// 文件夹本身有改动（第一层增删了东西）或超过 10 分钟就重新统计。
+/// 文件夹 → (文件夹的修改时间, 统计的时刻, 总大小)
+type SizeCache =
+    HashMap<std::path::PathBuf, (Option<std::time::SystemTime>, std::time::Instant, u64)>;
+static SIZES: std::sync::LazyLock<std::sync::Mutex<SizeCache>> =
+    std::sync::LazyLock::new(Default::default);
+const SIZE_TTL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
 /// 文件夹的总大小（含所有子文件夹；最多统计 20 万个项目，避免超大文件夹拖慢扫描）。
 pub fn total_size(dir: &Path) -> u64 {
+    let mtime = std::fs::metadata(dir).and_then(|m| m.modified()).ok();
+    if let Ok(m) = SIZES.lock()
+        && let Some((t, at, size)) = m.get(dir)
+        && *t == mtime
+        && at.elapsed() < SIZE_TTL
+    {
+        return *size;
+    }
+    let size = walk_size(dir);
+    if let Ok(mut m) = SIZES.lock() {
+        if m.len() > 10_000 {
+            m.clear();
+        }
+        m.insert(dir.to_path_buf(), (mtime, std::time::Instant::now(), size));
+    }
+    size
+}
+
+fn walk_size(dir: &Path) -> u64 {
     walkdir::WalkDir::new(dir)
         .follow_links(false)
         .into_iter()

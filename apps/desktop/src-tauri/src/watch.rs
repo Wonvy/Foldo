@@ -20,8 +20,12 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
-/// 没有文件变动时多久检查一次。
+/// 有文件在等缓冲期或正被占用时，最晚多久再检查一次。
 const INTERVAL: Duration = Duration::from_secs(60);
+/// 没有文件变动、也没有等待中的文件时，兜底多久完整检查一次（以防漏掉变动，如网络磁盘）。
+const IDLE_FALLBACK: Duration = Duration::from_secs(15 * 60);
+/// 关闭自动整理时，兜底多久重新读一次配置（配置在应用里保存时会立即唤醒）。
+const OFF_FALLBACK: Duration = Duration::from_secs(5 * 60);
 /// 自动整理时的最短缓冲期。
 const MIN_BUFFER: Duration = Duration::from_secs(60);
 /// 收到文件变动后再等一会儿，把一连串变动合并成一次检查。
@@ -140,10 +144,12 @@ pub fn spawn(app: AppHandle) {
                     watched = targets;
                 }
 
+                // 下次没有文件变动时什么时候再检查
+                let mut wait = OFF_FALLBACK;
                 match set {
                     Ok(mut s) if mode != AutoMode::Off => {
                         s.buffer = s.buffer.max(MIN_BUFFER);
-                        cycle(&app, &s, mode, &mut last_notified);
+                        wait = cycle(&app, &s, mode, &mut last_notified).unwrap_or(IDLE_FALLBACK);
                     }
                     Ok(_) => {
                         last_notified = 0;
@@ -160,11 +166,6 @@ pub fn spawn(app: AppHandle) {
                     }),
                 }
 
-                let wait = if mode == AutoMode::Off {
-                    Duration::from_secs(30)
-                } else {
-                    INTERVAL
-                };
                 match rx.recv_timeout(wait) {
                     Ok(()) => {
                         // 合并一连串的变动
@@ -196,15 +197,23 @@ fn set_status(app: &AppHandle, f: impl FnOnce(&mut WatchStatus)) {
     let _ = app.emit("watch-status", snapshot);
 }
 
-fn cycle(app: &AppHandle, set: &RuleSet, mode: AutoMode, last_notified: &mut usize) {
+/// 检查一次。返回没有文件变动时多久后需要再检查：有文件在等缓冲期或正被占用时返回等待时间，
+/// 否则返回 None（只等文件变动）。
+fn cycle(
+    app: &AppHandle,
+    set: &RuleSet,
+    mode: AutoMode,
+    last_notified: &mut usize,
+) -> Option<Duration> {
     let now = chrono::Local::now();
     let plan = match build_plan(set, None) {
         Ok(p) => p,
         Err(e) => {
             set_status(app, |st| st.error = Some(e.to_string()));
-            return;
+            return Some(INTERVAL);
         }
     };
+    let recheck = recheck_after(&plan, set.buffer, now);
     let failed: HashSet<String> = app
         .state::<WatchState>()
         .failed
@@ -285,4 +294,39 @@ fn cycle(app: &AppHandle, set: &RuleSet, mode: AutoMode, last_notified: &mut usi
             st.last_done = d;
         }
     });
+    recheck
+}
+
+/// 有文件因为缓冲期或正被占用而暂缓时，算出什么时候该再看一次：
+/// 缓冲期按最早到期的那个文件算（至少 5 秒、最多 1 分钟），被占用的文件 1 分钟后再看。
+fn recheck_after(
+    plan: &foldo_core::Plan,
+    buffer: Duration,
+    now: chrono::DateTime<chrono::Local>,
+) -> Option<Duration> {
+    use foldo_core::SkipKind;
+    let mut next: Option<Duration> = None;
+    let mut sooner = |d: Duration| next = Some(next.map_or(d, |n| n.min(d)));
+    for s in &plan.skipped {
+        match s.kind {
+            SkipKind::InUse => sooner(INTERVAL),
+            SkipKind::Buffer => {
+                let md = std::fs::metadata(&s.path).ok();
+                let newest = md
+                    .as_ref()
+                    .and_then(|m| {
+                        let c = m.created().ok();
+                        let m = m.modified().ok();
+                        c.max(m)
+                    })
+                    .map(chrono::DateTime::<chrono::Local>::from);
+                let left = newest
+                    .map(|t| buffer.saturating_sub((now - t).to_std().unwrap_or_default()))
+                    .unwrap_or(INTERVAL);
+                sooner(left.clamp(Duration::from_secs(5), INTERVAL));
+            }
+            _ => {}
+        }
+    }
+    next
 }

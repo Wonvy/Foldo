@@ -17,7 +17,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 pub use docs::{AudioMeta, OfficeMeta, PdfMeta, domain};
-pub use dup::Peers;
+pub use dup::{Peers, content_reads};
 pub use folder::{FOLDER_KINDS, FolderMeta, MIXED};
 pub use media::MediaMeta;
 

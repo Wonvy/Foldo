@@ -35,6 +35,7 @@ import {
 } from "../api";
 import AutoMode from "../components/AutoMode";
 import FolderPanel from "../components/FolderPanel";
+import SetupGuide, { SetupSteps, markSetupDone, setupDone } from "../components/SetupGuide";
 import InspectDialog from "../components/InspectDialog";
 import UndoDialog from "../components/UndoDialog";
 import { Checkbox, FileIcon, Segmented, Spinner, useMenu } from "../components/ui";
@@ -122,6 +123,11 @@ export default function TidyPage({
   const [showKept, setShowKept] = useState(false);
   const [expandedExtensions, setExpandedExtensions] = useState<Set<string>>(new Set());
   const [inspectPath, setInspectPath] = useState<string | null>(null);
+  const [guideDismissed, setGuideDismissed] = useState(setupDone);
+  const rulesInUse = (config.folders ?? []).some((f) =>
+    (config.rules ?? []).some((r) => r.enabled !== false && f.rules?.includes(r.name)),
+  );
+  const showGuide = !rulesInUse || !guideDismissed;
   const menu = useMenu();
 
   const applyPlan = (p: PlanView) => {
@@ -244,6 +250,9 @@ export default function TidyPage({
     setError(null);
     try {
       setResult(await api.executePlan(plan.plan_id, [...selected]));
+      // 第一次执行过整理，上手引导就完成了
+      markSetupDone();
+      setGuideDismissed(true);
       setPlan(null);
     } catch (e) {
       setError(errorText(e));
@@ -344,14 +353,14 @@ export default function TidyPage({
         </div>
       )}
 
-      {(config.rules ?? []).length === 0 && (
-        <div className="banner info">
-          <WandSparkles size={16} />
-          <span style={{ flex: 1 }}>{t("还没有规则。Foldo 只会按你建的规则移动文件，其余文件保持原位。")}</span>
-          <button className="btn sm primary" onClick={() => onNewRule()}>
-            {t("新建规则")}
-          </button>
-        </div>
+      {showGuide && !dropPaths && (
+        <SetupGuide
+          onChanged={() => void run(null)}
+          onDismiss={() => {
+            markSetupDone();
+            setGuideDismissed(true);
+          }}
+        />
       )}
 
       {plan?.warnings.map((w) => (
@@ -701,7 +710,8 @@ function Onboarding({ onDone }: { onDone: () => void }) {
       .suggestedFolders()
       .then((s) => {
         setSuggestions(s);
-        setChosen(s.filter((x) => x.label !== "文稿").map((x) => x.path));
+        // 默认选下载和桌面；文稿里多是整理好的东西，默认不选
+        setChosen(s.filter((x) => x.key !== "documents").map((x) => x.path));
       })
       .catch(() => setSuggestions([]));
   }, []);
@@ -714,7 +724,7 @@ function Onboarding({ onDone }: { onDone: () => void }) {
     try {
       await save({
         ...config,
-        version: 1,
+        version: 2,
         folders: chosen.map((path) => ({ path, rules: [] })),
         settings: config.settings ?? { buffer: "10m" },
       });
@@ -728,12 +738,13 @@ function Onboarding({ onDone }: { onDone: () => void }) {
   return (
     <div className="page">
       <div className="empty" style={{ maxWidth: 520 }}>
-        <div className="art">
+        <SetupSteps step={1} />
+        <div className="art" style={{ marginTop: 18 }}>
           <Sparkles size={26} />
         </div>
         <h1>{t("选择要整理的文件夹")}</h1>
         <p className="muted">
-          {t("Foldo 只整理这些文件夹第一层的散落文件，已有的文件夹会整体保留。之后在“规则”里写下哪些文件放到哪里，先看建议再执行，随时可以撤销。")}
+          {t("第一步：选要整理的文件夹。接下来建规则，写明哪些文件或文件夹放到哪里；每次都先给你看预览，执行后也能撤销。")}
         </p>
         <div className="card" style={{ width: "100%", marginTop: 14, textAlign: "left" }}>
           {all.map((f) => (
@@ -768,7 +779,7 @@ function Onboarding({ onDone }: { onDone: () => void }) {
         {error && <div className="banner error">{error}</div>}
         <button className="btn primary lg" style={{ marginTop: 10 }} disabled={chosen.length === 0 || saving} onClick={start}>
           {saving ? <Spinner size={15} /> : <ArrowRight size={16} />}
-          {t("开始整理")}
+          {t("下一步")}
         </button>
       </div>
     </div>

@@ -492,3 +492,31 @@ fn duplicate_files_keep_the_oldest_copy() {
         vec!["原件.txt/原件 (1).txt", "原件.txt/原件 副本.txt"]
     );
 }
+
+#[test]
+fn duplicate_checks_reuse_cached_content_between_scans() {
+    use foldo_core::{RuleSet, build_plan};
+    let tmp = tempfile::TempDir::new().unwrap();
+    let dir = tmp.path().canonicalize().unwrap();
+    for (i, name) in ["甲.bin", "乙.bin", "丙.bin"].iter().enumerate() {
+        let p = dir.join(name);
+        std::fs::write(&p, "相同的内容相同的内容").unwrap();
+        filetime::set_file_mtime(
+            &p,
+            filetime::FileTime::from_unix_time(1_600_000_000 + i as i64, 0),
+        )
+        .unwrap();
+    }
+    let rs = RuleSet::from_yaml(&format!(
+        "version: 2\nfolders:\n  - path: '{}'\n    rules: [重复]\nrules:\n  - name: 重复\n    when: {{ duplicate: true }}\n    actions: [{{ move: '重复/' }}]\n",
+        dir.display()
+    ))
+    .unwrap();
+    let first = build_plan(&rs, None).unwrap();
+    assert_eq!(first.ops.len(), 2);
+    let reads = foldo_core::meta::content_reads();
+    // 文件没变：再扫描时不再读内容（其他测试可能同时在跑，所以只比较这次扫描前后）
+    let second = build_plan(&rs, None).unwrap();
+    assert_eq!(second.ops.len(), 2);
+    assert_eq!(foldo_core::meta::content_reads(), reads);
+}

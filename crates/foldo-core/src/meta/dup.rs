@@ -11,6 +11,76 @@ use std::fs::File;
 use std::hash::Hasher;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
+use std::time::SystemTime;
+
+/// 文件的“版本”：大小和修改时间都没变，就认为内容没变。
+type Stamp = (u64, Option<SystemTime>);
+
+fn stamp(path: &Path) -> Option<Stamp> {
+    let md = std::fs::metadata(path).ok()?;
+    Some((md.len(), md.modified().ok()))
+}
+
+/// 跨扫描的缓存（后台每次检查都会重新扫描，内容没变的文件不必重新读）。
+static DIGESTS: LazyLock<Mutex<HashMap<PathBuf, (Stamp, u64)>>> = LazyLock::new(Default::default);
+/// (文件 A, 文件 B) → (A 的版本, B 的版本, 内容是否相同)
+type SameCache = HashMap<(PathBuf, PathBuf), (Stamp, Stamp, bool)>;
+static SAME: LazyLock<Mutex<SameCache>> = LazyLock::new(Default::default);
+/// 缓存最多记这么多项，超过就清空重来
+const CACHE_LIMIT: usize = 50_000;
+thread_local! {
+    /// 本线程实际读文件内容的次数（测试缓存用；扫描在一个线程里完成）
+    static READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// 本线程为判断重复实际读取文件内容的次数。
+pub fn content_reads() -> u64 {
+    READS.with(|r| r.get())
+}
+
+fn count_read() {
+    READS.with(|r| r.set(r.get() + 1));
+}
+
+fn cached_digest(path: &Path) -> Option<u64> {
+    let st = stamp(path)?;
+    if let Some((s, d)) = DIGESTS.lock().ok()?.get(path)
+        && *s == st
+    {
+        return Some(*d);
+    }
+    let d = digest(path)?;
+    if let Ok(mut m) = DIGESTS.lock() {
+        if m.len() > CACHE_LIMIT {
+            m.clear();
+        }
+        m.insert(path.to_path_buf(), (st, d));
+    }
+    Some(d)
+}
+
+fn cached_same(a: &Path, b: &Path) -> bool {
+    let (Some(sa), Some(sb)) = (stamp(a), stamp(b)) else {
+        return false;
+    };
+    let key = (a.to_path_buf(), b.to_path_buf());
+    if let Ok(m) = SAME.lock()
+        && let Some((x, y, same)) = m.get(&key)
+        && *x == sa
+        && *y == sb
+    {
+        return *same;
+    }
+    let same = same_content(a, b);
+    if let Ok(mut m) = SAME.lock() {
+        if m.len() > CACHE_LIMIT {
+            m.clear();
+        }
+        m.insert(key, (sa, sb, same));
+    }
+    same
+}
 
 #[derive(Debug)]
 struct Peer {
@@ -48,7 +118,7 @@ impl Peers {
         if let Some(d) = self.digests.borrow().get(path) {
             return *d;
         }
-        let d = digest(path);
+        let d = cached_digest(path);
         self.digests.borrow_mut().insert(path.to_path_buf(), d);
         d
     }
@@ -70,13 +140,14 @@ impl Peers {
             return None;
         }
         let mine = self.digest(path)?;
-        same.retain(|p| self.digest(&p.path) == Some(mine) && same_content(path, &p.path));
+        same.retain(|p| self.digest(&p.path) == Some(mine) && cached_same(path, &p.path));
         let first = same.into_iter().min_by_key(|p| rank(p))?;
         (rank(first) < rank(me)).then(|| first.path.clone())
     }
 }
 
 fn digest(path: &Path) -> Option<u64> {
+    count_read();
     let mut r = BufReader::with_capacity(1 << 16, File::open(path).ok()?);
     let mut h = std::hash::DefaultHasher::new();
     let mut buf = vec![0u8; 1 << 16];
@@ -92,6 +163,7 @@ fn digest(path: &Path) -> Option<u64> {
 
 /// 摘要相同后再逐字节确认，避免哈希碰撞误判。
 fn same_content(a: &Path, b: &Path) -> bool {
+    count_read();
     let (Ok(fa), Ok(fb)) = (File::open(a), File::open(b)) else {
         return false;
     };
