@@ -199,6 +199,20 @@ fn apply(op: &Op) -> Result<(), Problem> {
             }
             fsops::move_file(src, dst).map_err(fail)
         }
+        OpKind::Extract | OpKind::Compress | OpKind::Shortcut => {
+            let dst = dst_of(op)?;
+            if exists(dst) {
+                return Err(Problem::Skip(
+                    "目标位置出现了同名文件，为避免覆盖已跳过".into(),
+                ));
+            }
+            match op.kind {
+                OpKind::Extract => fsops::extract_zip(src, dst),
+                OpKind::Compress => fsops::compress_file(src, dst),
+                _ => fsops::create_shortcut(src, dst),
+            }
+            .map_err(fail)
+        }
         OpKind::Copy => {
             let dst = dst_of(op)?;
             if exists(dst) {

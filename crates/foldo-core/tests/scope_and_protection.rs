@@ -110,8 +110,9 @@ rules:
 "#,
         inbox = q(&inbox)
     ));
-    // 没写 locations 的规则作用于整理文件夹
-    assert_eq!(rs.get("合同").unwrap().locations, vec![inbox.clone()]);
+    // version 1 中没写 locations 的规则迁移后加入整理文件夹
+    assert_eq!(rs.folders.len(), 1);
+    assert_eq!(rs.folders[0].rules, vec![0, 1]);
     let plan = build_plan(&rs, None).unwrap();
     assert_eq!(dst_of(&plan, "合同.pdf"), Some(inbox.join("合同/合同.pdf")));
     // 例外命中后不归第一条规则，由下一条规则处理
@@ -337,4 +338,85 @@ fn auto_mode_holds_back_irreversible_actions() {
     // 写回 YAML 时保留设置
     let file = parse_rule_file(&yaml).unwrap();
     assert!(file.to_yaml().unwrap().contains("auto: run"));
+}
+
+#[test]
+fn folders_use_only_their_own_rules() {
+    let (_t, inbox) = setup();
+    let other = inbox.parent().unwrap().join("other");
+    fs::create_dir_all(&other).unwrap();
+    touch(&inbox, "a.pdf", "");
+    touch(&other, "b.pdf", "");
+    let rs = rules(&format!(
+        r#"
+version: 2
+folders:
+  - path: {inbox}
+    rules: [文档]
+  - path: {other}
+rules:
+  - name: 文档
+    conditions: [{{ category: 文档 }}]
+    actions: [{{ move: '文档/' }}]
+"#,
+        inbox = q(&inbox),
+        other = q(&other),
+    ));
+    let plan = build_plan(&rs, None).unwrap();
+    assert_eq!(dst_of(&plan, "a.pdf"), Some(inbox.join("文档/a.pdf")));
+    // 没有指定规则的文件夹不整理，文件列为“没有匹配的规则”
+    assert!(dst_of(&plan, "b.pdf").is_none());
+    assert_eq!(skip_kind(&plan, "b.pdf"), Some(SkipKind::NoMatch));
+    // 单独试用一条规则：只用在使用它的文件夹上
+    let only = build_plan(&rs, Some("文档")).unwrap();
+    assert_eq!(only.ops.len(), 1);
+}
+
+#[test]
+fn version_1_rule_locations_migrate_to_folders() {
+    let (_t, inbox) = setup();
+    let desk = inbox.parent().unwrap().join("desk");
+    fs::create_dir_all(&desk).unwrap();
+    let text = format!(
+        r#"
+version: 1
+folders:
+  - path: {inbox}
+rules:
+  - name: 全部
+    actions: [keep]
+  - name: 桌面
+    locations: [{desk}]
+    recursive: true
+    actions: [keep]
+"#,
+        inbox = q(&inbox),
+        desk = q(&desk),
+    );
+    let file = foldo_core::parse_rule_file(&text).unwrap();
+    assert_eq!(file.version, 2);
+    assert_eq!(file.folders.len(), 2);
+    assert_eq!(
+        file.folders[0].rules.as_deref(),
+        Some(&["全部".to_string()][..])
+    );
+    assert_eq!(
+        file.folders[1].rules.as_deref(),
+        Some(&["桌面".to_string()][..])
+    );
+    assert!(file.folders[1].recursive);
+    // 写回后是新写法，再读一遍结果不变
+    let again = foldo_core::parse_rule_file(&file.to_yaml().unwrap()).unwrap();
+    assert_eq!(again.folders[1].rules, file.folders[1].rules);
+    assert!(!file.to_yaml().unwrap().contains("locations"));
+}
+
+#[test]
+fn unknown_rule_in_folder_is_an_error() {
+    let (_t, inbox) = setup();
+    let yaml = format!(
+        "version: 2\nfolders:\n  - path: {}\n    rules: [不存在]\nrules: []\n",
+        q(&inbox)
+    );
+    assert!(RuleSet::from_yaml(&yaml).is_err());
 }

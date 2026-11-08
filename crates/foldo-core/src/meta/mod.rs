@@ -4,6 +4,7 @@
 //! 一个 `FileCtx` 在一次扫描中被所有规则共享，所以每类元数据最多读一次。
 
 mod docs;
+mod dup;
 mod media;
 
 use crate::categories;
@@ -11,8 +12,10 @@ use crate::fileinfo::FileInfo;
 use std::cell::{Cell, OnceCell};
 use std::ops::Deref;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 pub use docs::{AudioMeta, OfficeMeta, PdfMeta, domain};
+pub use dup::Peers;
 pub use media::MediaMeta;
 
 #[derive(Debug)]
@@ -26,6 +29,9 @@ pub struct FileCtx {
     office: OnceCell<Option<OfficeMeta>>,
     source: OnceCell<Option<String>>,
     content: OnceCell<Option<String>>,
+    /// 同一次扫描里的其他文件（判断重复用）；单独查看一个文件时没有
+    peers: Option<Rc<Peers>>,
+    duplicate_of: OnceCell<Option<PathBuf>>,
     /// 实际读取元数据的次数（测试按需读取用）。
     reads: Cell<u32>,
 }
@@ -49,6 +55,8 @@ impl From<FileInfo> for FileCtx {
             office: OnceCell::new(),
             source: OnceCell::new(),
             content: OnceCell::new(),
+            peers: None,
+            duplicate_of: OnceCell::new(),
             reads: Cell::new(0),
         }
     }
@@ -70,6 +78,28 @@ impl FileCtx {
 
     fn is_category(&self, id: &str) -> bool {
         self.category().is_some_and(|c| c.id == id)
+    }
+
+    /// 设置同一次扫描里的全部文件，之后才能判断是否重复。
+    pub fn set_peers(&mut self, peers: Rc<Peers>) {
+        self.peers = Some(peers);
+    }
+
+    /// 是否是重复文件：None 表示无法判断（单独查看一个文件时）。
+    pub fn is_duplicate(&self) -> Option<bool> {
+        self.peers.as_ref()?;
+        Some(self.duplicate_original().is_some())
+    }
+
+    /// 这个文件是重复的副本时，返回原件的路径。
+    pub fn duplicate_original(&self) -> Option<&PathBuf> {
+        self.duplicate_of
+            .get_or_init(|| {
+                let peers = self.peers.as_ref()?;
+                self.count_read();
+                peers.original_of(&self.path, self.size)
+            })
+            .as_ref()
     }
 
     /// 已经读取过多少次元数据。

@@ -73,3 +73,64 @@ pub fn ensure_parent(dst: &Path) -> io::Result<Vec<PathBuf>> {
     }
     Ok(missing)
 }
+
+/// 把 zip 解压到 `dir`（`dir` 不能已存在）。失败时删掉解压了一半的文件夹。
+pub fn extract_zip(archive: &Path, dir: &Path) -> io::Result<()> {
+    if exists(dir) {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "目标文件夹已存在",
+        ));
+    }
+    let file = fs::File::open(archive)?;
+    let mut zip = zip::ZipArchive::new(io::BufReader::new(file)).map_err(io::Error::other)?;
+    fs::create_dir_all(dir)?;
+    // extract 会拒绝 ../ 之类越出目标文件夹的路径
+    zip.extract(dir).map_err(|e| {
+        let _ = fs::remove_dir_all(dir);
+        io::Error::other(e)
+    })
+}
+
+/// 把单个文件压缩成 zip（`dst` 不能已存在）。
+pub fn compress_file(src: &Path, dst: &Path) -> io::Result<()> {
+    use std::io::Write;
+    let name = src
+        .file_name()
+        .ok_or_else(|| io::Error::other("无法获取文件名"))?
+        .to_string_lossy()
+        .into_owned();
+    let out = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dst)?;
+    let result = (|| {
+        let mut zip = zip::ZipWriter::new(io::BufWriter::new(out));
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .large_file(fs::metadata(src)?.len() >= u32::MAX as u64);
+        zip.start_file(name, opts).map_err(io::Error::other)?;
+        io::copy(&mut io::BufReader::new(fs::File::open(src)?), &mut zip)?;
+        zip.finish().map_err(io::Error::other)?.flush()
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(dst);
+    }
+    result
+}
+
+/// 创建指向 `target` 的快捷方式：Windows 为 .lnk，其他系统为符号链接。
+pub fn create_shortcut(target: &Path, link: &Path) -> io::Result<()> {
+    if exists(link) {
+        return Err(io::Error::new(io::ErrorKind::AlreadyExists, "已有同名文件"));
+    }
+    #[cfg(windows)]
+    {
+        let lnk = mslnk::ShellLink::new(target).map_err(io::Error::other)?;
+        lnk.create_lnk(link).map_err(io::Error::other)
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link)
+    }
+}

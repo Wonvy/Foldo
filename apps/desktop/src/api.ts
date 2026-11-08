@@ -15,15 +15,15 @@ export type ActionDef =
   | { move: DestDef }
   | { copy: DestDef }
   | { rename: DestDef }
+  | { extract: DestDef }
+  | { compress: DestDef }
+  | { shortcut: DestDef }
   | "trash"
   | "keep";
 
 export type RuleDef = {
   name: string;
   enabled?: boolean;
-  locations?: OneOrMany<string>;
-  recursive?: boolean;
-  include_hidden?: boolean;
   match?: "all" | "any";
   conditions?: ConditionDef[];
   when?: ConditionDef;
@@ -31,7 +31,14 @@ export type RuleDef = {
   actions: ActionDef[];
 };
 
-export type FolderDef = { path: string };
+export type FolderDef = {
+  path: string;
+  /** 连子文件夹里的文件一起整理 */
+  recursive?: boolean;
+  include_hidden?: boolean;
+  /** 这个文件夹使用的规则名称；执行顺序以规则列表为准 */
+  rules?: string[];
+};
 
 export type UpdateInfo = {
   current: string;
@@ -99,7 +106,7 @@ export type TestView = {
 
 // ---------- 扫描与执行 ----------
 
-export type OpKind = "move" | "copy" | "rename" | "trash";
+export type OpKind = "move" | "copy" | "rename" | "trash" | "extract" | "compress" | "shortcut";
 
 export type OpView = {
   group: number;
@@ -240,6 +247,8 @@ export const api = {
   watchNow: () => invoke<void>("watch_now"),
   autostartEnabled: () => invoke<boolean>("autostart_enabled"),
   setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
+  exportRules: (names: string[], path: string) => invoke<number>("export_rules", { names, path }),
+  readRulesFile: (path: string) => invoke<RuleDef[]>("read_rules_file", { path }),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   installUpdate: () => invoke<void>("install_update"),
   reveal: (path: string) => invoke<void>("reveal", { path }),
@@ -273,5 +282,8 @@ export const KIND_LABEL: Record<string, string> = {
   copy: "复制",
   rename: "改名",
   trash: "移到回收站",
+  extract: "解压",
+  compress: "压缩",
+  shortcut: "快捷方式",
   mkdir: "新建文件夹",
 };

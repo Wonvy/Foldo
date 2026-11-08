@@ -1,7 +1,5 @@
 // 规则的编辑模型（条件树）、与配置的互相转换、以及把规则翻译成一句话。
-import { baseName, type ActionDef, type ConditionDef, type DestDef, type FieldDef, type FieldType, type RuleDef } from "./api";
-
-const list = <T,>(v: T | T[]): T[] => (Array.isArray(v) ? v : [v]);
+import { type ActionDef, type ConditionDef, type DestDef, type FieldDef, type FieldType, type FolderDef, type RuleDef, type RuleFile } from "./api";
 
 // ---------- 路径显示 ----------
 
@@ -193,12 +191,32 @@ export function nodeToDef(n: CondNode): ConditionDef {
 
 // ---------- 动作 ----------
 
-export type ActionKind = "move" | "copy" | "rename" | "trash" | "keep";
+export type ActionKind = "move" | "copy" | "rename" | "extract" | "compress" | "shortcut" | "trash" | "keep";
+/** 带目标路径的动作。 */
+export type DestKind = Exclude<ActionKind, "trash" | "keep">;
+const DEST_KINDS: DestKind[] = ["move", "copy", "rename", "extract", "compress", "shortcut"];
+
+/** 动作的动词（“移到 …”）。 */
+export const ACTION_VERB: Record<DestKind, string> = {
+  move: "移到",
+  copy: "复制到",
+  rename: "改名为",
+  extract: "解压到",
+  compress: "压缩为",
+  shortcut: "快捷方式放到",
+};
+
+/** 切换成这种动作时的默认目标。 */
+export const ACTION_DEFAULT_TO: Partial<Record<DestKind, string>> = {
+  extract: "{stem}/",
+  compress: "{stem}.zip",
+};
 export type ActionRow = { kind: ActionKind; to: string; onConflict: "rename" | "skip" };
 
 function rowFromAction(a: ActionDef): ActionRow {
   if (a === "trash" || a === "keep") return { kind: a, to: "", onConflict: "rename" };
-  const [kind, dest] = "move" in a ? (["move", a.move] as const) : "copy" in a ? (["copy", a.copy] as const) : (["rename", a.rename] as const);
+  const kind = DEST_KINDS.find((k) => k in a) ?? "move";
+  const dest = (a as Record<string, DestDef>)[kind];
   return typeof dest === "string"
     ? { kind, to: dest, onConflict: "rename" }
     : { kind, to: dest.to, onConflict: dest.on_conflict === "skip" ? "skip" : "rename" };
@@ -209,10 +227,6 @@ function rowFromAction(a: ActionDef): ActionRow {
 export type RuleForm = {
   name: string;
   enabled: boolean;
-  scope: "all" | "custom";
-  locations: string[];
-  recursive: boolean;
-  includeHidden: boolean;
   root: GroupNode;
   /** 例外：命中任意一条就不处理（mode 固定为 any）。 */
   exceptions: GroupNode;
@@ -225,10 +239,6 @@ export function emptyForm(fields: FieldMap): RuleForm {
   return {
     name: "",
     enabled: true,
-    scope: "all",
-    locations: [],
-    recursive: false,
-    includeHidden: false,
     root: group("all", [newTest(fields, "category")]),
     exceptions: group("any"),
     actions: [{ kind: "move", to: "", onConflict: "rename" }],
@@ -252,10 +262,6 @@ export function ruleToForm(rule: RuleDef, fields: FieldMap): RuleForm {
   return {
     name: rule.name,
     enabled: rule.enabled !== false,
-    scope: rule.locations ? "custom" : "all",
-    locations: rule.locations ? list(rule.locations) : [],
-    recursive: !!rule.recursive,
-    includeHidden: !!rule.include_hidden,
     root,
     exceptions: group("any", (rule.except ?? []).map((c) => defToNode(c, fields))),
     actions: rule.actions.map(rowFromAction),
@@ -282,7 +288,6 @@ function checkValues(n: CondNode, fields: FieldMap): string | null {
 export function formToRule(f: RuleForm, fields: FieldMap): { rule: RuleDef } | { error: string } {
   const name = f.name.trim();
   if (!name) return { error: "请填写规则名称" };
-  if (f.scope === "custom" && f.locations.length === 0) return { error: "请至少选择一个生效的文件夹" };
   const e = checkValues(f.root, fields) ?? checkValues(f.exceptions, fields);
   if (e) return { error: e };
   if (f.actions.length === 0) return { error: "请至少添加一个动作" };
@@ -295,17 +300,14 @@ export function formToRule(f: RuleForm, fields: FieldMap): { rule: RuleDef } | {
       continue;
     }
     const to = a.to.trim();
-    if (!to) return { error: a.kind === "rename" ? "请填写新文件名" : "请选择目标文件夹" };
+    if (!to) return { error: a.kind === "rename" ? "请填写新文件名" : a.kind === "compress" ? "请填写压缩包名称" : "请选择目标文件夹" };
     const dest: DestDef = a.onConflict === "skip" ? { to, on_conflict: "skip" } : to;
-    actions.push(a.kind === "move" ? { move: dest } : a.kind === "copy" ? { copy: dest } : { rename: dest });
+    actions.push({ [a.kind]: dest } as ActionDef);
   }
   const rule: RuleDef = { name, actions };
   if (f.root.children.length > 0 || f.root.not) rule.when = nodeToDef(f.root);
   if (f.exceptions.children.length) rule.except = f.exceptions.children.map(nodeToDef);
   if (!f.enabled) rule.enabled = false;
-  if (f.scope === "custom") rule.locations = f.locations;
-  if (f.recursive) rule.recursive = true;
-  if (f.includeHidden) rule.include_hidden = true;
   return { rule };
 }
 
@@ -366,18 +368,33 @@ function destText(d: DestDef): string {
 export function describeAction(a: ActionDef): string {
   if (a === "trash") return "移到回收站";
   if (a === "keep") return "保持原位";
-  if ("move" in a) return `移到 ${destText(a.move)}`;
-  if ("copy" in a) return `复制到 ${destText(a.copy)}`;
-  return `改名为 ${destText(a.rename)}`;
+  const kind = DEST_KINDS.find((k) => k in a) ?? "move";
+  return `${ACTION_VERB[kind]} ${destText((a as Record<string, DestDef>)[kind])}`;
 }
 
 export function describeActions(rule: RuleDef): string {
   return rule.actions.map(describeAction).join("，再");
 }
 
-export function describeScope(rule: RuleDef): string {
-  if (!rule.locations) return "所有整理文件夹";
-  return list(rule.locations).map(baseName).join("、");
+// ---------- 文件夹使用的规则 ----------
+
+/** 去掉文件夹里引用的已不存在的规则（删除规则后）。 */
+export function pruneFolderRules(file: RuleFile): RuleFile {
+  const names = new Set((file.rules ?? []).map((r) => r.name));
+  const folders = (file.folders ?? []).map((f) => ({ ...f, rules: (f.rules ?? []).filter((n) => names.has(n)) }));
+  return { ...file, folders };
+}
+
+/** 规则改名后同步文件夹里的引用。 */
+export function renameInFolders(file: RuleFile, from: string, to: string): RuleFile {
+  if (from === to) return file;
+  const folders = (file.folders ?? []).map((f) => ({ ...f, rules: (f.rules ?? []).map((n) => (n === from ? to : n)) }));
+  return { ...file, folders };
+}
+
+/** 使用某条规则的文件夹。 */
+export function foldersUsing(file: RuleFile, name: string): FolderDef[] {
+  return (file.folders ?? []).filter((f) => f.rules?.includes(name));
 }
 
 // ---------- 列表里的标签摘要 ----------
@@ -407,8 +424,9 @@ export function ruleChips(rule: RuleDef, fields: FieldMap): { mode: GroupMode; c
   const actions: ActionChip[] = form.actions.map((a) => {
     if (a.kind === "trash") return { kind: a.kind, text: "回收站", title: "移到回收站" };
     if (a.kind === "keep") return { kind: a.kind, text: "保持原位", title: "保持原位" };
-    const verb = a.kind === "move" ? "移到" : a.kind === "copy" ? "复制到" : "改名为";
-    return { kind: a.kind, text: a.kind === "rename" ? a.to : shortPath(a.to), title: `${verb} ${tilde(a.to)}` };
+    const verb = ACTION_VERB[a.kind];
+    const named = a.kind === "rename" || a.kind === "compress" || a.kind === "extract";
+    return { kind: a.kind, text: named ? a.to : shortPath(a.to), title: `${verb} ${tilde(a.to)}` };
   });
   return { mode: form.root.mode, conds, actions, exceptions: form.exceptions.children.length };
 }

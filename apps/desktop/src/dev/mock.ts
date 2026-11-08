@@ -106,17 +106,16 @@ const explainAll = (d: unknown): unknown => {
 let config: RuleFile | null = new URLSearchParams(location.search).get("mock") === "empty"
   ? null
   : {
-      version: 1,
+      version: 2,
       folders: [
-        { path: DL },
-        { path: DESK },
+        { path: DL, rules: ["3D 模型归档", "发票归档", "文档归档", "图片归档", "旧压缩包清理"] },
+        { path: DESK, rules: ["截图改名归档", "发票归档"] },
       ],
       protect: ["*.lic", `${DL}/重要合同`],
       settings: { buffer: "10m" },
       rules: [
         {
           name: "截图改名归档",
-          locations: [DESK],
           conditions: [{ category: "图片" }, { name: { regex: "^(Screenshot|截屏)" } }],
           actions: [{ rename: "截图_{modified:%Y%m%d_%H%M%S}.{ext|lower}" }, { move: `${HOME}/Pictures/Screenshots/` }],
         },
@@ -144,7 +143,6 @@ let config: RuleFile | null = new URLSearchParams(location.search).get("mock") =
         {
           name: "旧压缩包清理",
           enabled: false,
-          locations: [DL],
           conditions: [{ category: "压缩包" }, { modified: { older_than: "30d" } }, { size: { lt: "10MB" } }],
           actions: ["trash"],
         },

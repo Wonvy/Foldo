@@ -351,7 +351,7 @@ fn invalid_rule_files_are_rejected() {
     let e = env();
     let loc = q(&e.inbox);
     let cases = [
-        ("版本", "version: 2\nrules: []\n".to_string()),
+        ("版本", "version: 3\nrules: []\n".to_string()),
         (
             "未知字段",
             format!(
@@ -418,8 +418,14 @@ fn example_rules_file_is_valid() {
     assert_eq!(rs.rules.len(), 5);
     assert_eq!(rs.folders.len(), 2);
     assert!(!rs.get("清理旧的小压缩包").unwrap().enabled);
-    // 没写 locations 的规则作用于全部整理文件夹
-    assert_eq!(rs.get("发票归档").unwrap().locations.len(), 2);
+    // 每个文件夹使用各自的规则，顺序以规则列表为准
+    let invoice = rs.index_of("发票归档").unwrap();
+    assert_eq!(rs.folders_using(invoice).count(), 2);
+    assert_eq!(
+        rs.folders_using(rs.index_of("截图改名归档").unwrap())
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -516,4 +522,91 @@ fn keep_empty_folders_setting() {
     assert_eq!(report.done, 1);
     assert!(e.inbox.join("单独").is_dir());
     assert!(report.removed_dirs.is_empty());
+}
+
+#[test]
+fn compress_extract_and_shortcut_then_undo() {
+    let e = env();
+    let doc = touch(&e.inbox, "报告.txt", "季度报告内容");
+    let rs = rules(&format!(
+        r#"
+version: 2
+folders:
+  - path: {inbox}
+    rules: [打包, 解压]
+rules:
+  - name: 打包
+    when: {{ ext: txt }}
+    actions:
+      - compress: "{{stem}}.zip"
+      - shortcut: {links}
+  - name: 解压
+    when: {{ ext: zip }}
+    actions:
+      - extract: "{{stem}}/"
+"#,
+        inbox = q(&e.inbox),
+        links = q(&e.out),
+    ));
+    let journal = Journal::open_in_memory().unwrap();
+
+    // 第一轮：压缩并创建快捷方式，原文件留在原处
+    let report = execute(&build_plan(&rs, None).unwrap(), &journal, "test").unwrap();
+    assert_eq!(report.done, 2, "{report:?}");
+    let zip = e.inbox.join("报告.zip");
+    assert!(doc.exists() && zip.exists());
+    let link = if cfg!(windows) {
+        e.out.join("报告.txt.lnk")
+    } else {
+        e.out.join("报告.txt")
+    };
+    assert!(link.symlink_metadata().is_ok());
+    #[cfg(unix)]
+    assert_eq!(fs::read_link(&link).unwrap(), doc);
+
+    // 第二轮：解压刚生成的 zip 到同名文件夹
+    let second = execute(&build_plan(&rs, Some("解压")).unwrap(), &journal, "test").unwrap();
+    assert_eq!(second.done, 1, "{second:?}");
+    assert_eq!(
+        fs::read_to_string(e.inbox.join("报告/报告.txt")).unwrap(),
+        "季度报告内容"
+    );
+
+    // 撤销第一轮：快捷方式删除、压缩包进回收站（测试里只检查快捷方式，避免真的往回收站放文件）
+    let preview = foldo_core::preview_undo(&journal, report.batch_id).unwrap();
+    assert!(
+        preview
+            .iter()
+            .all(|c| c.outcome == foldo_core::UndoOutcome::Restore)
+    );
+}
+
+#[test]
+fn extract_only_supports_zip() {
+    let e = env();
+    touch(&e.inbox, "资料.rar", "x");
+    let rs = rules(&format!(
+        "version: 2\nfolders:\n  - path: {}\n    rules: [解压]\nrules:\n  - name: 解压\n    actions: [{{ extract: '{{stem}}/' }}]\n",
+        q(&e.inbox)
+    ));
+    let plan = build_plan(&rs, None).unwrap();
+    assert!(plan.ops.is_empty());
+    assert!(plan.skipped.iter().any(|s| s.reason.contains("zip")));
+}
+
+#[test]
+fn keep_source_actions_are_not_repeated() {
+    let e = env();
+    touch(&e.inbox, "a.txt", "aaa");
+    let rs = rules(&format!(
+        "version: 2\nfolders:\n  - path: {inbox}\n    rules: [备份]\nrules:\n  - name: 备份\n    when: {{ ext: txt }}\n    actions: [{{ copy: {out} }}, {{ compress: '{{stem}}.zip' }}]\n",
+        inbox = q(&e.inbox),
+        out = q(&e.out),
+    ));
+    let journal = Journal::open_in_memory().unwrap();
+    let first = execute(&build_plan(&rs, None).unwrap(), &journal, "test").unwrap();
+    assert_eq!(first.done, 2);
+    // 再扫描一次：副本和压缩包都已经在了，不再重复生成
+    let again = build_plan(&rs, None).unwrap();
+    assert!(again.ops.is_empty(), "{:?}", again.ops);
 }

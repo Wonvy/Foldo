@@ -452,3 +452,43 @@ fn files_without_source_have_no_source_fields() {
     let f = FileCtx::from_path(write(tmp.path(), "本地.txt", b"x")).unwrap();
     assert!(test(&f, "source.url: { exists: false }"));
 }
+
+#[test]
+fn duplicate_files_keep_the_oldest_copy() {
+    use foldo_core::{RuleSet, build_plan};
+    let tmp = tempfile::TempDir::new().unwrap();
+    let dir = tmp.path().canonicalize().unwrap();
+    let write = |name: &str, body: &str, mtime: i64| {
+        let p = dir.join(name);
+        std::fs::write(&p, body).unwrap();
+        filetime::set_file_mtime(&p, filetime::FileTime::from_unix_time(mtime, 0)).unwrap();
+        p
+    };
+    write("原件.txt", "同样的内容", 1_600_000_000);
+    write("原件 (1).txt", "同样的内容", 1_700_000_000);
+    write("原件 副本.txt", "同样的内容", 1_650_000_000);
+    write("同样大小.txt", "不一样内容", 1_650_000_000); // 大小相同（UTF-8 字节数一样）但内容不同
+    write("别的.txt", "完全不同的内容，长度也不一样", 1_650_000_000);
+
+    let rs = RuleSet::from_yaml(&format!(
+        "version: 2\nfolders:\n  - path: '{}'\n    rules: [重复]\nrules:\n  - name: 重复\n    when: {{ duplicate: true }}\n    actions: [{{ move: '重复/{{duplicate.of}}/' }}]\n",
+        dir.display()
+    ))
+    .unwrap();
+    let plan = build_plan(&rs, None).unwrap();
+    let mut moved: Vec<String> = plan
+        .ops
+        .iter()
+        .map(|o| {
+            let d = o.dst.as_ref().unwrap();
+            let folder = d.parent().unwrap().file_name().unwrap().to_string_lossy();
+            format!("{folder}/{}", d.file_name().unwrap().to_string_lossy())
+        })
+        .collect();
+    moved.sort();
+    // 最早的“原件.txt”留下；另外两份副本按原件名归到一起
+    assert_eq!(
+        moved,
+        vec!["原件.txt/原件 (1).txt", "原件.txt/原件 副本.txt"]
+    );
+}

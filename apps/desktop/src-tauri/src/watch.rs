@@ -80,18 +80,16 @@ fn notify(app: &AppHandle, title: &str, body: &str) {
 }
 
 fn watch_targets(set: &RuleSet) -> Vec<(PathBuf, bool)> {
-    let mut out: Vec<(PathBuf, bool)> = set.folders.iter().map(|f| (f.clone(), false)).collect();
-    for r in set.rules.iter().filter(|r| r.enabled) {
-        for l in &r.locations {
-            if let Some(e) = out.iter_mut().find(|(p, _)| p == l) {
-                e.1 |= r.recursive;
-            } else {
-                out.push((l.clone(), r.recursive));
-            }
-        }
-    }
+    // 只监听有启用规则的文件夹
+    let mut out: Vec<(PathBuf, bool)> = set
+        .folders
+        .iter()
+        .filter(|f| f.rules.iter().any(|&i| set.rules[i].enabled))
+        .map(|f| (f.path.clone(), f.recursive))
+        .collect();
     out.retain(|(p, _)| p.is_dir());
     out.sort();
+    out.dedup();
     out
 }
 

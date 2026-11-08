@@ -1,16 +1,21 @@
 # Foldo 配置文件
 #
-# 只有下面的规则会移动文件；没有规则命中的文件保持原位。
-# 规则从上到下判断，第一条命中的生效。可以在图形界面的“规则”页新建和编辑，也可以直接改这个文件。
+# 规则只描述“什么样的文件 → 怎么处理”；每个整理文件夹再指定用哪些规则。
+# 没有规则命中的文件保持原位。规则按 rules 列表从上到下判断，第一条命中的生效。
+# 可以在图形界面里新建和编辑，也可以直接改这个文件。
 #
-# 判断顺序：固定保留与排除 → 规则（从上到下）。
+# 判断顺序：固定保留与排除 → 文件夹使用的规则（按 rules 的顺序）。
 
-version: 1
+version: 2
 
-# 要整理的文件夹。只整理第一层的散落文件，已有的文件夹作为整体保留。
+# 要整理的文件夹，以及各自使用的规则。默认只整理第一层的散落文件，已有的文件夹作为整体保留。
 folders:
   - path: ~/Downloads
+    rules: [发票归档, 图片归档, 安装包归档, 清理旧的小压缩包]
   - path: ~/Desktop
+    rules: [截图改名归档, 发票归档, 图片归档]
+    # recursive: true       # 连子文件夹里的文件一起整理
+    # include_hidden: true  # 也处理隐藏文件
 
 # 固定保留：这些文件或文件夹永远不会被移动。可以写路径，也可以写文件名通配符。
 protect:
@@ -21,7 +26,6 @@ settings:
 
 rules:
   - name: 截图改名归档
-    locations: ["~/Desktop"]
     conditions:
       - category: 图片
       - name: { regex: '^(Screenshot|Screen Shot|截屏|屏幕快照)' }
@@ -41,10 +45,9 @@ rules:
     conditions:
       - category: 图片
     actions:
-      - move: "图片/" # 相对路径：放在规则所在整理文件夹下的“图片”文件夹
+      - move: "图片/" # 相对路径：放在文件所在的整理文件夹下的“图片”文件夹
 
   - name: 安装包归档
-    locations: ["~/Downloads"]
     conditions:
       - category: 安装包
       - modified: { older_than: 1d }
@@ -53,7 +56,6 @@ rules:
 
   - name: 清理旧的小压缩包
     enabled: false # 默认关闭，确认后再打开
-    locations: ["~/Downloads"]
     conditions:
       - category: 压缩包
       - modified: { older_than: 30d }

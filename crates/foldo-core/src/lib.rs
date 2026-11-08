@@ -30,5 +30,5 @@ pub use exec::{ExecReport, execute};
 pub use journal::Journal;
 pub use plan::{Op, OpKind, Plan, Skip, build_plan, build_plan_at, build_plan_for_paths};
 pub use protect::SkipKind;
-pub use rule::{Rule, RuleSet, load_rule_file, parse_rule_file};
+pub use rule::{Folder, Rule, RuleSet, load_rule_file, migrate, parse_rule_file};
 pub use undo::{UndoCheck, UndoOutcome, UndoReport, preview_undo, undo_batch};

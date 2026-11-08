@@ -182,16 +182,27 @@ fn check(path: &Path) -> Result<()> {
         enabled
     );
     for r in &rules.rules {
-        let locs: Vec<String> = r.locations.iter().map(|l| display(l)).collect();
+        println!("  {} {}", if r.enabled { "●" } else { "○" }, r.name);
+    }
+    println!("整理文件夹：");
+    for f in &rules.folders {
+        let names: Vec<&str> = f
+            .rules
+            .iter()
+            .map(|&i| rules.rules[i].name.as_str())
+            .collect();
         println!(
-            "  {} {}  [{}]{}",
-            if r.enabled { "●" } else { "○" },
-            r.name,
-            locs.join(", "),
-            if r.recursive {
+            "  {}{}  →  {}",
+            display(&f.path),
+            if f.recursive {
                 "（含子文件夹）"
             } else {
                 ""
+            },
+            if names.is_empty() {
+                "（没有使用规则）".to_string()
+            } else {
+                names.join("、")
             }
         );
     }
@@ -202,6 +213,9 @@ fn label(kind: OpKind) -> &'static str {
     match kind {
         OpKind::Move => "移动",
         OpKind::Copy => "复制",
+        OpKind::Extract => "解压",
+        OpKind::Compress => "压缩",
+        OpKind::Shortcut => "快捷方式",
         OpKind::Rename => "改名",
         OpKind::Trash => "回收",
     }

@@ -77,7 +77,7 @@ fn file_name(p: &Path) -> String {
 // ---------- 配置 ----------
 
 const HEADER: &str = "# Foldo 配置文件（由图形界面维护，也可以在“设置 → 高级”里直接编辑）\n\
-# 判断顺序：固定保留与排除 → 规则（从上到下，第一条命中的生效）→ 内置类型分类\n\n";
+# 判断顺序：固定保留与排除 → 文件夹使用的规则（按规则列表从上到下，第一条命中的生效）\n\n";
 
 #[derive(Serialize)]
 pub struct ConfigView {
@@ -133,7 +133,7 @@ pub(crate) fn current_config() -> CmdResult<RuleFile> {
         (Some(c), None) => Ok(c),
         (_, Some(e)) => Err(format!("配置文件有错误，请先在“设置 → 高级”中修正：{e}")),
         (None, None) => Ok(RuleFile {
-            version: 1,
+            version: foldo_core::rule::SUPPORTED_VERSION,
             folders: vec![],
             protect: vec![],
             settings: SettingsDef {
@@ -697,7 +697,6 @@ pub async fn debug_file(path: String) -> CmdResult<DebugView> {
     let file = FileCtx::from_path(&p).map_err(err)?;
     view.category = file.category().map(|c| c.name.to_string());
     let now = Local::now();
-    let parent = p.parent().map(Path::to_path_buf).unwrap_or_default();
     view.rules = set
         .rules
         .iter()
@@ -709,10 +708,7 @@ pub async fn debug_file(path: String) -> CmdResult<DebugView> {
                     .exception
                     .as_ref()
                     .is_some_and(|e| e.matches(&file, &mut MatchCtx::new(now)));
-            let in_scope = r
-                .locations
-                .iter()
-                .any(|l| parent == *l || (r.recursive && p.starts_with(l)));
+            let in_scope = set.folders_using(index).any(|f| f.covers(&p));
             RuleHit {
                 index,
                 name: r.name.clone(),
@@ -735,6 +731,9 @@ pub async fn debug_file(path: String) -> CmdResult<DebugView> {
             match last.kind {
                 OpKind::Move => "移动到",
                 OpKind::Copy => "复制到",
+                OpKind::Extract => "解压到",
+                OpKind::Compress => "压缩为",
+                OpKind::Shortcut => "创建快捷方式到",
                 OpKind::Rename => "改名为",
                 OpKind::Trash => "移到回收站",
             }
@@ -923,4 +922,47 @@ pub async fn install_update(app: tauri::AppHandle) -> CmdResult<()> {
         .await
         .map_err(|e| format!("更新失败：{e}"))?;
     app.restart()
+}
+
+// ---------- 规则导入导出 ----------
+
+/// 把规则导出成单独的 YAML 文件（只有规则，不含文件夹和固定保留）。`names` 为空时导出全部。
+#[tauri::command]
+pub async fn export_rules(names: Vec<String>, path: String) -> CmdResult<usize> {
+    let config = current_config()?;
+    let rules: Vec<RuleDef> = config
+        .rules
+        .into_iter()
+        .filter(|r| names.is_empty() || names.contains(&r.name))
+        .collect();
+    let count = rules.len();
+    let file = RuleFile {
+        version: foldo_core::rule::SUPPORTED_VERSION,
+        folders: vec![],
+        protect: vec![],
+        settings: SettingsDef::default(),
+        rules,
+    };
+    let yaml = file.to_yaml().map_err(err)?;
+    std::fs::write(
+        &path,
+        format!("# Foldo 规则（{count} 条）\n# 导入：打开 Foldo → 规则 → 导入规则…，再在整理页把规则添加到文件夹\n\n{yaml}"),
+    )
+    .map_err(err)?;
+    Ok(count)
+}
+
+/// 读取要导入的规则：可以是导出的规则文件，也可以是完整的配置文件（只取其中的规则）。
+#[tauri::command]
+pub async fn read_rules_file(path: String) -> CmdResult<Vec<RuleDef>> {
+    let text = std::fs::read_to_string(&path).map_err(err)?;
+    let file =
+        foldo_core::parse_rule_file(&text).map_err(|e| format!("不是有效的规则文件：{e}"))?;
+    if file.rules.is_empty() {
+        return Err("这个文件里没有规则".into());
+    }
+    for r in &file.rules {
+        foldo_core::Rule::compile(r.clone()).map_err(err)?;
+    }
+    Ok(file.rules)
 }

@@ -1,4 +1,4 @@
-import { File, Folder, FolderPlus, KeyRound, Link, Lock, ShieldCheck, Trash, TriangleAlert, X } from "lucide-react";
+import { File, Folder, KeyRound, Link, Lock, ShieldCheck, Trash, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { api, baseName, errorText, type RuleFile } from "../api";
 import { Segmented, Switch } from "../components/ui";
@@ -12,16 +12,16 @@ const BUFFERS = [
 ];
 
 const BUILTIN_EXCLUDES = [
-  { icon: Folder, title: "已有文件夹", text: "作为整体保留，不拆分内部文件（代码工程、模型装配等保持原有结构）" },
+  { icon: Folder, title: "已有文件夹", text: "作为整体保留，不拆分内部文件；文件夹开启“包含子文件夹”时才整理里面的文件" },
   { icon: KeyRound, title: "凭证文件", text: "私钥、证书、密码库、.env 等默认不移动" },
   { icon: Link, title: "快捷方式", text: ".lnk、.url、.webloc 等保留在原位，也不会影响它们指向的文件" },
-  { icon: ShieldCheck, title: "系统与隐藏文件", text: ".DS_Store、Thumbs.db、desktop.ini 以及隐藏文件" },
+  { icon: ShieldCheck, title: "系统与隐藏文件", text: ".DS_Store、Thumbs.db、desktop.ini；隐藏文件在文件夹开启“包含隐藏文件”时才整理" },
   { icon: TriangleAlert, title: "未完成或正在使用", text: "下载中的临时文件、Office 打开时的锁文件、被其他程序占用的文件" },
 ];
 
-export default function ScopePage() {
+/** 设置页里的“整理选项”：固定保留、新文件缓冲期、空文件夹、始终排除。 */
+export default function TidyOptions() {
   const { config, save, setView } = useStore();
-  const folders = config.folders ?? [];
   const protect = config.protect ?? [];
   const buffer = config.settings?.buffer ?? "none";
   const [pattern, setPattern] = useState("");
@@ -36,13 +36,6 @@ export default function ScopePage() {
     }
   };
 
-  const addFolder = async () => {
-    const dir = await pickFolder("添加要整理的文件夹");
-    if (dir && !folders.some((f) => f.path === dir)) {
-      await update({ ...config, folders: [...folders, { path: dir }] });
-    }
-  };
-
   const addProtect = async (entry: string | null) => {
     if (!entry) return;
     setError(null);
@@ -54,48 +47,13 @@ export default function ScopePage() {
   };
 
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <h1>范围与保护</h1>
-          <p className="sub">决定整理哪里、哪些东西永远不动。</p>
-        </div>
-      </div>
-
+    <>
       {error && (
         <div className="banner error">
           <TriangleAlert size={16} />
           {error}
         </div>
       )}
-
-      <div className="card">
-        <div className="card-head">
-          <h2>整理文件夹</h2>
-          <span className="muted">规则默认在这些文件夹里生效，只整理第一层的散落文件</span>
-          <span className="spacer" />
-          <button className="btn sm" onClick={addFolder}>
-            <FolderPlus size={15} /> 添加
-          </button>
-        </div>
-        {folders.length === 0 && <div className="list-row muted">还没有整理文件夹。</div>}
-        {folders.map((f, i) => (
-          <div key={f.path} className="list-row">
-            <Folder size={18} color="var(--accent)" />
-            <div className="row-main">
-              <div className="row-title">{baseName(f.path)}</div>
-              <div className="row-sub mono ellipsis">{f.path}</div>
-            </div>
-            <button
-              className="icon-btn"
-              aria-label="移除"
-              onClick={() => update({ ...config, folders: folders.filter((_, j) => j !== i) })}
-            >
-              <X size={16} />
-            </button>
-          </div>
-        ))}
-      </div>
 
       <div className="card">
         <div className="card-head">
@@ -173,10 +131,7 @@ export default function ScopePage() {
             options={BUFFERS}
           />
         </div>
-      </div>
-
-      <div className="card">
-        <div className="card-body row">
+        <div className="card-body row" style={{ borderTop: "1px solid var(--border)" }}>
           <div style={{ flex: 1 }}>
             <div>整理后删除变空的文件夹</div>
             <div className="muted" style={{ fontSize: 12.5 }}>只删除因为文件被移走而变空的文件夹；撤销时会重建</div>
@@ -210,6 +165,6 @@ export default function ScopePage() {
           </div>
         ))}
       </div>
-    </div>
+    </>
   );
 }

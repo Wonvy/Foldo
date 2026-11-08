@@ -77,6 +77,8 @@ fn main() {
             commands::autostart_enabled,
             commands::set_autostart,
             commands::check_update,
+            commands::export_rules,
+            commands::read_rules_file,
             commands::install_update,
             commands::reveal,
         ])

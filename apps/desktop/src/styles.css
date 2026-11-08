@@ -267,9 +267,15 @@ svg.lucide {
 
 .page-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px 16px;
+}
+
+.page-head > div:first-child {
+  flex: 1 1 260px;
+  min-width: 0;
 }
 
 .page-head .sub {
@@ -1481,37 +1487,33 @@ button.stat:hover {
   gap: 8px;
 }
 
-.action-kinds {
-  display: inline-flex;
-  padding: 2px;
-  border-radius: 9px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-}
-
-.action-kinds button {
+.action-kind {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 30px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.action-kinds button.on {
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px 0 11px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
+  font: inherit;
+  font-size: 13px;
   font-weight: 550;
-  box-shadow: 0 0 0 1px var(--border), var(--shadow-card);
+  cursor: pointer;
+  white-space: nowrap;
 }
 
-.action-kinds button.on svg {
+.action-kind:hover {
+  border-color: var(--border-strong, var(--muted));
+}
+
+.action-kind svg:first-child {
   color: var(--ok);
+}
+
+.action-kind svg:last-child {
+  color: var(--muted);
 }
 
 .dest {
@@ -2275,4 +2277,153 @@ html.float #root {
   padding: 10px 12px;
   max-height: 160px;
   overflow: auto;
+}
+
+.cchip.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.cchip.warn svg {
+  color: var(--warn);
+}
+
+/* ---------- 整理页：文件夹与规则 ---------- */
+.folder-panel {
+  padding: 4px 0;
+}
+
+.folder-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.folder-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.folder-name .row-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.folder-rules {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rule-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12.5px;
+  max-width: 220px;
+}
+
+.rule-chip.off {
+  background: var(--surface-2);
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.rule-chip button {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.rule-chip-name {
+  padding: 0 4px 0 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rule-chip-name:hover {
+  text-decoration: underline;
+}
+
+.rule-chip-x {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 2px;
+  border-radius: 5px;
+  opacity: 0.6;
+}
+
+.rule-chip-x:hover {
+  opacity: 1;
+  background: var(--hover);
+}
+
+.folder-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 16px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.folder-add:hover {
+  color: var(--accent);
+  background: var(--hover);
+}
+
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 760px) {
+  .folder-row {
+    grid-template-columns: 1fr auto;
+  }
+  .folder-rules {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+.summary-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  padding: 0 4px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.summary-line .link {
+  color: var(--muted);
+}
+
+.summary-line .link:hover {
+  color: var(--accent);
 }

@@ -1,7 +1,7 @@
 // 全局状态：配置文件与内置分类。各页面通过 useStore() 读取和保存。
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, errorText, type Category, type ConfigView, type FieldDef, type RuleFile, type VarDef } from "./api";
-import { setHome, type FieldMap } from "./rules";
+import { pruneFolderRules, setHome, type FieldMap } from "./rules";
 
 type Store = {
   view: ConfigView | null;
@@ -19,7 +19,7 @@ type Store = {
   setView: (v: ConfigView) => void;
 };
 
-const EMPTY: RuleFile = { version: 1, folders: [], protect: [], settings: { buffer: "10m" }, rules: [] };
+const EMPTY: RuleFile = { version: 2, folders: [], protect: [], settings: { buffer: "10m" }, rules: [] };
 
 const Ctx = createContext<Store | null>(null);
 
@@ -55,7 +55,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const save = useCallback(async (next: RuleFile) => {
     try {
-      setView(await api.saveConfig(next));
+      setView(await api.saveConfig(pruneFolderRules(next)));
     } catch (e) {
       throw errorText(e);
     }
@@ -84,6 +84,20 @@ export async function pickFolder(title: string): Promise<string | null> {
 }
 
 /** 选择文件（系统对话框）。取消时返回 null。 */
+/** 选择规则文件（YAML）。 */
+export async function pickRulesFile(title: string): Promise<string | null> {
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const r = await open({ directory: false, multiple: false, title, filters: [{ name: "Foldo 规则", extensions: ["yaml", "yml"] }] });
+  return typeof r === "string" ? r : null;
+}
+
+/** 选择保存位置。取消时返回 null。 */
+export async function pickSavePath(title: string, defaultPath: string): Promise<string | null> {
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const r = await save({ title, defaultPath, filters: [{ name: "Foldo 规则", extensions: ["yaml"] }] });
+  return r ?? null;
+}
+
 export async function pickFile(title: string): Promise<string | null> {
   const { open } = await import("@tauri-apps/plugin-dialog");
   const r = await open({ directory: false, multiple: false, title });

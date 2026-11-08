@@ -1,13 +1,13 @@
-import { Bell, CircleCheck, Code, Download, FolderOpen, Monitor, Moon, PauseCircle, RefreshCw, Sun, TriangleAlert, Zap } from "lucide-react";
+import { CircleCheck, Code, Download, FolderOpen, Monitor, Moon, RefreshCw, Sun, TriangleAlert } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { api, errorText, type AutoMode, type UpdateInfo, type WatchStatus } from "../api";
+import { api, errorText, type UpdateInfo } from "../api";
+import TidyOptions from "../components/TidyOptions";
 import { Segmented, Spinner, Switch } from "../components/ui";
 import { useStore } from "../store";
 import type { ThemePref } from "../theme";
 
 export default function SettingsPage({
-  watch,
   update,
   onUpdate,
   theme,
@@ -15,7 +15,6 @@ export default function SettingsPage({
   showAdvanced,
   onShowAdvanced,
 }: {
-  watch: WatchStatus | null;
   update: UpdateInfo | null;
   onUpdate: (u: UpdateInfo) => void;
   theme: ThemePref;
@@ -33,14 +32,12 @@ export default function SettingsPage({
         </div>
       </div>
 
-      <AutoCard watch={watch} />
-
       <div className="card">
         <div className="card-head">
-          <h2>外观</h2>
+          <h2>通用</h2>
         </div>
         <div className="card-body row">
-          <span className="text-2" style={{ width: 72 }}>
+          <span className="text-2" style={{ flex: 1 }}>
             主题
           </span>
           <Segmented
@@ -53,8 +50,13 @@ export default function SettingsPage({
             ]}
           />
         </div>
+        <AutostartRow />
       </div>
 
+      <h3 className="section-title">整理选项</h3>
+      <TidyOptions />
+
+      <h3 className="section-title">关于</h3>
       <UpdateCard update={update} onUpdate={onUpdate} />
 
       <div className="card">
@@ -167,77 +169,27 @@ function UpdateCard({ update, onUpdate }: { update: UpdateInfo | null; onUpdate:
   );
 }
 
-const AUTO_HINT: Record<AutoMode, string> = {
-  off: "只在你打开 Foldo 时整理",
-  notify: "有可以整理的文件时发通知，由你确认",
-  run: "按规则直接整理，可在历史里撤销；移到回收站仍需你确认",
-};
-
-function AutoCard({ watch }: { watch: WatchStatus | null }) {
-  const { config, save } = useStore();
-  const mode: AutoMode = config.settings?.auto ?? "off";
-  const [autostart, setAutostart] = useState<boolean | null>(null);
+function AutostartRow() {
+  const [on, setOn] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
-    api.autostartEnabled().then(setAutostart).catch(() => setAutostart(null));
+    api.autostartEnabled().then(setOn).catch(() => setOn(null));
   }, []);
-
-  const setMode = async (auto: AutoMode) => {
-    setError(null);
-    try {
-      await save({ ...config, settings: { ...config.settings, auto: auto === "off" ? undefined : auto } });
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const status = (() => {
-    if (!watch || mode === "off") return null;
-    if (watch.error) return <span style={{ color: "var(--danger)" }}>{watch.error}</span>;
-    const parts: string[] = [];
-    if (watch.last_check) parts.push(`${watch.last_check} 检查过`);
-    if (watch.pending) parts.push(mode === "run" ? `${watch.pending} 个文件等你确认移到回收站` : `${watch.pending} 个文件可以整理`);
-    if (watch.last_done) parts.push(`上次自动整理了 ${watch.last_done} 个`);
-    return parts.length ? parts.join(" · ") : "正在监听…";
-  })();
-
+  const mac = navigator.userAgent.includes("Mac");
   return (
-    <div className="card">
-      <div className="card-head">
-        <h2>后台自动整理</h2>
-        <span className="muted">关掉窗口后 Foldo 留在{navigator.userAgent.includes("Mac") ? "菜单栏" : "托盘"}里继续工作</span>
-      </div>
-      <div className="card-body" style={{ display: "grid", gap: 12 }}>
-        <div className="row">
-          <Segmented
-            value={mode}
-            onChange={(v) => void setMode(v)}
-            options={[
-              { value: "off", label: <><PauseCircle size={14} /> 关闭</> },
-              { value: "notify", label: <><Bell size={14} /> 先提醒我</> },
-              { value: "run", label: <><Zap size={14} /> 直接整理</> },
-            ]}
-          />
-          <span className="muted" style={{ fontSize: 12.5 }}>{AUTO_HINT[mode]}</span>
+    <div className="card-body row" style={{ borderTop: "1px solid var(--border)" }}>
+      <div style={{ flex: 1 }}>
+        <div className="text-2">开机时启动</div>
+        <div className="muted" style={{ fontSize: 12.5 }}>
+          {error ?? `只在${mac ? "菜单栏" : "托盘"}显示；关掉窗口后 Foldo 也会留在${mac ? "菜单栏" : "托盘"}里继续自动整理`}
         </div>
-        {status && (
-          <div className="row muted" style={{ fontSize: 12.5 }}>
-            <span className="dot-live" />
-            {status}
-          </div>
-        )}
-        <div className="row">
-          <span className="text-2" style={{ flex: 1 }}>开机时启动（只在{navigator.userAgent.includes("Mac") ? "菜单栏" : "托盘"}显示）</span>
-          <Switch
-            label="开机时启动"
-            on={!!autostart}
-            disabled={autostart === null}
-            onChange={(v) => api.setAutostart(v).then(setAutostart).catch((e) => setError(errorText(e)))}
-          />
-        </div>
-        {error && <div className="banner error selectable">{error}</div>}
       </div>
+      <Switch
+        label="开机时启动"
+        on={!!on}
+        disabled={on === null}
+        onChange={(v) => api.setAutostart(v).then(setOn).catch((e) => setError(errorText(e)))}
+      />
     </div>
   );
 }

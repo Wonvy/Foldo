@@ -35,3 +35,6 @@ plist = "1"
 
 [target."cfg(unix)".dependencies]
 xattr = "1"
+
+[target."cfg(windows)".dependencies]
+mslnk = "0.1"

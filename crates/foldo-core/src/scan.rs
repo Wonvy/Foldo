@@ -113,5 +113,16 @@ pub fn scan(root: &Path, recursive: bool, include_hidden: bool, protect: &Protec
             }
         }
     }
+    attach_peers(&mut res.files);
     res
+}
+
+/// 让同一次扫描的文件互相知道彼此，用于判断重复文件。
+pub fn attach_peers(files: &mut [FileCtx]) {
+    let peers = std::rc::Rc::new(crate::meta::Peers::new(
+        files.iter().map(|f| (f.path.as_path(), f.size, f.modified)),
+    ));
+    for f in files {
+        f.set_peers(peers.clone());
+    }
 }

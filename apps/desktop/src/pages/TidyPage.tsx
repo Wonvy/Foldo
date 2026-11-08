@@ -26,11 +26,15 @@ import {
   errorText,
   type ExecView,
   type FolderSuggestion,
+  type OpKind,
   type OpView,
   type PlanView,
   type SkipView,
   type UndoView,
+  type WatchStatus,
 } from "../api";
+import AutoMode from "../components/AutoMode";
+import FolderPanel from "../components/FolderPanel";
 import InspectDialog from "../components/InspectDialog";
 import UndoDialog from "../components/UndoDialog";
 import { Checkbox, FileIcon, Segmented, Spinner, useMenu } from "../components/ui";
@@ -43,7 +47,7 @@ type Item = {
   originDir: string;
   category: string | null;
   reason: string;
-  kind: "move" | "copy" | "rename" | "trash";
+  kind: OpKind;
   dir: string | null;
   dirDisplay: string | null;
   renamedTo: string | null;
@@ -51,6 +55,14 @@ type Item = {
 };
 
 type Section = { key: string; title: string; sub: string | null; items: Item[]; trash?: boolean };
+
+/** 原文件不动、只生成新东西的动作，在分组标题上注明。 */
+const SECTION_PREFIX: Partial<Record<OpKind, string>> = {
+  copy: "复制到 ",
+  extract: "解压到 ",
+  compress: "压缩到 ",
+  shortcut: "快捷方式放到 ",
+};
 
 const ATTENTION = new Set(["conflict", "invalid", "in_use"]);
 
@@ -80,15 +92,19 @@ function toItems(ops: OpView[]): Item[] {
 export default function TidyPage({
   dropped,
   scanRequest,
+  watch,
   onNewRule,
+  onEditRule,
 }: {
   dropped: { paths: string[]; n: number } | null;
   /** 每次变化都重新扫描（托盘“立即整理”）。 */
   scanRequest: number;
-  /** 跳到规则页并打开“新建规则”。 */
-  onNewRule: () => void;
+  watch: WatchStatus | null;
+  /** 跳到规则页并打开“新建规则”；指定文件夹时保存后加入这个文件夹。 */
+  onNewRule: (folder?: string) => void;
+  onEditRule: (name: string) => void;
 }) {
-  const { view, config, save, setView } = useStore();
+  const { view, config, setView } = useStore();
   const folders = config.folders ?? [];
   const configured = !!view?.exists && folders.length > 0;
 
@@ -164,7 +180,7 @@ export default function TidyPage({
         key = `${it.kind}:${it.dir}`;
         s = {
           key,
-          title: `${it.kind === "copy" ? "复制到 " : ""}${baseName(it.dir ?? "")}`,
+          title: `${SECTION_PREFIX[it.kind] ?? ""}${baseName(it.dir ?? "")}`,
           sub: it.dirDisplay,
         };
       }
@@ -272,41 +288,23 @@ export default function TidyPage({
   // ---------- 首次使用 ----------
   if (view && !configured) return <Onboarding onDone={() => void run(null)} />;
 
-  const addFolder = async () => {
-    const dir = await pickFolder("添加要整理的文件夹");
-    if (!dir || folders.some((f) => f.path === dir)) return;
-    try {
-      await save({ ...config, folders: [...folders, { path: dir }] });
-      void run(null);
-    } catch (e) {
-      setError(errorText(e));
-    }
-  };
-
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <h1>整理</h1>
-          <p className="sub">按你的规则给出整理建议，勾选后再执行；执行过的整理随时可以撤销。也可以把文件直接拖进窗口。</p>
+          <p className="sub">每个文件夹按添加的规则整理，先预览再执行，随时可以撤销。</p>
         </div>
-        <button className="btn primary" onClick={() => run(null)} disabled={busy !== null}>
-          {busy === "scan" ? <Spinner size={15} /> : <RefreshCw size={15} />}
-          {plan || result ? "重新扫描" : "扫描"}
-        </button>
+        <div className="page-actions">
+          <AutoMode watch={watch} />
+          <button className="btn primary" onClick={() => run(null)} disabled={busy !== null}>
+            {busy === "scan" ? <Spinner size={15} /> : <RefreshCw size={15} />}
+            {plan || result ? "重新扫描" : "扫描"}
+          </button>
+        </div>
       </div>
 
-      <div className="folder-bar">
-        {folders.map((f) => (
-          <span key={f.path} className="folder-chip" title={f.path}>
-            <Folder size={14} />
-            {baseName(f.path)}
-          </span>
-        ))}
-        <button className="btn ghost sm" onClick={addFolder}>
-          <FolderPlus size={15} /> 添加文件夹
-        </button>
-      </div>
+      <FolderPanel watch={watch} onAdded={() => void run(null)} onEditRule={onEditRule} onNewRule={onNewRule} />
 
       {error && (
         <div className="banner error">
@@ -329,7 +327,7 @@ export default function TidyPage({
         <div className="banner info">
           <WandSparkles size={16} />
           <span style={{ flex: 1 }}>还没有规则。Foldo 只会按你建的规则移动文件，其余文件保持原位。</span>
-          <button className="btn sm primary" onClick={onNewRule}>
+          <button className="btn sm primary" onClick={() => onNewRule()}>
             新建规则
           </button>
         </div>
@@ -403,25 +401,26 @@ export default function TidyPage({
       {/* ---------- 整理建议 ---------- */}
       {plan && (
         <>
-          <div className="stats">
-            <div className="stat">
-              <div className="num">{items.length}</div>
-              <div className="label">个文件有整理建议</div>
-            </div>
-            <button className="stat" onClick={() => document.getElementById("no-match")?.scrollIntoView({ behavior: "smooth" })}>
-              <div className="num">{noMatch.length}</div>
-              <div className="label">个文件没有匹配的规则</div>
-            </button>
-            <button
-              className="stat"
-              onClick={() => {
-                setShowKept(true);
-                setTimeout(() => document.getElementById("kept")?.scrollIntoView({ behavior: "smooth" }), 0);
-              }}
-            >
-              <div className="num">{kept.length + attention.length}</div>
-              <div className="label">项保持原位</div>
-            </button>
+          <div className="summary-line">
+            <span>
+              <b>{items.length}</b> 个文件待整理
+            </span>
+            {noMatch.length > 0 && (
+              <button className="link" onClick={() => document.getElementById("no-match")?.scrollIntoView({ behavior: "smooth" })}>
+                {noMatch.length} 个没有匹配的规则
+              </button>
+            )}
+            {kept.length + attention.length > 0 && (
+              <button
+                className="link"
+                onClick={() => {
+                  setShowKept(true);
+                  setTimeout(() => document.getElementById("kept")?.scrollIntoView({ behavior: "smooth" }), 0);
+                }}
+              >
+                {kept.length + attention.length} 项保持原位
+              </button>
+            )}
           </div>
 
           {attention.length > 0 && (
@@ -528,7 +527,7 @@ export default function TidyPage({
                 <h2>没有匹配规则的文件</h2>
                 <span className="muted">这些文件保持原位</span>
                 <span className="spacer" />
-                <button className="btn sm" onClick={onNewRule}>
+                <button className="btn sm" onClick={() => onNewRule()}>
                   <WandSparkles size={14} /> 新建规则
                 </button>
               </div>
@@ -674,7 +673,7 @@ function Onboarding({ onDone }: { onDone: () => void }) {
       await save({
         ...config,
         version: 1,
-        folders: chosen.map((path) => ({ path })),
+        folders: chosen.map((path) => ({ path, rules: [] })),
         settings: config.settings ?? { buffer: "10m" },
       });
       onDone();

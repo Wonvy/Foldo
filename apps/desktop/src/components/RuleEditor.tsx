@@ -1,6 +1,7 @@
 // 新建 / 编辑规则：“如果 … 就 …”。规则完全由用户填写，“用文件测试”只用来检查。
 import {
   ArrowRight,
+  ChevronDown,
   ChevronRight,
   CircleCheck,
   CircleX,
@@ -8,7 +9,10 @@ import {
   Copy,
   FolderOpen,
   Layers,
+  Link2,
   Lock,
+  Package,
+  PackageOpen,
   PenLine,
   Plus,
   ScanSearch,
@@ -19,28 +23,43 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, baseName, errorText, type RuleDef, type TestView } from "../api";
-import { emptyForm, formToRule, newTest, ruleToForm, tilde, type ActionKind, type ActionRow, type RuleForm } from "../rules";
+import { emptyForm, formToRule, newTest, renameInFolders, ruleToForm, tilde, type ActionKind, type ActionRow, type DestKind, type RuleForm, ACTION_DEFAULT_TO } from "../rules";
 import { pickFile, pickFolder, useStore } from "../store";
 import GroupEditor, { mapResults, type ResultMap } from "./ConditionTree";
 import InspectDialog from "./InspectDialog";
 import Popover from "./Popover";
-import { Checkbox, Modal, Segmented, Spinner, Switch } from "./ui";
+import { Modal, Spinner, Switch, useMenu } from "./ui";
 import VarMenu from "./VarMenu";
 
 const ACTIONS: { kind: ActionKind; label: string; icon: LucideIcon }[] = [
   { kind: "move", label: "移动", icon: ArrowRight },
   { kind: "copy", label: "复制", icon: Copy },
   { kind: "rename", label: "改名", icon: PenLine },
-  { kind: "trash", label: "回收", icon: Trash },
-  { kind: "keep", label: "不动", icon: Lock },
+  { kind: "extract", label: "解压", icon: PackageOpen },
+  { kind: "compress", label: "压缩", icon: Package },
+  { kind: "shortcut", label: "快捷方式", icon: Link2 },
+  { kind: "trash", label: "移到回收站", icon: Trash },
+  { kind: "keep", label: "保持原位", icon: Lock },
 ];
+
+const PLACEHOLDER: Record<DestKind, string> = {
+  move: "目标文件夹，如 照片/{modified:%Y}/",
+  copy: "目标文件夹，如 ~/备份/",
+  rename: "新文件名，如 {exif.taken:%Y%m%d}_{name}",
+  extract: "解压到的文件夹，相对压缩包所在位置，如 {stem}/",
+  compress: "压缩包名称，相对文件所在位置，如 {stem}.zip",
+  shortcut: "放快捷方式的文件夹，如 ~/Desktop/常用/",
+};
 
 export default function RuleEditor({
   index,
   testDrop,
+  assignTo,
   onClose,
   onOpenAdvanced,
 }: {
+  /** 新建时：保存后把规则加入这个文件夹。 */
+  assignTo?: string;
   /** 编辑第几条规则；null 表示新建。 */
   index: number | null;
   /** 拖进面板的文件：直接作为测试文件。 */
@@ -133,8 +152,18 @@ export default function RuleEditor({
     setSaving(true);
     setError(null);
     const next: RuleDef[] = index === null ? [...rules, b.rule] : rules.map((r, i) => (i === index ? b.rule : r));
+    // 改名时同步文件夹里的引用；新建时加入指定的文件夹
+    const base =
+      index === null
+        ? {
+            ...config,
+            folders: (config.folders ?? []).map((f) =>
+              f.path === assignTo ? { ...f, rules: [...(f.rules ?? []), b.rule.name] } : f,
+            ),
+          }
+        : renameInFolders(config, rules[index].name, b.rule.name);
     try {
-      await save({ ...config, rules: next });
+      await save({ ...base, rules: next });
       onClose();
     } catch (e) {
       setError(errorText(e));
@@ -180,9 +209,6 @@ export default function RuleEditor({
   }
 
   const moreSummary = [
-    form.scope === "all" ? "所有整理文件夹" : form.locations.map(baseName).join("、") || "指定文件夹",
-    form.recursive && "含子文件夹",
-    form.includeHidden && "含隐藏文件",
     form.exceptions.children.length > 0 && `${form.exceptions.children.length} 个例外`,
   ]
     .filter(Boolean)
@@ -256,52 +282,6 @@ export default function RuleEditor({
         </button>
         {showMore && (
           <div className="more-body">
-            <div className="opt-row">
-              <span className="opt-label">范围</span>
-              <Segmented
-                value={form.scope}
-                onChange={(scope) => set({ scope })}
-                options={[
-                  { value: "all", label: "所有整理文件夹" },
-                  { value: "custom", label: "指定文件夹" },
-                ]}
-              />
-            </div>
-            {form.scope === "custom" && (
-              <div className="opt-row">
-                <span className="opt-label" />
-                <div className="row" style={{ flexWrap: "wrap" }}>
-                  {form.locations.map((l) => (
-                    <span key={l} className="folder-chip" title={l}>
-                      {baseName(l)}
-                      <button className="icon-btn" aria-label="移除" onClick={() => set({ locations: form.locations.filter((x) => x !== l) })}>
-                        <X size={13} />
-                      </button>
-                    </span>
-                  ))}
-                  <button
-                    className="add-btn"
-                    onClick={async () => {
-                      const d = await pickFolder("选择这条规则生效的文件夹");
-                      if (d && !form.locations.includes(d)) set({ locations: [...form.locations, d] });
-                    }}
-                  >
-                    <Plus size={14} /> 文件夹
-                  </button>
-                </div>
-              </div>
-            )}
-            <div className="opt-row">
-              <span className="opt-label" />
-              <label className="row">
-                <Checkbox checked={form.recursive} onChange={(recursive) => set({ recursive })} label="包括子文件夹" />
-                子文件夹
-              </label>
-              <label className="row">
-                <Checkbox checked={form.includeHidden} onChange={(includeHidden) => set({ includeHidden })} label="包括隐藏文件" />
-                隐藏文件
-              </label>
-            </div>
             <div className="opt-row top">
               <span className="opt-label">例外</span>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -415,21 +395,36 @@ function TestChip({
 
 function ActionList({ rows, onChange }: { rows: ActionRow[]; onChange: (rows: ActionRow[]) => void }) {
   const update = (i: number, patch: Partial<ActionRow>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const menu = useMenu();
+  const defaultTo = (k: ActionKind) => (k === "trash" || k === "keep" ? undefined : ACTION_DEFAULT_TO[k]);
+  const pickKind = (el: HTMLElement, i: number) =>
+    menu.open(
+      el,
+      ACTIONS.map(({ kind, label, icon: Icon }) => ({
+        label,
+        icon: <Icon size={15} />,
+        onClick: () => {
+          // 原来的目标为空或是旧动作的默认值时，换成新动作的默认值
+          const old = rows[i];
+          const custom = old.to && old.to !== defaultTo(old.kind);
+          update(i, { kind, to: custom ? old.to : (defaultTo(kind) ?? "") });
+        },
+      })),
+    );
   return (
     <div className="cond-group">
-      {rows.map((a, i) => (
+      {rows.map((a, i) => {
+        const cur = ACTIONS.find((x) => x.kind === a.kind) ?? ACTIONS[0];
+        return (
         <div key={i} className="action-row">
-          <div className="action-kinds" role="radiogroup">
-            {ACTIONS.map(({ kind, label, icon: Icon }) => (
-              <button key={kind} className={a.kind === kind ? "on" : ""} title={label} onClick={() => update(i, { kind })}>
-                <Icon size={15} />
-                <span>{label}</span>
-              </button>
-            ))}
-          </div>
-          {(a.kind === "move" || a.kind === "copy" || a.kind === "rename") && (
+          <button className="action-kind" onClick={(e) => pickKind(e.currentTarget, i)}>
+            <cur.icon size={15} />
+            <span>{cur.label}</span>
+            <ChevronDown size={13} />
+          </button>
+          {a.kind !== "trash" && a.kind !== "keep" && (
             <div className="dest">
-              {a.kind !== "rename" && (
+              {(a.kind === "move" || a.kind === "copy" || a.kind === "shortcut" || a.kind === "extract") && (
                 <button
                   className="icon-btn"
                   title="选择文件夹"
@@ -443,8 +438,8 @@ function ActionList({ rows, onChange }: { rows: ActionRow[]; onChange: (rows: Ac
               )}
               <input
                 className="dest-input mono"
-                placeholder={a.kind === "rename" ? "新文件名，如 {exif.taken:%Y%m%d}_{name}" : "目标文件夹，如 照片/{modified:%Y}/"}
-                value={a.kind === "rename" ? a.to : tilde(a.to)}
+                placeholder={PLACEHOLDER[a.kind]}
+                value={a.kind === "rename" || a.kind === "compress" ? a.to : tilde(a.to)}
                 title={a.to}
                 onChange={(e) => update(i, { to: e.target.value })}
               />
@@ -466,7 +461,9 @@ function ActionList({ rows, onChange }: { rows: ActionRow[]; onChange: (rows: Ac
             </button>
           )}
         </div>
-      ))}
+        );
+      })}
+      {menu.node}
       <div className="add-row">
         <button className="add-btn" onClick={() => onChange([...rows, { kind: "move", to: "", onConflict: "rename" }])}>
           <Plus size={14} /> 再加一步

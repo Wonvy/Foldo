@@ -1,16 +1,15 @@
-import { Clock, FolderTree, Monitor, Moon, PictureInPicture2, Settings, ShieldCheck, Sparkles, Sun, Upload, WandSparkles } from "lucide-react";
+import { Clock, FolderTree, PictureInPicture2, Settings, Sparkles, Upload, WandSparkles } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type UpdateInfo, type WatchStatus } from "./api";
 import HistoryPage from "./pages/HistoryPage";
-import RulesPage from "./pages/RulesPage";
-import ScopePage from "./pages/ScopePage";
+import RulesPage, { type RuleRequest } from "./pages/RulesPage";
 import SettingsPage from "./pages/SettingsPage";
 import TidyPage from "./pages/TidyPage";
 import { StoreProvider, useStore } from "./store";
 import { applyTheme, loadTheme, type ThemePref } from "./theme";
 
-type Page = "tidy" | "rules" | "scope" | "history" | "settings";
+type Page = "tidy" | "rules" | "history" | "settings";
 
 export default function App() {
   return (
@@ -19,14 +18,6 @@ export default function App() {
     </StoreProvider>
   );
 }
-
-const THEME_NEXT: Record<ThemePref, ThemePref> = { system: "light", light: "dark", dark: "system" };
-const THEME_ICON: Record<ThemePref, ReactNode> = {
-  system: <Monitor size={16} />,
-  light: <Sun size={16} />,
-  dark: <Moon size={16} />,
-};
-const THEME_LABEL: Record<ThemePref, string> = { system: "跟随系统", light: "浅色", dark: "深色" };
 
 // 侧栏宽度：可拖动分隔条调整；拖到很窄时收成只有图标
 const SIDE_MIN = 160;
@@ -68,7 +59,7 @@ function Shell() {
   const pageRef = useRef<Page>("tidy");
   pageRef.current = page;
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [newRule, setNewRule] = useState(0);
+  const [ruleRequest, setRuleRequest] = useState<RuleRequest | null>(null);
   const [scanRequest, setScanRequest] = useState(0);
   const [watch, setWatch] = useState<WatchStatus | null>(null);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
@@ -182,7 +173,6 @@ function Shell() {
   const nav: { id: Page; label: string; icon: ReactNode; count?: number | string }[] = [
     { id: "tidy", label: "整理", icon: <Sparkles size={17} />, count: watch?.pending || undefined },
     { id: "rules", label: "规则", icon: <WandSparkles size={17} />, count: ruleCount || undefined },
-    { id: "scope", label: "范围与保护", icon: <ShieldCheck size={17} /> },
     { id: "history", label: "历史", icon: <Clock size={17} /> },
     { id: "settings", label: "设置", icon: <Settings size={17} />, count: update?.version ? "新" : undefined },
   ];
@@ -216,13 +206,6 @@ function Shell() {
           >
             <PictureInPicture2 size={16} />
           </button>
-          <button
-            className="icon-btn"
-            title={`主题：${THEME_LABEL[theme]}（点击切换）`}
-            onClick={() => setTheme(THEME_NEXT[theme])}
-          >
-            {THEME_ICON[theme]}
-          </button>
           <span className="muted label" style={{ fontSize: 12 }}>
             v0.1
           </span>
@@ -245,15 +228,20 @@ function Shell() {
           <TidyPage
             dropped={dropped}
             scanRequest={scanRequest}
-            onNewRule={() => {
+            watch={watch}
+            onNewRule={(folder) => {
               setPage("rules");
-              setNewRule((n) => n + 1);
+              setRuleRequest({ n: Date.now(), assignTo: folder });
+            }}
+            onEditRule={(name) => {
+              setPage("rules");
+              setRuleRequest({ n: Date.now(), edit: name });
             }}
           />
         </div>
         <div hidden={page !== "rules"}>
           <RulesPage
-            newRequest={newRule}
+            request={ruleRequest}
             dropped={rulesDrop}
             onOpenAdvanced={() => {
               setShowAdvanced(true);
@@ -261,14 +249,11 @@ function Shell() {
             }}
           />
         </div>
-        <div hidden={page !== "scope"}>
-          <ScopePage />
-        </div>
         <div hidden={page !== "history"}>
           <HistoryPage active={page === "history"} />
         </div>
         <div hidden={page !== "settings"}>
-          <SettingsPage watch={watch} update={update} onUpdate={setUpdate} theme={theme} onTheme={setTheme} showAdvanced={showAdvanced} onShowAdvanced={setShowAdvanced} />
+          <SettingsPage update={update} onUpdate={setUpdate} theme={theme} onTheme={setTheme} showAdvanced={showAdvanced} onShowAdvanced={setShowAdvanced} />
         </div>
       </main>
 

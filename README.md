@@ -6,7 +6,7 @@
 
 提供图形界面（Tauri）和命令行两种用法，两者共用同一份规则文件和操作日志。
 
-**怎么用**：先选要整理的文件夹，再在“规则”页新建规则，写明哪些文件放到哪里——条件可以是类型（图片、文档、3D 模型……）、扩展名、文件名、大小、修改或创建时间，还可以加例外；动作可以是移动、复制、改名、移到回收站或保持原位。规则可以随时编辑、停用、调整先后。扫描后先看整理建议，勾选后执行，随时可以撤销。也可以把文件拖进窗口，按规则处理（类似 DropIt）。
+**怎么用**：在“规则”页新建规则，写明哪些文件怎么处理：条件可以是类型、扩展名、文件名、大小、时间、图片尺寸、是否重复等，还可以加例外；动作可以是移动、复制、改名、解压、压缩、创建快捷方式、移到回收站或保持原位。然后在“整理”页给每个文件夹添加要用的规则。扫描后先看整理建议，勾选后执行，随时可以撤销；也可以让 Foldo 在后台监听文件夹自动整理，或把文件拖进窗口按规则处理（类似 DropIt）。
 
 Foldo 不会自己推断规则，也不会按类型自动整理：只有你建的规则会移动文件，没有规则命中的文件保持原位。
 
@@ -75,16 +75,17 @@ examples/rules.yaml  示例规则
    "c" > $HOME\FoldoTest\Inbox\笔记.txt
 
    @'
-   version: 1
+   version: 2
+   folders:
+     - path: ~/FoldoTest/Inbox
+       rules: [图片归档, 文档归档]
    rules:
      - name: 图片归档
-       locations: ["~/FoldoTest/Inbox"]
        conditions:
          - extension: [jpg, png]
        actions:
          - move: "~/FoldoTest/图片/{modified:%Y}/{modified:%m}/"
      - name: 文档归档
-       locations: ["~/FoldoTest/Inbox"]
        conditions:
          - extension: [pdf, docx]
        actions:
@@ -110,7 +111,7 @@ examples/rules.yaml  示例规则
 
 双击 `…-windows-x64-setup.exe` 安装，开始菜单里会出现 Foldo。安装程序和程序本身都还没有数字签名，同样需要点击“更多信息”→“仍要运行”。Windows 10 / 11 已自带 WebView2；如果缺失，安装程序会自动下载。
 
-第一次打开时会让你选择要整理的文件夹。试用时**建议只勾选一个测试文件夹**（点“选择其他文件夹…”，例如事先建好的 `FoldoTest`），再到“规则”页新建一两条规则（可以从模板开始），回到“整理”看清楚建议后再执行。
+第一次打开时会让你选择要整理的文件夹。试用时**建议只勾选一个测试文件夹**（点“选择其他文件夹…”，例如事先建好的 `FoldoTest`），再到“规则”页新建一两条规则，回到“整理”页把规则添加到这个文件夹，看清楚建议后再执行。
 
 ### 发布新版本
 
@@ -152,12 +153,17 @@ cargo build --release
 
 ## 配置文件参考
 
-图形界面的“规则”和“范围与保护”页面会读写这个文件；也可以直接编辑（图形界面里在“设置 → 编辑源码”）。
+图形界面的“整理”“规则”“设置”页面会读写这个文件；也可以直接编辑（图形界面里在“设置 → 编辑源码”）。
+
+规则只描述“什么样的文件 → 怎么处理”；每个整理文件夹再指定使用哪些规则。没有指定规则的文件夹不整理任何文件。
 
 ```yaml
-version: 1
-folders:                     # 整理范围
+version: 2
+folders:                     # 整理的文件夹
   - path: ~/Downloads
+    rules: [规则名, 另一条规则] # 这个文件夹使用的规则；执行顺序以下面 rules 的顺序为准
+    recursive: false         # 是否连子文件夹里的文件一起整理
+    include_hidden: false    # 是否处理隐藏文件
 protect:                     # 固定保留：路径或文件名通配符
   - ~/Downloads/重要合同
   - "*.lic"
@@ -168,13 +174,12 @@ settings:
 rules:
   - name: 规则名（唯一）
     enabled: true            # 默认 true
-    locations: ["~/Downloads"] # 不写则作用于全部 folders
-    recursive: false         # 是否扫描子文件夹
-    include_hidden: false    # 是否处理隐藏文件
     when: { all: [...] }     # 条件树，可任意嵌套 all / any / none / not；不写则匹配所有文件
     except: [...]            # 例外：命中任意一条则不适用
     actions: [...]
 ```
+
+旧的 `version: 1` 写法（规则里写 `locations` / `recursive`）读取时会自动转换：规则加入对应的文件夹，没写 `locations` 的规则加入全部文件夹，整理结果不变。图形界面保存时会写成新写法。
 
 **执行语义**
 
@@ -214,7 +219,7 @@ when:
 
 | 分组 | 字段 |
 |---|---|
-| 基本 | `name` `stem` `ext` `parent` `path` `size` `category` `mime`（按文件头识别的真实格式） `hidden` `readonly` `empty` |
+| 基本 | `name` `stem` `ext` `parent` `path` `size` `category` `mime`（按文件头识别的真实格式） `hidden` `readonly` `empty` `duplicate`（同一整理文件夹里有内容完全相同的文件，最早修改的一份不算） `duplicate.of`（原件文件名） |
 | 时间 | `created` `modified` `accessed`，以及分量 `modified.year` `.month` `.day` `.weekday`（周一为 1） `.hour`（`created.*` `accessed.*` 同理） |
 | 图片 | `image.width` `image.height` `image.pixels`（百万像素） `image.ratio` `image.orientation`（横 / 竖 / 方） |
 | 照片 EXIF | `exif.taken` `exif.make` `exif.model` `exif.lens` `exif.software` `exif.iso` `exif.focal` `exif.gps` |
@@ -231,13 +236,18 @@ when:
 
 | 动作 | 说明 |
 |---|---|
-| `move: "目标文件夹"` | 文件名不变；相对路径以规则的 location 为基准 |
+| `move: "目标文件夹"` | 文件名不变；相对路径以文件所在的整理文件夹为基准 |
 | `copy: "目标文件夹"` | 后续动作仍作用于原文件 |
 | `rename: "新文件名"` | 在原文件夹内改名 |
+| `extract: "{stem}/"` | 解压 zip 到文件夹（相对压缩包所在位置），原文件保留 |
+| `compress: "{stem}.zip"` | 压缩成 zip（相对文件所在位置），原文件保留 |
+| `shortcut: "~/Desktop/常用/"` | 在目标文件夹创建快捷方式（Windows 为 .lnk，其他系统为符号链接），原文件保留 |
 | `trash` | 移入系统回收站，必须是最后一个动作 |
 | `keep` | 保持原位（“这类文件别动”），只能单独使用 |
 
-`move` / `copy` / `rename` 也可以写成完整形式：`{ to: "...", on_conflict: rename | skip | overwrite }`。
+复制、解压、压缩、快捷方式的结果已经存在时视为已完成，不会每次扫描都再生成一份。撤销时：副本和快捷方式直接删除，解压出的文件夹和压缩包放进回收站。
+
+`move` / `copy` / `rename` / `extract` / `compress` / `shortcut` 也可以写成完整形式：`{ to: "...", on_conflict: rename | skip | overwrite }`。
 
 - `rename`（默认）：目标已存在时自动改成 `name (1).ext`
 - `skip`：跳过这个文件

@@ -308,6 +308,27 @@ pub static FIELDS: std::sync::LazyLock<Vec<FieldDef>> = std::sync::LazyLock::new
             "大小为 0",
             |f| Some(Value::Bool(f.size == 0))
         ),
+        field!(
+            "duplicate",
+            "重复文件",
+            "基本",
+            Bool,
+            None,
+            "同一个整理文件夹里有内容完全相同的文件；最早修改的一份算原件，不算重复",
+            |f| f.is_duplicate().map(Value::Bool)
+        ),
+        field!(
+            "duplicate.of",
+            "重复的原件",
+            "基本",
+            Text,
+            None,
+            "重复文件对应的原件文件名",
+            |f| f
+                .duplicate_original()
+                .and_then(|p| p.file_name())
+                .map(|n| Value::Text(n.to_string_lossy().into_owned()))
+        ),
         // ---------- 时间 ----------
         field!(
             "created",

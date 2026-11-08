@@ -1,24 +1,25 @@
 //! 配置校验与编译：把 YAML 结构变成可直接执行的 `RuleSet`。
 
 use crate::condition::Condition;
-use crate::config::{ActionDef, MatchMode, OnConflict, RuleDef, RuleFile};
+use crate::config::{ActionDef, FolderDef, MatchMode, OnConflict, RuleDef, RuleFile};
 use crate::error::{Error, Result};
 use crate::paths::{check_location, expand_home, path_key};
 use crate::protect::Protect;
 use crate::template::Template;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-pub const SUPPORTED_VERSION: u32 = 1;
+/// 当前的配置版本。version 1（规则自己写生效文件夹）读取时会自动迁移成 version 2（文件夹指定规则）。
+pub const SUPPORTED_VERSION: u32 = 2;
 
 /// 编译后的完整配置。只有用户建的规则会移动文件；没有规则命中的文件保持原位。
 #[derive(Debug)]
 pub struct RuleSet {
     /// 用户规则，按优先级排列。
     pub rules: Vec<Rule>,
-    /// 整理范围。
-    pub folders: Vec<PathBuf>,
+    /// 整理的文件夹，以及各自使用的规则。
+    pub folders: Vec<Folder>,
     pub protect: Protect,
     /// 新文件缓冲期。
     pub buffer: Duration,
@@ -28,15 +29,32 @@ pub struct RuleSet {
     pub clean_empty_folders: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct Folder {
+    pub path: PathBuf,
+    pub recursive: bool,
+    pub include_hidden: bool,
+    /// 使用的规则在 `RuleSet::rules` 中的位置，从小到大（即按优先级）。
+    pub rules: Vec<usize>,
+}
+
+impl Folder {
+    /// 这个文件夹的整理范围是否包含 `file`。
+    pub fn covers(&self, file: &Path) -> bool {
+        let Some(parent) = file.parent() else {
+            return false;
+        };
+        let (p, f) = (path_key(parent), path_key(&self.path));
+        p == f || (self.recursive && p.starts_with(&f) && p[f.len()..].starts_with(['/', '\\']))
+    }
+}
+
 #[derive(Debug)]
 pub struct Rule {
     pub name: String,
     /// 给用户看的“为什么这样整理”，如“规则「截图归档」”。
     pub reason: String,
     pub enabled: bool,
-    pub locations: Vec<PathBuf>,
-    pub recursive: bool,
-    pub include_hidden: bool,
     pub condition: Condition,
     /// 例外：命中则这条规则不适用。
     pub exception: Option<Condition>,
@@ -57,6 +75,18 @@ pub enum Action {
         to: Template,
         on_conflict: OnConflict,
     },
+    Extract {
+        to: Template,
+        on_conflict: OnConflict,
+    },
+    Compress {
+        to: Template,
+        on_conflict: OnConflict,
+    },
+    Shortcut {
+        to: Template,
+        on_conflict: OnConflict,
+    },
     Trash,
     Keep,
 }
@@ -73,14 +103,70 @@ pub fn load_rule_file(path: &Path) -> Result<RuleFile> {
 pub fn parse_rule_file(text: &str) -> Result<RuleFile> {
     // Windows PowerShell 5 和旧版记事本保存 UTF-8 时会在开头写入 BOM
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
-    let file: RuleFile = serde_yaml_ng::from_str(text)?;
-    if file.version != SUPPORTED_VERSION {
+    let mut file: RuleFile = serde_yaml_ng::from_str(text)?;
+    migrate(&mut file)?;
+    Ok(file)
+}
+
+/// 把旧写法转换成当前写法（可重复调用）：
+/// - 规则里的 `locations` / `recursive` / `include_hidden` 移到对应的文件夹上，规则加入这些文件夹
+/// - version 1 中没写 `locations` 的规则原本对全部文件夹生效，迁移后加入每个原有文件夹
+pub fn migrate(file: &mut RuleFile) -> Result<()> {
+    if file.version == 0 || file.version > SUPPORTED_VERSION {
         return Err(Error::Other(format!(
-            "不支持的规则文件版本 {}，当前只支持 version: {SUPPORTED_VERSION}",
+            "不支持的规则文件版本 {}，当前支持 version: 1 和 {SUPPORTED_VERSION}",
             file.version
         )));
     }
-    Ok(file)
+    let legacy = file.version < 2;
+    let RuleFile { folders, rules, .. } = file;
+    let original = folders.len();
+    if legacy {
+        for f in folders.iter_mut() {
+            f.rules.get_or_insert_with(Vec::new);
+        }
+    }
+    for r in rules.iter_mut() {
+        let locations = r.locations.take();
+        let recursive = std::mem::take(&mut r.recursive);
+        let hidden = std::mem::take(&mut r.include_hidden);
+        let targets: Vec<usize> = match locations {
+            Some(locs) => locs
+                .into_vec()
+                .iter()
+                .map(|loc| folder_index(folders, loc))
+                .collect(),
+            None if legacy => (0..original).collect(),
+            None => Vec::new(),
+        };
+        for i in targets {
+            let f = &mut folders[i];
+            f.recursive |= recursive;
+            f.include_hidden |= hidden;
+            let list = f.rules.get_or_insert_with(Vec::new);
+            if !list.contains(&r.name) {
+                list.push(r.name.clone());
+            }
+        }
+    }
+    file.version = SUPPORTED_VERSION;
+    Ok(())
+}
+
+fn folder_index(folders: &mut Vec<FolderDef>, loc: &str) -> usize {
+    let key = path_key(&expand_home(loc.trim()));
+    if let Some(i) = folders
+        .iter()
+        .position(|f| path_key(&expand_home(f.path.trim())) == key)
+    {
+        return i;
+    }
+    folders.push(FolderDef {
+        path: loc.trim().to_string(),
+        rules: Some(Vec::new()),
+        ..Default::default()
+    });
+    folders.len() - 1
 }
 
 impl RuleSet {
@@ -92,33 +178,62 @@ impl RuleSet {
         Self::from_file(parse_rule_file(text)?)
     }
 
-    pub fn from_file(file: RuleFile) -> Result<Self> {
+    pub fn from_file(mut file: RuleFile) -> Result<Self> {
         let config_err = |msg: String| Error::Other(format!("配置无效: {msg}"));
-
-        let mut folders: Vec<PathBuf> = Vec::new();
-        let mut seen_folders = HashSet::new();
-        for f in &file.folders {
-            let path = expand_home(f.path.trim());
-            check_location(&path, false).map_err(config_err)?;
-            if seen_folders.insert(path_key(&path)) {
-                folders.push(path);
-            }
-        }
+        migrate(&mut file)?;
 
         let protect = Protect::compile(&file.protect).map_err(config_err)?;
         let buffer = file.settings.buffer.map(|s| s.0).unwrap_or_default();
 
-        let mut names = HashSet::new();
+        let mut index: HashMap<String, usize> = HashMap::new();
         let mut rules = Vec::with_capacity(file.rules.len());
         for def in file.rules {
-            let rule = Rule::compile(def, &folders)?;
-            if !names.insert(rule.name.clone()) {
+            let rule = Rule::compile(def)?;
+            if index.insert(rule.name.clone(), rules.len()).is_some() {
                 return Err(Error::InvalidRule {
                     rule: rule.name,
                     msg: "规则名称重复".into(),
                 });
             }
             rules.push(rule);
+        }
+
+        // 同一个文件夹写了多次时合并
+        let mut folders: Vec<Folder> = Vec::new();
+        let mut by_key: HashMap<String, usize> = HashMap::new();
+        for f in &file.folders {
+            let path = expand_home(f.path.trim());
+            let mut used = Vec::new();
+            for name in f.rules.iter().flatten() {
+                let i = *index.get(name.trim()).ok_or_else(|| {
+                    config_err(format!(
+                        "文件夹 {} 使用了不存在的规则「{name}」",
+                        crate::paths::display(&path)
+                    ))
+                })?;
+                used.push(i);
+            }
+            let folder = match by_key.get(&path_key(&path)) {
+                Some(&i) => &mut folders[i],
+                None => {
+                    by_key.insert(path_key(&path), folders.len());
+                    folders.push(Folder {
+                        path,
+                        recursive: false,
+                        include_hidden: false,
+                        rules: Vec::new(),
+                    });
+                    folders.last_mut().expect("刚放入")
+                }
+            };
+            folder.recursive |= f.recursive;
+            folder.include_hidden |= f.include_hidden;
+            folder.rules.extend(used);
+            folder.rules.sort_unstable();
+            folder.rules.dedup();
+        }
+        for f in &folders {
+            check_location(&f.path, f.recursive).map_err(config_err)?;
         }
 
         Ok(Self {
@@ -134,11 +249,19 @@ impl RuleSet {
     pub fn get(&self, name: &str) -> Option<&Rule> {
         self.rules.iter().find(|r| r.name == name)
     }
+
+    pub fn index_of(&self, name: &str) -> Option<usize> {
+        self.rules.iter().position(|r| r.name == name)
+    }
+
+    /// 使用某条规则的文件夹。
+    pub fn folders_using(&self, rule: usize) -> impl Iterator<Item = &Folder> {
+        self.folders.iter().filter(move |f| f.rules.contains(&rule))
+    }
 }
 
 impl Rule {
-    /// `default_locations`：规则没写 `locations` 时使用（即整理范围里的全部文件夹）。
-    pub fn compile(def: RuleDef, default_locations: &[PathBuf]) -> Result<Self> {
+    pub fn compile(def: RuleDef) -> Result<Self> {
         let name = def.name.trim().to_string();
         let invalid = |msg: String| Error::InvalidRule {
             rule: if name.is_empty() {
@@ -150,23 +273,6 @@ impl Rule {
         };
         if name.is_empty() {
             return Err(invalid("name 不能为空".into()));
-        }
-
-        let locations: Vec<PathBuf> = match def.locations {
-            Some(locs) => locs
-                .into_vec()
-                .iter()
-                .map(|s| expand_home(s.trim()))
-                .collect(),
-            None => default_locations.to_vec(),
-        };
-        if locations.is_empty() {
-            return Err(invalid(
-                "没有指定 locations，也没有设置整理文件夹（folders）".into(),
-            ));
-        }
-        for loc in &locations {
-            check_location(loc, def.recursive).map_err(invalid)?;
         }
 
         let compile_list = |list: &[crate::config::ConditionDef]| {
@@ -225,6 +331,27 @@ impl Rule {
                         on_conflict,
                     }
                 }
+                ActionDef::Extract(d) => {
+                    let (to, on_conflict) = d.into_parts();
+                    Action::Extract {
+                        to: tpl(to)?,
+                        on_conflict,
+                    }
+                }
+                ActionDef::Compress(d) => {
+                    let (to, on_conflict) = d.into_parts();
+                    Action::Compress {
+                        to: tpl(to)?,
+                        on_conflict,
+                    }
+                }
+                ActionDef::Shortcut(d) => {
+                    let (to, on_conflict) = d.into_parts();
+                    Action::Shortcut {
+                        to: tpl(to)?,
+                        on_conflict,
+                    }
+                }
                 ActionDef::Trash => {
                     if i != last {
                         return Err(invalid("trash 必须是最后一个动作".into()));
@@ -244,9 +371,6 @@ impl Rule {
             reason: format!("规则「{name}」"),
             name,
             enabled: def.enabled,
-            locations,
-            recursive: def.recursive,
-            include_hidden: def.include_hidden,
             condition,
             exception,
             actions,

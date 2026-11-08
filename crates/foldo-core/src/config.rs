@@ -36,7 +36,7 @@ fn is_false(b: &bool) -> bool {
 #[serde(deny_unknown_fields)]
 pub struct RuleFile {
     pub version: u32,
-    /// 整理范围：要整理的文件夹。规则不写 `locations` 时对这里的全部文件夹生效。
+    /// 整理的文件夹，每个文件夹指定用哪些规则。
     /// 只有规则命中的文件才会被移动，其余文件保持原位。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub folders: Vec<FolderDef>,
@@ -57,10 +57,20 @@ impl RuleFile {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FolderDef {
     pub path: String,
+    /// 是否连子文件夹里的文件一起整理。
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub recursive: bool,
+    /// 是否处理隐藏文件。
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub include_hidden: bool,
+    /// 用在这个文件夹的规则名称。执行顺序以 `rules` 列表的顺序为准。
+    /// 没有写（或为空）时这个文件夹不整理任何文件。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rules: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -108,14 +118,14 @@ pub struct RuleDef {
     pub name: String,
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub enabled: bool,
-    /// 不填时对 `folders` 里的全部文件夹生效。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// 旧版（version 1）写法：规则自己的生效文件夹。读取时自动移到 `folders` 里，不再写出。
+    #[serde(default, skip_serializing)]
     pub locations: Option<OneOrMany<String>>,
-    /// 是否扫描子文件夹。
-    #[serde(default, skip_serializing_if = "is_false")]
+    /// 旧版写法，读取时移到对应文件夹的 `recursive`。
+    #[serde(default, skip_serializing)]
     pub recursive: bool,
-    /// 是否处理隐藏文件。
-    #[serde(default, skip_serializing_if = "is_false")]
+    /// 旧版写法，读取时移到对应文件夹的 `include_hidden`。
+    #[serde(default, skip_serializing)]
     pub include_hidden: bool,
     #[serde(rename = "match", default, skip_serializing_if = "MatchMode::is_all")]
     pub match_mode: MatchMode,
@@ -190,6 +200,12 @@ pub enum ActionDef {
     Copy(DestDef),
     /// 在原文件夹内改名。
     Rename(DestDef),
+    /// 解压 zip 到文件夹（相对路径以文件所在文件夹为准，如 `{stem}/`）。原文件保留，后续动作继续作用于它。
+    Extract(DestDef),
+    /// 压缩成 zip（如 `{stem}.zip`，相对文件所在文件夹）。原文件保留。
+    Compress(DestDef),
+    /// 在目标文件夹里创建指向这个文件的快捷方式。原文件保留。
+    Shortcut(DestDef),
     /// 移入系统回收站，必须是最后一个动作。
     Trash,
     /// 保持原位：命中这条规则的文件不移动（用于“这类文件别动”）。只能单独使用。

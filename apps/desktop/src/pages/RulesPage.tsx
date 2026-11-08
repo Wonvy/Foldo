@@ -8,11 +8,15 @@ import {
   Copy,
   Ellipsis,
   FileDown,
+  FileUp,
   FileSearch,
   Folder,
   GripVertical,
   Layers,
+  Link2,
   Lock,
+  Package,
+  PackageOpen,
   PenLine,
   Pencil,
   Plus,
@@ -30,26 +34,32 @@ import { GroupIcon } from "../components/FieldPicker";
 import InspectDialog from "../components/InspectDialog";
 import RuleEditor from "../components/RuleEditor";
 import { FileIcon, Spinner, Switch, useMenu } from "../components/ui";
-import { describeConditions, ruleChips, tilde, type ActionKind } from "../rules";
-import { pickFile, useStore } from "../store";
+import { describeConditions, foldersUsing, ruleChips, tilde, type ActionKind } from "../rules";
+import { pickFile, pickRulesFile, pickSavePath, useStore } from "../store";
 
 const ACTION_ICON: Record<ActionKind, LucideIcon> = {
   move: ArrowRight,
   copy: Copy,
   rename: PenLine,
+  extract: PackageOpen,
+  compress: Package,
+  shortcut: Link2,
   trash: Trash,
   keep: Lock,
 };
 
 const MAX_CHIPS = 3;
 
+/** 其他页面请求打开规则编辑：编辑某条规则，或新建（可指定保存后加入的文件夹）。 */
+export type RuleRequest = { n: number; edit?: string; assignTo?: string };
+
 export default function RulesPage({
-  newRequest,
+  request,
   dropped,
   onOpenAdvanced,
 }: {
   /** 其他页面请求“新建规则”时变化。 */
-  newRequest: number;
+  request: RuleRequest | null;
   /** 拖到规则页的文件：编辑面板打开时作为测试文件，否则用来调试规则。 */
   dropped: { paths: string[]; n: number } | null;
   onOpenAdvanced: () => void;
@@ -61,6 +71,8 @@ export default function RulesPage({
   // undefined：没打开；null：新建；数字：编辑第几条
   const [editing, setEditing] = useState<number | null | undefined>(undefined);
   const [testDrop, setTestDrop] = useState<{ path: string; n: number } | null>(null);
+  // 新建的规则保存后加入这个文件夹
+  const [assignTo, setAssignTo] = useState<string | undefined>(undefined);
   const menu = useMenu();
 
   // 调试
@@ -72,8 +84,16 @@ export default function RulesPage({
   const [inspect, setInspect] = useState<string | null>(null);
 
   useEffect(() => {
-    if (newRequest > 0) setEditing(null);
-  }, [newRequest]);
+    if (!request) return;
+    if (request.edit !== undefined) {
+      const i = rules.findIndex((r) => r.name === request.edit);
+      if (i >= 0) setEditing(i);
+    } else {
+      setAssignTo(request.assignTo);
+      setEditing(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request]);
 
   useEffect(() => {
     if (!dropped || dropped.paths.length === 0) return;
@@ -105,6 +125,41 @@ export default function RulesPage({
     if (current) void runDebug(current);
     else setDebug(null);
   }, [current, config, runDebug]);
+
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const exportRules = async (names: string[]) => {
+    setError(null);
+    const file = names.length === 1 ? `${names[0]}.yaml` : "Foldo 规则.yaml";
+    const path = await pickSavePath("导出规则", file);
+    if (!path) return;
+    try {
+      const n = await api.exportRules(names, path);
+      setNotice(`已导出 ${n} 条规则`);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
+  const importRules = async () => {
+    setError(null);
+    const path = await pickRulesFile("导入规则");
+    if (!path) return;
+    try {
+      const incoming = await api.readRulesFile(path);
+      const names = new Set(rules.map((r) => r.name));
+      const added = incoming.map((r) => {
+        let name = r.name;
+        for (let n = 1; names.has(name); n++) name = n === 1 ? `${r.name}（导入）` : `${r.name}（导入 ${n}）`;
+        names.add(name);
+        return { ...r, name };
+      });
+      await save({ ...config, rules: [...rules, ...added] });
+      setNotice(`已导入 ${added.length} 条规则。在整理页把它们添加到文件夹后才会生效。`);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
 
   const update = async (next: RuleDef[]) => {
     setError(null);
@@ -201,8 +256,32 @@ export default function RulesPage({
           <button className="btn primary" onClick={() => setEditing(null)}>
             <Plus size={16} /> 新建规则
           </button>
+          <button
+            className="icon-btn"
+            aria-label="更多"
+            onClick={(e) =>
+              menu.open(e.currentTarget, [
+                { label: "导入规则…", icon: <FileUp size={15} />, onClick: importRules },
+                ...(rules.length
+                  ? [{ label: "导出全部规则…", icon: <FileDown size={15} />, onClick: () => exportRules([]) }]
+                  : []),
+              ])
+            }
+          >
+            <Ellipsis size={16} />
+          </button>
         </div>
       </div>
+
+      {notice && (
+        <div className="banner info">
+          <CircleCheck size={16} />
+          <span style={{ flex: 1 }}>{notice}</span>
+          <button className="icon-btn" aria-label="关闭" onClick={() => setNotice(null)}>
+            <X size={15} />
+          </button>
+        </div>
+      )}
 
       {view?.error && (
         <div className="banner error">
@@ -277,15 +356,23 @@ export default function RulesPage({
                       </span>
                     )}
                     {debug && !winner && hit?.matched && enabled && <span className="chip">也满足</span>}
-                    {debug && hit?.matched && !hit.in_scope && <span className="chip warn">不在范围</span>}
+                    {debug && hit?.matched && !hit.in_scope && <span className="chip warn" title="这个文件所在的文件夹没有使用这条规则">文件夹未使用</span>}
                   </div>
                   <div className="rule-chips">
-                    {r.locations && (
-                      <span className="cchip scope" title={(Array.isArray(r.locations) ? r.locations : [r.locations]).map(tilde).join("\n")}>
-                        <Folder size={12} />
-                        {(Array.isArray(r.locations) ? r.locations : [r.locations]).map(baseName).join("、")}
-                      </span>
-                    )}
+                    {(() => {
+                      const used = foldersUsing(config, r.name);
+                      return used.length ? (
+                        <span className="cchip scope" title={used.map((f) => tilde(f.path)).join("\n")}>
+                          <Folder size={12} />
+                          {used.map((f) => baseName(f.path)).join("、")}
+                        </span>
+                      ) : (
+                        <span className="cchip warn" title="在“文件夹”页把这条规则添加到文件夹后才会生效">
+                          <Folder size={12} />
+                          未用于文件夹
+                        </span>
+                      );
+                    })()}
                     {chips.mode !== "all" && chips.conds.length > 1 && <span className="cchip mode">{chips.mode === "any" ? "任一" : "都不"}</span>}
                     {chips.conds.length === 0 && <span className="cchip">所有文件</span>}
                     {chips.conds.slice(0, MAX_CHIPS).map((c, k) => (
@@ -328,6 +415,7 @@ export default function RulesPage({
                       menu.open(e.currentTarget, [
                         { label: "编辑", icon: <Pencil size={15} />, onClick: () => setEditing(i) },
                         { label: "复制一份", icon: <Copy size={15} />, onClick: () => duplicate(i) },
+                        { label: "导出…", icon: <FileDown size={15} />, onClick: () => exportRules([r.name]) },
                         ...(i > 0 ? [{ label: "移到最前", icon: <ArrowUpToLine size={15} />, onClick: () => moveTo(i, 0) }] : []),
                         ...(i < rules.length - 1
                           ? [{ label: "移到最后", icon: <ArrowDownToLine size={15} />, onClick: () => moveTo(i, rules.length - 1) }]
@@ -415,9 +503,11 @@ export default function RulesPage({
         <RuleEditor
           index={editing}
           testDrop={testDrop}
+          assignTo={editing === null ? assignTo : undefined}
           onClose={() => {
             setEditing(undefined);
             setTestDrop(null);
+            setAssignTo(undefined);
           }}
           onOpenAdvanced={onOpenAdvanced}
         />

@@ -75,8 +75,19 @@ fn check(rec: &OpRecord, exists: &dyn Fn(&Path) -> bool) -> std::result::Result<
             }
             Ok(())
         }
+        "extract" | "compress" | "shortcut" => {
+            if !exists(dst) {
+                return Err(format!("{} 已不存在", display(dst)));
+            }
+            Ok(())
+        }
         other => Err(format!("未知的操作类型 {other}")),
     }
+}
+
+/// 这类操作执行后原文件仍在原处，撤销时只需删掉生成的东西。
+fn creates_only(kind: &str) -> bool {
+    matches!(kind, "copy" | "extract" | "compress" | "shortcut")
 }
 
 /// 撤销预览：逐项说明能否恢复。按真实撤销的顺序模拟文件状态，所以“改名 → 移动”这样的链条也能正确判断。
@@ -109,7 +120,7 @@ pub fn preview_undo(journal: &Journal, batch_id: i64) -> Result<Vec<UndoCheck>> 
                     if let Some(dst) = &rec.dst {
                         overlay.insert(path_key(dst), false);
                     }
-                    if rec.kind != "copy" {
+                    if !creates_only(&rec.kind) {
                         overlay.insert(path_key(&rec.src), true);
                     }
                     (UndoOutcome::Restore, None)
@@ -148,13 +159,18 @@ pub fn undo_batch(journal: &Journal, batch_id: i64) -> Result<UndoReport> {
             }
             _ => check(rec, &exists).and_then(|()| {
                 let dst = rec.dst.as_ref().expect("check 已确认有目标路径");
-                if rec.kind == "copy" {
-                    std::fs::remove_file(dst).map_err(|e| e.to_string())?;
-                } else {
-                    if let Some(parent) = rec.src.parent() {
-                        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                match rec.kind.as_str() {
+                    "copy" | "shortcut" => {
+                        std::fs::remove_file(dst).map_err(|e| e.to_string())?;
                     }
-                    fsops::move_file(dst, &rec.src).map_err(|e| e.to_string())?;
+                    // 解压出的文件夹和压缩包可能被用户改动过，放进回收站而不是直接删除
+                    "extract" | "compress" => fsops::trash(dst)?,
+                    _ => {
+                        if let Some(parent) = rec.src.parent() {
+                            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                        }
+                        fsops::move_file(dst, &rec.src).map_err(|e| e.to_string())?;
+                    }
                 }
                 Ok(true)
             }),
