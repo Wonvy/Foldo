@@ -174,6 +174,34 @@ jobs:
           echo "36a2d7e274d12e1050d0e9ecfe11d339ed54720b2bec464c286d53f8b07f5c62  $tool.part" | sha256sum --check
           chmod +x "$tool.part"
           mv "$tool.part" "$tool"
+      - name: Download verified Windows installer tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Same NSIS 3.13 and helper 0.5.3 required by Tauri CLI 2.12.4.
+          $downloadDir = Join-Path $env:RUNNER_TEMP 'foldo-nsis'
+          New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
+          $assets = @(
+            @{ Name = 'nsis.zip'; Url = 'https://api.github.com/repos/tauri-apps/binary-releases/releases/assets/623832696'; Hash = 'ba63dffc4410ee89193e1cb5a41989991bd77c61068da17e3156d136b7b0b3d8' },
+            @{ Name = 'nsis_tauri_utils.dll'; Url = 'https://api.github.com/repos/tauri-apps/nsis-tauri-utils/releases/assets/345882097'; Hash = '5ba143b5db4a87d32d6e7802e033330aae56cbceabe0d1e3ba41948385ad4709' }
+          )
+          foreach ($asset in $assets) {
+            $file = Join-Path $downloadDir $asset.Name
+            curl.exe --fail --location --retry 3 --retry-all-errors --connect-timeout 15 --max-time 120 `
+              -H "Authorization: Bearer $env:GH_TOKEN" -H 'Accept: application/octet-stream' $asset.Url --output $file
+            if ($LASTEXITCODE -ne 0) { throw "Download failed: $($asset.Name)" }
+            if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $asset.Hash) { throw "Checksum mismatch: $($asset.Name)" }
+          }
+          Expand-Archive -LiteralPath (Join-Path $downloadDir 'nsis.zip') -DestinationPath $downloadDir -Force
+          $nsisCache = Join-Path $env:LOCALAPPDATA 'tauri\NSIS'
+          New-Item -ItemType Directory -Force -Path $nsisCache | Out-Null
+          Copy-Item -Path (Join-Path $downloadDir 'nsis-3.13\*') -Destination $nsisCache -Recurse -Force
+          $plugins = Join-Path $nsisCache 'Plugins\x86-unicode\additional'
+          New-Item -ItemType Directory -Force -Path $plugins | Out-Null
+          Copy-Item -LiteralPath (Join-Path $downloadDir 'nsis_tauri_utils.dll') -Destination $plugins -Force
       - name: Build signed installer
         working-directory: apps/desktop
         env:
