@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, Clock, RefreshCw, RotateCcw, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { api, errorText, KIND_LABEL, STATUS_LABEL, type Batch, type OpRecord, type UndoView } from "../api";
+import { api, errorText, KIND_LABEL, STATUS_LABEL, type Batch, type OpRecord, type Stats, type UndoView } from "../api";
+import { formatBytes } from "../rules";
 import UndoDialog from "../components/UndoDialog";
 import { t } from "../i18n";
 
@@ -21,7 +22,12 @@ export default function HistoryPage({ active }: { active: boolean }) {
   const [undoFor, setUndoFor] = useState<number | null>(null);
   const [lastUndo, setLastUndo] = useState<UndoView | null>(null);
 
+  const [stats, setStats] = useState<Stats | null>(null);
   const refresh = useCallback(() => {
+    api
+      .stats()
+      .then(setStats)
+      .catch(() => setStats(null));
     api
       .history()
       .then((b) => {
@@ -57,6 +63,31 @@ export default function HistoryPage({ active }: { active: boolean }) {
           <RefreshCw size={15} /> {t("刷新")}
         </button>
       </div>
+
+      {stats && stats.files + stats.auto_runs + stats.manual_runs > 0 && (
+        <div className="card stats-card">
+          <div className="stat-cell">
+            <div className="num">{stats.files}</div>
+            <div className="muted">{t("本月整理的文件")}</div>
+          </div>
+          <div className="stat-cell">
+            <div className="num">{formatBytes(stats.trashed_bytes)}</div>
+            <div className="muted">{t("移到回收站腾出的空间（{0} 个文件）", [stats.trashed])}</div>
+          </div>
+          <div className="stat-cell">
+            <div className="num">
+              {stats.auto_runs} / {stats.manual_runs}
+            </div>
+            <div className="muted">{t("自动 / 手动整理次数")}</div>
+          </div>
+          {stats.top_rules.length > 0 && (
+            <div className="stat-cell wide">
+              <div className="muted">{t("用得最多的规则")}</div>
+              <div className="ellipsis">{stats.top_rules.map(([name, n]) => t("{0}（{1} 次）", [name, n])).join(t("、"))}</div>
+            </div>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="banner error">

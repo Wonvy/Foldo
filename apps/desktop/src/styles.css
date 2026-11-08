@@ -2110,8 +2110,35 @@ html.float #root {
   flex: 1;
 }
 
-.float-item.off {
+.float-item:not(.skip) {
+  cursor: pointer;
+}
+
+.float-item:hover {
+  background: var(--hover);
+}
+
+.float-item.off .name,
+.float-item.off .float-to,
+.float-item.skip {
   opacity: 0.55;
+}
+
+.float-item .checkbox-space {
+  width: 16px;
+  flex: none;
+}
+
+/* 移除按钮：悬停时才显示 */
+.float-item .float-remove {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  visibility: hidden;
+}
+
+.float-item:hover .float-remove {
+  visibility: visible;
 }
 
 .float-to {
@@ -2489,6 +2516,47 @@ html.float #root {
   padding: 4px 0;
 }
 
+.profile-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 8px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  min-width: 0;
+}
+
+.profile-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.profile-btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.profile-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: 12.5px;
+}
+
 .folder-row {
   display: grid;
   grid-template-columns: minmax(150px, 220px) 1fr auto;
@@ -2810,4 +2878,80 @@ html.float #root {
 .setup-title {
   font-weight: 600;
   margin-bottom: 2px;
+}
+
+/* 虚拟列表：只渲染屏幕附近的行，用分段的边框拼出卡片的样子 */
+.vlist {
+  position: relative;
+}
+
+.vrow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.vrow.head,
+.vrow.item {
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.vrow.head {
+  border-top: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.vrow.item .list-row {
+  border-top: 1px solid var(--border);
+}
+
+.vrow.head + .vrow.item .list-row {
+  border-top: 0;
+}
+
+.vrow.item.last {
+  border-bottom: 1px solid var(--border);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.vrow.gap {
+  height: 14px;
+}
+
+.scan-progress {
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 历史页顶部的本月统计 */
+.stats-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 0;
+  padding: 6px 4px;
+}
+
+.stat-cell {
+  flex: 1 1 150px;
+  padding: 10px 16px;
+  min-width: 0;
+}
+
+.stat-cell.wide {
+  flex-basis: 100%;
+  border-top: 1px solid var(--border);
+}
+
+.stat-cell .num {
+  font-size: 22px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-cell .muted {
+  font-size: 12.5px;
 }

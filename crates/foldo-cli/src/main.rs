@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use foldo_core::journal::status;
 use foldo_core::paths::{default_data_dir, default_rules_path, display};
 use foldo_core::{
@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 /// 单次操作数超过这个值时额外提醒。
 const LARGE_BATCH: usize = 500;
 
+// i18n-help-start：下面的说明文字是命令行帮助，启动时按语言翻译（翻译完整性测试会检查这一段）
 #[derive(Parser)]
 #[command(name = "foldo", version, about = "Foldo — 按规则整理文件夹")]
 struct Cli {
@@ -77,6 +78,31 @@ enum Cmd {
     },
 }
 
+// i18n-help-end
+
+/// 把帮助里的说明文字换成当前语言（命令、子命令和参数的说明）。
+fn localize(mut cmd: clap::Command) -> clap::Command {
+    use foldo_core::i18n::tr;
+    if let Some(about) = cmd.get_about().map(|s| s.to_string()) {
+        cmd = cmd.about(tr(&about));
+    }
+    let helps: Vec<(clap::Id, String)> = cmd
+        .get_arguments()
+        .filter_map(|a| Some((a.get_id().clone(), a.get_help()?.to_string())))
+        .collect();
+    for (id, help) in helps {
+        cmd = cmd.mut_arg(id, |a| a.help(tr(&help)));
+    }
+    let subs: Vec<String> = cmd
+        .get_subcommands()
+        .map(|c| c.get_name().to_string())
+        .collect();
+    for name in subs {
+        cmd = cmd.mut_subcommand(name, localize);
+    }
+    cmd
+}
+
 /// 命令行的语言：环境变量 FOLDO_LANG 优先，其次是系统的 LC_ALL / LC_MESSAGES / LANG；都没有时用简体中文。
 fn init_locale() {
     let lang = ["FOLDO_LANG", "LC_ALL", "LC_MESSAGES", "LANG"]
@@ -97,7 +123,8 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let cli = Cli::parse();
+    let matches = localize(Cli::command()).get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
     let rules_path = cli.rules.clone().unwrap_or_else(default_rules_path);
     let data_dir = cli.data_dir.clone().unwrap_or_else(default_data_dir);
 
@@ -141,6 +168,7 @@ fn run() -> Result<()> {
             }
             let journal = Journal::open_in(&data_dir)?;
             let report = execute(&plan, &journal, "cli")?;
+            journal.prune(rules.keep_history_days)?;
             println!(
                 "{}",
                 foldo_core::t!(

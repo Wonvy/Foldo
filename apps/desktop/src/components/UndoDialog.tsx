@@ -42,7 +42,7 @@ export default function UndoDialog({ batchId, onClose, onDone }: { batchId: numb
           <button className="btn" onClick={onClose}>
             {t("取消")}
           </button>
-          <button className="btn primary" disabled={!checks || restore.length === 0 || busy} onClick={run}>
+          <button data-testid="undo-confirm" className="btn primary" disabled={!checks || restore.length === 0 || busy} onClick={run}>
             {busy ? <Spinner size={14} /> : <RotateCcw size={15} />}
             {t("恢复 {0} 项", [restore.length])}
           </button>

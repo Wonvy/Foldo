@@ -28,6 +28,10 @@ pub struct RuleSet {
     pub auto: crate::config::AutoMode,
     /// 整理后删除变空的文件夹。
     pub clean_empty_folders: bool,
+    /// 历史记录保留天数（0 表示一直保留）。
+    pub keep_history_days: u32,
+    /// 定时整理。
+    pub schedule: Option<crate::schedule::Schedule>,
 }
 
 #[derive(Debug, Clone)]
@@ -256,6 +260,14 @@ impl RuleSet {
             buffer,
             auto: file.settings.auto,
             clean_empty_folders: !file.settings.keep_empty_folders,
+            keep_history_days: file.settings.keep_history_days,
+            schedule: file
+                .settings
+                .schedule
+                .as_ref()
+                .map(crate::schedule::Schedule::compile)
+                .transpose()
+                .map_err(config_err)?,
         })
     }
 

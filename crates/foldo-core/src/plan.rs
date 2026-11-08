@@ -14,7 +14,7 @@ use crate::meta::FileCtx;
 use crate::paths::{display, is_case_only_change, path_key};
 use crate::protect::{SkipKind, is_in_use};
 use crate::rule::{Action, Rule, RuleSet};
-use crate::scan::{ScanResult, classify_file, scan};
+use crate::scan::{ScanResult, classify_file};
 use crate::template::TemplateCtx;
 use chrono::{DateTime, Local};
 use serde::Serialize;
@@ -226,6 +226,16 @@ pub fn build_plan(rules: &RuleSet, only: Option<&str>) -> Result<Plan> {
 /// 逐个文件夹扫描，每个文件按该文件夹自己的规则顺序匹配，第一条命中的规则处理它。
 /// `only` 只运行指定的规则（即使它被禁用），用在使用它的文件夹上；还没有文件夹使用它时，试用在全部文件夹上。
 pub fn build_plan_at(set: &RuleSet, only: Option<&str>, now: DateTime<Local>) -> Result<Plan> {
+    build_plan_with(set, only, now, &crate::progress::ScanControl::default())
+}
+
+/// 同 [`build_plan_at`]，并更新进度；在 `ctrl` 上请求取消后返回“已取消”错误。
+pub fn build_plan_with(
+    set: &RuleSet,
+    only: Option<&str>,
+    now: DateTime<Local>,
+    ctrl: &crate::progress::ScanControl,
+) -> Result<Plan> {
     let only = match only {
         Some(name) => Some(
             set.index_of(name)
@@ -236,9 +246,12 @@ pub fn build_plan_at(set: &RuleSet, only: Option<&str>, now: DateTime<Local>) ->
     let unassigned = only.is_some_and(|i| set.folders_using(i).next().is_none());
 
     let mut p = Planner::new(set, now);
+    p.ctrl = Some(ctrl);
     if set.clean_empty_folders {
         p.plan.cleanup_roots = set.folders.iter().map(|f| f.path.clone()).collect();
     }
+    // 先把全部整理文件夹扫描一遍，“重复文件”可以跨文件夹判断
+    p.prescan(&set.folders);
     for folder in &set.folders {
         let rules: Vec<&Rule> = match only {
             Some(i) if unassigned || folder.rules.contains(&i) => vec![&set.rules[i]],
@@ -287,6 +300,10 @@ pub fn build_plan_at(set: &RuleSet, only: Option<&str>, now: DateTime<Local>) ->
                 .any(|t| k.starts_with(t.as_str()) && k[t.len()..].starts_with(['/', '\\']))
         };
         for f in res.files.iter().filter(|f| !inside_taken(f)) {
+            if ctrl.cancelled() {
+                return Err(Error::Other(crate::t!("已取消扫描")));
+            }
+            ctrl.add_checked();
             p.see(f);
             for rule in rules.iter().filter(|r| r.target == Target::File) {
                 if p.consider(rule, Some(&folder.path), f) {
@@ -294,6 +311,9 @@ pub fn build_plan_at(set: &RuleSet, only: Option<&str>, now: DateTime<Local>) ->
                 }
             }
         }
+    }
+    if ctrl.cancelled() {
+        return Err(Error::Other(crate::t!("已取消扫描")));
     }
     Ok(p.finish())
 }
@@ -369,6 +389,8 @@ pub fn build_plan_for_paths(set: &RuleSet, paths: &[PathBuf], now: DateTime<Loca
 
 struct Planner<'a> {
     set: &'a RuleSet,
+    /// 进度和取消（只有整理文件夹的扫描用）
+    ctrl: Option<&'a crate::progress::ScanControl>,
     now: DateTime<Local>,
     plan: Plan,
     /// 扫描到的文件（多条规则扫描同一目录时只计一次），用于最后列出“没有匹配的规则”。
@@ -391,6 +413,7 @@ impl<'a> Planner<'a> {
     fn new(set: &'a RuleSet, now: DateTime<Local>) -> Self {
         Self {
             set,
+            ctrl: None,
             now,
             plan: Plan::default(),
             seen: HashMap::new(),
@@ -438,15 +461,52 @@ impl<'a> Planner<'a> {
             .or_insert_with(|| f.path.clone());
     }
 
+    /// 扫描全部整理文件夹，并让所有文件互相知道彼此（判断重复文件时跨文件夹比较）。
+    fn prescan(&mut self, folders: &[crate::rule::Folder]) {
+        let mut fresh: Vec<((String, bool, bool), ScanResult)> = Vec::new();
+        for f in folders.iter().filter(|f| f.path.is_dir()) {
+            let key = (path_key(&f.path), f.recursive, f.include_hidden);
+            if self.scan_cache.contains_key(&key) || fresh.iter().any(|(k, _)| *k == key) {
+                continue;
+            }
+            fresh.push((key, self.scan_raw(&f.path, f.recursive, f.include_hidden)));
+        }
+        // 嵌套的文件夹可能扫到同一个文件，只算一次
+        let mut seen = HashSet::new();
+        let all: Vec<(&Path, u64, Option<DateTime<Local>>)> = fresh
+            .iter()
+            .flat_map(|(_, r)| r.files.iter())
+            .filter(|f| seen.insert(path_key(&f.path)))
+            .map(|f| (f.path.as_path(), f.size, f.modified))
+            .collect();
+        let peers = Rc::new(crate::meta::Peers::new(all));
+        for (key, mut res) in fresh {
+            for f in &mut res.files {
+                f.set_peers(peers.clone());
+            }
+            self.store_scan(key, res);
+        }
+    }
+
+    fn scan_raw(&self, loc: &Path, recursive: bool, include_hidden: bool) -> ScanResult {
+        let mut res =
+            crate::scan::scan_with(loc, recursive, include_hidden, &self.set.protect, self.ctrl);
+        for f in res.files.iter_mut().chain(res.folders.iter_mut()) {
+            f.set_categories(&self.set.categories);
+        }
+        res
+    }
+
     fn scan_cached(&mut self, loc: &Path, recursive: bool, include_hidden: bool) -> Rc<ScanResult> {
         let key = (path_key(loc), recursive, include_hidden);
         if let Some(r) = self.scan_cache.get(&key) {
             return r.clone();
         }
-        let mut res = scan(loc, recursive, include_hidden, &self.set.protect);
-        for f in res.files.iter_mut().chain(res.folders.iter_mut()) {
-            f.set_categories(&self.set.categories);
-        }
+        let res = self.scan_raw(loc, recursive, include_hidden);
+        self.store_scan(key, res)
+    }
+
+    fn store_scan(&mut self, key: (String, bool, bool), res: ScanResult) -> Rc<ScanResult> {
         let res = Rc::new(res);
         self.plan.warnings.extend(res.warnings.iter().cloned());
         for (path, kind, reason) in &res.skipped {
@@ -603,13 +663,13 @@ impl<'a> Planner<'a> {
                     (kind, dir.join(fname), *on_conflict)
                 }
                 Action::Extract { to, on_conflict } => {
-                    if !cur
-                        .extension()
-                        .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
-                    {
+                    if crate::fsops::archive_kind(&cur).is_none() {
                         return Outcome::Skipped(
                             SkipKind::Invalid,
-                            crate::t!("{a0}：目前只能解压 zip 文件", a0 = rule.reason),
+                            crate::t!(
+                                "{reason}：目前只能解压 zip、7z、rar、tar、tar.gz 文件",
+                                reason = rule.reason
+                            ),
                         );
                     }
                     let dir = match render_near(to, &ctx, &cur) {

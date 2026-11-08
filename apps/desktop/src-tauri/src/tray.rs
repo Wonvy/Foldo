@@ -4,7 +4,7 @@ use crate::commands::{current_config, toggle_float_window, write_config};
 use crate::watch::{self, WatchStatus};
 use foldo_core::config::AutoMode;
 use tauri::image::Image;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
@@ -13,6 +13,8 @@ pub struct TrayItems {
     modes: [CheckMenuItem<Wry>; 3],
     /// 文字固定的菜单项：(菜单项, 原文)，切换语言时重新翻译
     fixed: Vec<(MenuItem<Wry>, &'static str)>,
+    /// “配置方案”子菜单，方案变化时重建
+    profiles: Submenu<Wry>,
 }
 
 const MODE_LABELS: [&str; 3] = ["不自动整理", "发现文件时提醒我", "自动整理…"];
@@ -48,6 +50,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         false,
         None::<&str>,
     )?;
+    let profiles = Submenu::with_id(app, "profiles", tr("配置方案"), false)?;
     let open = MenuItem::with_id(app, "open", tr("打开 Foldo"), true, None::<&str>)?;
     let float = MenuItem::with_id(app, "float", tr("悬浮窗"), true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", tr("退出 Foldo"), true, None::<&str>)?;
@@ -61,6 +64,8 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             &m_off,
             &m_notify,
             &m_run,
+            &PredefinedMenuItem::separator(app)?,
+            &profiles,
             &PredefinedMenuItem::separator(app)?,
             &open,
             &float,
@@ -84,7 +89,14 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
                 let _ = toggle_float_window(app);
             }
             "quit" => app.exit(0),
-            _ => {}
+            id => {
+                if let Some(i) = id
+                    .strip_prefix("profile:")
+                    .and_then(|i| i.parse::<usize>().ok())
+                {
+                    switch_profile_at(app, i);
+                }
+            }
         })
         .on_tray_icon_event(|tray, e| {
             if let TrayIconEvent::Click {
@@ -117,8 +129,45 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             (float, "悬浮窗"),
             (quit, "退出 Foldo"),
         ],
+        profiles,
     });
+    refresh_profiles(app);
     Ok(())
+}
+
+/// 按配置重建“配置方案”子菜单：每个方案一项，当前方案打勾；没有方案时整项不可用。
+pub fn refresh_profiles(app: &AppHandle) {
+    let Some(t) = app.try_state::<TrayItems>() else {
+        return;
+    };
+    let Ok(file) = current_config() else {
+        return;
+    };
+    if let Ok(items) = t.profiles.items() {
+        for item in items {
+            let _ = t.profiles.remove(&item);
+        }
+    }
+    for (i, p) in file.profiles.iter().enumerate() {
+        let on = file.profile.as_deref() == Some(p.name.as_str());
+        if let Ok(item) =
+            CheckMenuItem::with_id(app, format!("profile:{i}"), &p.name, true, on, None::<&str>)
+        {
+            let _ = t.profiles.append(&item);
+        }
+    }
+    let _ = t.profiles.set_enabled(!file.profiles.is_empty());
+}
+
+fn switch_profile_at(app: &AppHandle, index: usize) {
+    let Ok(file) = current_config() else {
+        return;
+    };
+    if let Some(name) = file.profiles.get(index).map(|p| p.name.clone())
+        && crate::commands::switch_profile_to(app, &name).is_ok()
+    {
+        let _ = app.emit("config-changed", ());
+    }
 }
 
 /// 切换语言后重新设置菜单文字。
@@ -129,6 +178,7 @@ pub fn relabel(app: &AppHandle) {
     for (item, zh) in &t.fixed {
         let _ = item.set_text(foldo_core::i18n::tr(zh));
     }
+    let _ = t.profiles.set_text(foldo_core::i18n::tr("配置方案"));
     for (item, zh) in t.modes.iter().zip(MODE_LABELS) {
         let _ = item.set_text(foldo_core::i18n::tr(zh));
     }

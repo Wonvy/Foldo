@@ -146,10 +146,38 @@ pub fn spawn(app: AppHandle) {
 
                 // 下次没有文件变动时什么时候再检查
                 let mut wait = OFF_FALLBACK;
+                // 定时整理：到点了（或者关机时错过了）就整理一次，和自动整理一样只做可以撤销的操作
+                if let Ok(s) = &set
+                    && let Some(sch) = &s.schedule
+                {
+                    let now = chrono::Local::now();
+                    let due = sch.last_due(now);
+                    match read_schedule_last() {
+                        // 刚开启定时整理：从下一个时间点开始
+                        None => write_schedule_last(now),
+                        Some(last) if last < due => {
+                            write_schedule_last(now);
+                            if let Ok(mut once) = current_config()
+                                .and_then(|c| RuleSet::from_file(c).map_err(|e| e.to_string()))
+                            {
+                                once.buffer = once.buffer.max(MIN_BUFFER);
+                                let mut quiet = usize::MAX;
+                                let _ = cycle(&app, &once, AutoMode::Run, &mut quiet);
+                            }
+                        }
+                        Some(_) => {}
+                    }
+                    let until_next = (sch.next_due(now) - now)
+                        .to_std()
+                        .unwrap_or(Duration::from_secs(60));
+                    wait = wait.min(until_next.max(Duration::from_secs(1)));
+                }
                 match set {
                     Ok(mut s) if mode != AutoMode::Off => {
                         s.buffer = s.buffer.max(MIN_BUFFER);
-                        wait = cycle(&app, &s, mode, &mut last_notified).unwrap_or(IDLE_FALLBACK);
+                        wait = wait.min(
+                            cycle(&app, &s, mode, &mut last_notified).unwrap_or(IDLE_FALLBACK),
+                        );
                     }
                     Ok(_) => {
                         last_notified = 0;
@@ -182,6 +210,26 @@ pub fn spawn(app: AppHandle) {
             }
         })
         .expect("无法启动后台监听线程");
+}
+
+fn schedule_file() -> PathBuf {
+    foldo_core::paths::default_data_dir().join("schedule-last")
+}
+
+/// 上次定时整理的时间（没有记录时为 None）。
+fn read_schedule_last() -> Option<chrono::DateTime<chrono::Local>> {
+    let s = std::fs::read_to_string(schedule_file()).ok()?;
+    chrono::DateTime::parse_from_rfc3339(s.trim())
+        .ok()
+        .map(|d| d.with_timezone(&chrono::Local))
+}
+
+fn write_schedule_last(t: chrono::DateTime<chrono::Local>) {
+    let path = schedule_file();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(path, t.to_rfc3339());
 }
 
 fn set_status(app: &AppHandle, f: impl FnOnce(&mut WatchStatus)) {
@@ -234,7 +282,9 @@ fn cycle(
             let (safe, held) = plan.without_irreversible();
             if !safe.is_empty() {
                 let state = app.state::<AppState>();
-                match state.with_journal(|j| execute(&safe, j, "watch")) {
+                let result = state.with_journal(|j| execute(&safe, j, "watch"));
+                let _ = state.with_journal(|j| j.prune(set.keep_history_days));
+                match result {
                     Ok(report) => {
                         if let Ok(mut f) = app.state::<WatchState>().failed.lock() {
                             for (op, _) in report.failed.iter().chain(report.skipped.iter()) {

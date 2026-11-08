@@ -15,9 +15,11 @@ pub mod journal;
 pub mod meta;
 pub mod paths;
 pub mod plan;
+pub mod progress;
 pub mod protect;
 pub mod rule;
 pub mod scan;
+pub mod schedule;
 pub mod template;
 pub mod undo;
 pub mod units;
@@ -29,7 +31,10 @@ pub use config::RuleFile;
 pub use error::{Error, Result};
 pub use exec::{ExecReport, execute};
 pub use journal::Journal;
-pub use plan::{Op, OpKind, Plan, Skip, build_plan, build_plan_at, build_plan_for_paths};
+pub use plan::{
+    Op, OpKind, Plan, Skip, build_plan, build_plan_at, build_plan_for_paths, build_plan_with,
+};
+pub use progress::ScanControl;
 pub use protect::SkipKind;
 pub use rule::{Folder, Rule, RuleSet, load_rule_file, migrate, parse_rule_file};
 pub use undo::{UndoCheck, UndoOutcome, UndoReport, preview_undo, undo_batch};

@@ -364,7 +364,7 @@ pub static FIELDS: std::sync::LazyLock<Vec<FieldDef>> = std::sync::LazyLock::new
             "基本",
             Bool,
             None,
-            "同一个整理文件夹里有内容完全相同的文件；最早修改的一份算原件，不算重复",
+            "整理的文件夹里（包括其他整理文件夹）有内容完全相同的文件；最早修改的一份算原件，不算重复",
             |f| f.is_duplicate().map(Value::Bool)
         ),
         field!(

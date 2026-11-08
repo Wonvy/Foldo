@@ -4,7 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AppWindow, ArrowRight, CircleCheck, FolderTree, RotateCcw, Trash, TriangleAlert, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { api, baseName, errorText, type ExecView, type PlanView } from "../api";
-import { FileIcon, Spinner } from "../components/ui";
+import { Checkbox, FileIcon, Spinner } from "../components/ui";
 import { t } from "../i18n";
 
 type Phase = "idle" | "busy" | "plan" | "done";
@@ -21,6 +21,9 @@ export default function FloatApp() {
   const [undone, setUndone] = useState(false);
   const [running, setRunning] = useState(false);
   const [onTop, setOnTop] = useState(true);
+  // 拖入后取消勾选的（不整理）和从列表里移除的
+  const [unchecked, setUnchecked] = useState<Set<number>>(new Set());
+  const [removed, setRemoved] = useState<Set<string>>(new Set());
   const collapseTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const expanded = phase !== "idle";
@@ -34,6 +37,8 @@ export default function FloatApp() {
     setError(null);
     setResult(null);
     setUndone(false);
+    setUnchecked(new Set());
+    setRemoved(new Set());
     try {
       setPlan(await api.scanPaths(paths));
       setPhase("plan");
@@ -75,19 +80,68 @@ export default function FloatApp() {
     if (!plan) return [];
     const byGroup = new Map<number, (typeof plan.ops)[number][]>();
     for (const o of plan.ops) byGroup.set(o.group, [...(byGroup.get(o.group) ?? []), o]);
-    return [...byGroup.values()].map((ops) => {
-      const last = ops[ops.length - 1];
-      return {
-        group: last.group,
-        name: last.origin_name,
-        category: last.category,
-        kind: last.kind,
-        dir: last.dst_dir_display,
-        rule: last.rule,
-      };
+    return [...byGroup.values()]
+      .map((ops) => {
+        const last = ops[ops.length - 1];
+        return {
+          group: last.group,
+          path: last.origin,
+          name: last.origin_name,
+          category: last.category,
+          kind: last.kind,
+          dir: last.dst_dir_display,
+          rule: last.rule,
+        };
+      })
+      .filter((i) => !removed.has(i.path));
+  }, [plan, removed]);
+  const skipped = (plan?.skipped ?? []).filter((s) => !removed.has(s.path));
+  const chosen = items.filter((i) => !unchecked.has(i.group));
+
+  const toggle = (group: number, on: boolean) =>
+    setUnchecked((s) => {
+      const n = new Set(s);
+      if (on) n.delete(group);
+      else n.add(group);
+      return n;
     });
-  }, [plan]);
-  const skipped = plan?.skipped ?? [];
+  const remove = (path: string) => setRemoved((s) => new Set(s).add(path));
+
+  // 条目的右键菜单
+  const itemMenu = async (e: MouseEvent, path: string, group?: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const entries = [];
+      if (group !== undefined)
+        entries.push(
+          await CheckMenuItem.new({
+            text: t("整理这个文件"),
+            checked: !unchecked.has(group),
+            action: () => toggle(group, unchecked.has(group)),
+          }),
+        );
+      entries.push(
+        await MenuItem.new({ text: t("从列表中移除"), action: () => remove(path) }),
+        await MenuItem.new({ text: t("在文件管理器中显示"), action: () => void api.reveal(path) }),
+      );
+      await (await Menu.new({ items: entries })).popup();
+    } catch {
+      /* 浏览器预览中没有原生菜单 */
+    }
+  };
+  const removeBtn = (path: string) => (
+    <button
+      className="icon-btn float-remove"
+      title={t("从列表中移除")}
+      onClick={(e) => {
+        e.stopPropagation();
+        remove(path);
+      }}
+    >
+      <X size={13} />
+    </button>
+  );
 
   const execute = async () => {
     if (!plan) return;
@@ -95,7 +149,7 @@ export default function FloatApp() {
     try {
       const r = await api.executePlan(
         plan.plan_id,
-        items.map((i) => i.group),
+        chosen.map((i) => i.group),
       );
       setResult(r);
       setPhase("done");
@@ -226,7 +280,14 @@ export default function FloatApp() {
         )}
         {phase === "plan" &&
           items.map((it) => (
-            <div key={it.group} className="float-item" title={t("规则「{0}」", [it.rule])}>
+            <div
+              key={it.group}
+              className={`float-item ${unchecked.has(it.group) ? "off" : ""}`}
+              title={t("规则「{0}」", [it.rule])}
+              onClick={() => toggle(it.group, unchecked.has(it.group))}
+              onContextMenu={(e) => void itemMenu(e, it.path, it.group)}
+            >
+              <Checkbox checked={!unchecked.has(it.group)} onChange={(v) => toggle(it.group, v)} label={it.name} />
               <FileIcon category={it.category} size={26} />
               <span className="ellipsis name">{it.name}</span>
               <span className="float-to ellipsis">
@@ -240,14 +301,17 @@ export default function FloatApp() {
                   </>
                 )}
               </span>
+              {removeBtn(it.path)}
             </div>
           ))}
         {phase === "plan" &&
           skipped.map((s) => (
-            <div key={s.path} className="float-item off" title={s.reason}>
+            <div key={s.path} className="float-item skip" title={s.reason} onContextMenu={(e) => void itemMenu(e, s.path)}>
+              <span className="checkbox-space" />
               <FileIcon category={null} size={26} />
               <span className="ellipsis name">{s.name}</span>
               <span className="float-to ellipsis">{s.label}</span>
+              {removeBtn(s.path)}
             </div>
           ))}
         {phase === "done" && result && (
@@ -269,9 +333,9 @@ export default function FloatApp() {
 
       <div className="float-foot">
         {phase === "plan" && (
-          <button className="btn primary" style={{ flex: 1 }} disabled={items.length === 0 || running} onClick={execute}>
+          <button className="btn primary" style={{ flex: 1 }} disabled={chosen.length === 0 || running} onClick={execute}>
             {running ? <Spinner size={14} /> : null}
-            {items.length ? t("整理 {0} 个文件", [items.length]) : t("没有可整理的文件")}
+            {chosen.length ? t("整理 {0} 个文件", [chosen.length]) : items.length ? t("没有勾选要整理的文件") : t("没有可整理的文件")}
           </button>
         )}
         {phase === "done" && !undone && result && result.done > 0 && (

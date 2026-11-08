@@ -434,15 +434,35 @@ export function describeActions(rule: RuleDef): string {
 /** 去掉文件夹里引用的已不存在的规则（删除规则后）。 */
 export function pruneFolderRules(file: RuleFile): RuleFile {
   const names = new Set((file.rules ?? []).map((r) => r.name));
-  const folders = (file.folders ?? []).map((f) => ({ ...f, rules: (f.rules ?? []).filter((n) => names.has(n)) }));
-  return { ...file, folders };
+  return mapFolders(file, (list) => list.filter((n) => names.has(n)));
+}
+
+/** 对当前文件夹和所有配置方案里的文件夹，改写它们引用的规则列表。 */
+function mapFolders(file: RuleFile, f: (rules: string[]) => string[]): RuleFile {
+  const map = (list: FolderDef[] | undefined) => (list ?? []).map((d) => ({ ...d, rules: f(d.rules ?? []) }));
+  const next: RuleFile = { ...file, folders: map(file.folders) };
+  if (file.profiles) next.profiles = file.profiles.map((p) => ({ ...p, folders: map(p.folders) }));
+  return next;
+}
+
+/** 切换配置方案（和后端 RuleFile::switch_profile 一致，开发模式的模拟数据用）。 */
+export function switchProfile(file: RuleFile, name: string, defaultName: string): RuleFile {
+  if (file.profile === name) return file;
+  const target = file.profiles?.find((p) => p.name === name);
+  if (!target) throw new Error(name);
+  const current = file.profile ?? defaultName;
+  const profiles = [...(file.profiles ?? [])];
+  const i = profiles.findIndex((p) => p.name === current);
+  const saved = { name: current, folders: file.folders ?? [] };
+  if (i >= 0) profiles[i] = saved;
+  else profiles.unshift(saved);
+  return pruneFolderRules({ ...file, profiles, folders: target.folders, profile: name });
 }
 
 /** 规则改名后同步文件夹里的引用。 */
 export function renameInFolders(file: RuleFile, from: string, to: string): RuleFile {
   if (from === to) return file;
-  const folders = (file.folders ?? []).map((f) => ({ ...f, rules: (f.rules ?? []).map((n) => (n === from ? to : n)) }));
-  return { ...file, folders };
+  return mapFolders(file, (list) => list.map((n) => (n === from ? to : n)));
 }
 
 /** 使用某条规则的文件夹。 */

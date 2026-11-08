@@ -1,0 +1,117 @@
+# 端到端测试：在 Windows 和 Linux 上启动真实的 Foldo 窗口，经由 WebDriver 跑一遍主流程。
+# （macOS 的 WebView 没有 WebDriver，跑不了。）测试在临时目录的沙盒里进行。
+# 推到 e2e/ 开头的分支也会运行，方便单独调试。
+name: E2E
+on:
+  push:
+    branches: [main, 'e2e/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  e2e:
+    name: E2E (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    # Windows 上 msedgedriver 连不上 WebView2（DevToolsActivePort file doesn't exist），还在排查：先不阻塞合并
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - name: Linux prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb
+          # WebKitWebDriver：新版 Ubuntu 叫 webkitgtk-webdriver，旧版叫 webkit2gtk-driver
+          sudo apt-get install -y webkitgtk-webdriver || sudo apt-get install -y webkit2gtk-driver
+          which WebKitWebDriver
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: e2e
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            apps/desktop/package-lock.json
+            apps/desktop/e2e/package-lock.json
+      - run: npm ci
+        working-directory: apps/desktop
+      - run: npm ci
+        working-directory: apps/desktop/e2e
+      - name: Build the app (debug, no installer)
+        working-directory: apps/desktop
+        run: npx tauri build --debug --no-bundle
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+      - name: Download the Edge WebDriver matching WebView2
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $key = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+          $ver = (Get-ItemProperty $key -ErrorAction SilentlyContinue).pv
+          if (-not $ver) { $ver = (Get-Item "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe").VersionInfo.ProductVersion }
+          Write-Host "WebView2 / Edge version: $ver"
+          $urls = @("https://msedgedriver.microsoft.com/$ver/edgedriver_win64.zip", "https://msedgedriver.azureedge.net/$ver/edgedriver_win64.zip")
+          foreach ($u in $urls) {
+            try { Invoke-WebRequest $u -OutFile edgedriver.zip; break } catch { Write-Host "failed: $u" }
+          }
+          Expand-Archive edgedriver.zip -DestinationPath edgedriver -Force
+          # 用包装脚本启动，打开详细日志，失败时能看到 WebDriver 卡在哪一步
+          $log = "$env:RUNNER_TEMP\msedgedriver.log"
+          "@echo off`r`n`"$PWD\edgedriver\msedgedriver.exe`" --verbose --log-path=`"$log`" %*" | Out-File -FilePath "$PWD\edgedriver\driver.cmd" -Encoding ascii
+          "NATIVE_DRIVER=$PWD\edgedriver\driver.cmd" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "EDGE_LOG=$log" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Run E2E (Linux, virtual display)
+        if: runner.os == 'Linux'
+        working-directory: apps/desktop/e2e
+        run: xvfb-run --auto-servernum npm test
+      - name: Run E2E (Windows)
+        if: runner.os == 'Windows'
+        working-directory: apps/desktop/e2e
+        run: npm test
+      - name: Diagnose (Windows)
+        if: failure() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # 失败时的线索写成注解（不登录也能看到）
+          $drv = & "$PWD\edgedriver\msedgedriver.exe" --version
+          Write-Output "::warning title=msedgedriver::$drv"
+          $key = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+          $wv = (Get-ItemProperty $key -ErrorAction SilentlyContinue).pv
+          Write-Output "::warning title=WebView2 runtime::$wv"
+          $env:FOLDO_RULES = "$env:RUNNER_TEMP\diag-rules.yaml"
+          $env:FOLDO_HOME = "$env:RUNNER_TEMP\diag-data"
+          $p = Start-Process -FilePath "target\debug\foldo-desktop.exe" -PassThru -RedirectStandardError "$env:RUNNER_TEMP\err.txt" -RedirectStandardOutput "$env:RUNNER_TEMP\out.txt"
+          Start-Sleep -Seconds 10
+          Write-Output "::warning title=app after 10s::running=$(-not $p.HasExited) exit=$($p.ExitCode)"
+          Get-Content "$env:RUNNER_TEMP\err.txt" -Tail 15 -ErrorAction SilentlyContinue | ForEach-Object { Write-Output "::warning title=app stderr::$_" }
+          Stop-Process -Id $p.Id -ErrorAction SilentlyContinue
+          # msedgedriver 的详细日志：取和启动、DevTools 相关的行
+          if (Test-Path $env:EDGE_LOG) {
+            # 从启动应用那一行开始的完整日志（去掉大段 JSON），注解最多 50 条
+            $lines = Get-Content $env:EDGE_LOG
+            $start = ($lines | Select-String -Pattern "Launching Microsoft Edge" | Select-Object -First 1).LineNumber
+            if (-not $start) { $start = 1 }
+            $lines[($start - 1)..($lines.Count - 1)] | Where-Object { $_ -match "^\[" } | Select-Object -First 45 | ForEach-Object { Write-Output "::warning title=msedgedriver log::$_" }
+            Get-ChildItem Env: | Where-Object { $_.Name -like "WEBVIEW2*" } | ForEach-Object { Write-Output "::warning title=env::$($_.Name)=$($_.Value)" }
+          } else { Write-Output "::warning title=msedgedriver log::no log at $env:EDGE_LOG" }
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: e2e-screenshots-${{ matrix.os }}
+          path: apps/desktop/e2e/artifacts
+          if-no-files-found: ignore

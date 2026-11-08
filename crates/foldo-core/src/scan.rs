@@ -41,6 +41,17 @@ pub fn classify_file(
 /// 扫描 `root`。不递归时，第一层的文件夹作为整体保留；递归时进入子文件夹，
 /// 但固定保留、隐藏、系统和下载中的文件夹不进入。
 pub fn scan(root: &Path, recursive: bool, include_hidden: bool, protect: &Protect) -> ScanResult {
+    scan_with(root, recursive, include_hidden, protect, None)
+}
+
+/// 同 [`scan`]，并更新进度；请求取消后停止遍历（返回已经找到的部分）。
+pub fn scan_with(
+    root: &Path,
+    recursive: bool,
+    include_hidden: bool,
+    protect: &Protect,
+    ctrl: Option<&crate::progress::ScanControl>,
+) -> ScanResult {
     let mut res = ScanResult::default();
     let mut it = WalkDir::new(root)
         .min_depth(1)
@@ -50,6 +61,12 @@ pub fn scan(root: &Path, recursive: bool, include_hidden: bool, protect: &Protec
         .into_iter();
 
     while let Some(entry) = it.next() {
+        if ctrl.is_some_and(|c| c.cancelled()) {
+            break;
+        }
+        if let Some(c) = ctrl {
+            c.add_found();
+        }
         let entry = match entry {
             Ok(e) => e,
             Err(err) => {

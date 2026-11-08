@@ -203,7 +203,13 @@ function Shell() {
           <span className="label">Foldo</span>
         </div>
         {nav.map((n) => (
-          <button key={n.id} className={`nav-item ${page === n.id ? "active" : ""}`} onClick={() => setPage(n.id)} title={n.label}>
+          <button
+            key={n.id}
+            data-testid={`nav-${n.id}`}
+            className={`nav-item ${page === n.id ? "active" : ""}`}
+            onClick={() => setPage(n.id)}
+            title={n.label}
+          >
             {n.icon}
             <span className="label">{n.label}</span>
             {n.count !== undefined && <span className="count">{n.count}</span>}

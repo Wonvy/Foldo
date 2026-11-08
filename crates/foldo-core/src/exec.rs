@@ -207,7 +207,7 @@ fn apply(op: &Op) -> Result<(), Problem> {
                 )));
             }
             match op.kind {
-                OpKind::Extract => fsops::extract_zip(src, dst),
+                OpKind::Extract => fsops::extract_archive(src, dst),
                 OpKind::Compress => fsops::compress(src, dst),
                 _ => fsops::create_shortcut(src, dst),
             }

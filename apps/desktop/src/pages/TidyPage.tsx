@@ -1,95 +1,21 @@
-import {
-  ArrowRight,
-  ChevronDown,
-  ChevronRight,
-  CircleCheck,
-  Ellipsis,
-  FileSearch,
-  Folder,
-  FolderInput,
-  FolderPlus,
-  Lock,
-  MousePointerClick,
-  RefreshCw,
-  RotateCcw,
-  Search,
-  Sparkles,
-  Trash,
-  TriangleAlert,
-  Upload,
-  WandSparkles,
-} from "lucide-react";
+import { CircleCheck, FileSearch, FolderInput, Lock, MousePointerClick, RefreshCw, Search, TriangleAlert, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  api,
-  baseName,
-  errorText,
-  type ExecView,
-  type FolderSuggestion,
-  type OpKind,
-  type OpView,
-  type PlanView,
-  type SkipView,
-  type UndoView,
-  type WatchStatus,
-} from "../api";
+import { api, baseName, errorText, type ExecView, type PlanView, type SkipView, type UndoView, type WatchStatus } from "../api";
 import AutoMode from "../components/AutoMode";
 import FolderPanel from "../components/FolderPanel";
-import SetupGuide, { SetupSteps, markSetupDone, setupDone } from "../components/SetupGuide";
+import SetupGuide, { markSetupDone, setupDone } from "../components/SetupGuide";
 import InspectDialog from "../components/InspectDialog";
+import ItemSections from "../components/tidy/ItemSections";
+import { ATTENTION, SECTION_PREFIX, toItems, type Item, type Section } from "../components/tidy/items";
+import KeptCard from "../components/tidy/KeptCard";
+import NoMatchCard from "../components/tidy/NoMatchCard";
+import Onboarding from "../components/tidy/Onboarding";
+import ResultCard from "../components/tidy/ResultCard";
+import SkipRow from "../components/tidy/SkipRow";
 import UndoDialog from "../components/UndoDialog";
-import { Checkbox, FileIcon, Segmented, Spinner, useMenu } from "../components/ui";
+import { Checkbox, Segmented, Spinner, useMenu } from "../components/ui";
 import { pickFolder, useStore } from "../store";
 import { t } from "../i18n";
-
-type Item = {
-  group: number;
-  origin: string;
-  name: string;
-  originDir: string;
-  category: string | null;
-  reason: string;
-  kind: OpKind;
-  dir: string | null;
-  dirDisplay: string | null;
-  renamedTo: string | null;
-  note: string | null;
-};
-
-type Section = { key: string; title: string; sub: string | null; items: Item[]; trash?: boolean };
-
-/** 原文件不动、只生成新东西的动作，在分组标题上注明。 */
-const SECTION_PREFIX: Partial<Record<OpKind, string>> = {
-  copy: t("复制到 "),
-  extract: t("解压到 "),
-  compress: t("压缩到 "),
-  shortcut: t("快捷方式放到 "),
-};
-
-const ATTENTION = new Set(["conflict", "invalid", "in_use"]);
-
-function toItems(ops: OpView[]): Item[] {
-  const byGroup = new Map<number, OpView[]>();
-  for (const o of ops) byGroup.set(o.group, [...(byGroup.get(o.group) ?? []), o]);
-  return [...byGroup.values()].map((list) => {
-    const last = list[list.length - 1];
-    const rename = list.find((o) => o.kind === "rename");
-    const origin = list[0].origin;
-    return {
-      group: last.group,
-      origin,
-      name: last.origin_name,
-      originDir: list[0].origin_display.slice(0, -(last.origin_name.length + 1)),
-      category: last.category,
-      reason: last.reason,
-      kind: last.kind,
-      dir: last.dst_dir,
-      dirDisplay: last.dst_dir_display,
-      renamedTo: rename?.dst ? baseName(rename.dst) : null,
-      note: list.find((o) => o.note)?.note ?? null,
-    };
-  });
-}
 
 export default function TidyPage({
   dropped,
@@ -137,19 +63,38 @@ export default function TidyPage({
     setConfirmTrash(false);
   };
 
+  // 用户点了“取消”：扫描返回的“已取消”不当作错误
+  const cancelled = useRef(false);
   const run = useCallback(async (paths: string[] | null) => {
     setBusy("scan");
     setError(null);
+    cancelled.current = false;
     try {
       const p = paths ? await api.scanPaths(paths) : await api.scan();
       setDropPaths(paths);
       applyPlan(p);
     } catch (e) {
-      setError(errorText(e));
+      if (!cancelled.current) setError(errorText(e));
     } finally {
       setBusy(null);
     }
   }, []);
+
+  // 扫描大文件夹时显示进度
+  const [progress, setProgress] = useState<{ found: number; checked: number } | null>(null);
+  useEffect(() => {
+    if (busy !== "scan") {
+      setProgress(null);
+      return;
+    }
+    const timer = setInterval(() => {
+      api
+        .scanProgress()
+        .then(setProgress)
+        .catch(() => {});
+    }, 300);
+    return () => clearInterval(timer);
+  }, [busy]);
 
   // 打开应用时自动扫描一次
   const autoScanned = useRef(false);
@@ -313,7 +258,8 @@ export default function TidyPage({
     ]);
 
   // ---------- 首次使用 ----------
-  if (view && !configured) return <Onboarding onDone={() => void run(null)} />;
+  // 有配置方案时，空方案也显示文件夹面板（可以切换回去或添加文件夹），不进入首次引导
+  if (view && !configured && !config.profiles?.length) return <Onboarding onDone={() => void run(null)} />;
 
   return (
     <div className="page">
@@ -324,7 +270,21 @@ export default function TidyPage({
         </div>
         <div className="page-actions">
           <AutoMode watch={watch} />
-          <button className="btn primary" onClick={() => run(null)} disabled={busy !== null}>
+          {busy === "scan" && progress && progress.found > 0 && (
+            <span className="muted scan-progress">{t("已找到 {0} 个，已检查 {1} 个", [progress.found, progress.checked])}</span>
+          )}
+          {busy === "scan" && !dropPaths && (
+            <button
+              className="btn"
+              onClick={() => {
+                cancelled.current = true;
+                void api.cancelScan();
+              }}
+            >
+              {t("取消")}
+            </button>
+          )}
+          <button data-testid="scan" className="btn primary" onClick={() => run(null)} disabled={busy !== null}>
             {busy === "scan" ? <Spinner size={15} /> : <RefreshCw size={15} />}
             {plan || result ? t("重新扫描") : t("扫描")}
           </button>
@@ -368,49 +328,7 @@ export default function TidyPage({
       ))}
 
       {/* ---------- 执行结果 ---------- */}
-      {result && (
-        <div className="card">
-          <div className="result-hero">
-            <div className={`art ${result.failed.length ? "warn" : ""}`}>
-              {result.failed.length ? <TriangleAlert size={26} /> : <CircleCheck size={28} />}
-            </div>
-            <h2>{undone ? t("已撤销，恢复了 {0} 项", [undone.restored]) : t("整理完成：成功 {0} 项", [result.done])}</h2>
-            <p className="muted">
-              {result.skipped.length > 0 && t("跳过 {0} 项（执行时出现了新冲突）。", [result.skipped.length])}
-              {result.failed.length > 0 && t("失败 {0} 项。", [result.failed.length])}
-              {!undone && result.skipped.length + result.failed.length === 0 && t("所有选中的文件都已放到位。")}
-            </p>
-            <div className="row" style={{ marginTop: 10 }}>
-              {!undone && result.done > 0 && (
-                <button className="btn" onClick={() => setUndoFor(result.batch_id)}>
-                  <RotateCcw size={15} /> {t("撤销这次整理")}
-                </button>
-              )}
-              <button className="btn primary" onClick={() => run(null)}>
-                {t("继续整理")}
-              </button>
-            </div>
-          </div>
-          {[...result.skipped.map((p) => ({ ...p, t: t("跳过") })), ...result.failed.map((p) => ({ ...p, t: t("失败") }))].map((p, i) => (
-            <div key={i} className="list-row">
-              <span className={`chip ${p.t === "失败" ? "danger" : "warn"}`}>{p.t}</span>
-              <div className="row-main">
-                <div className="row-title ellipsis">{p.name}</div>
-                <div className="row-sub">{p.error}</div>
-              </div>
-            </div>
-          ))}
-          {undone?.in_trash.map((p) => (
-            <div key={p} className="list-row">
-              <span className="chip">{t("回收站")}</span>
-              <div className="row-main">
-                <div className="row-sub">{t("需要到回收站手动还原：{0}", [p])}</div>
-              </div>
-            </div>
-          ))}
-          <div style={{ height: 12 }} />
-        </div>
-      )}
+      {result && <ResultCard result={result} undone={undone} onUndo={() => setUndoFor(result.batch_id)} onContinue={() => run(null)} />}
 
       {!plan && !result && busy === "scan" && (
         <div className="empty muted">
@@ -481,146 +399,26 @@ export default function TidyPage({
             </div>
           )}
 
-          {sections.map((sec) => {
-            const groups = sec.items.map((i) => i.group);
-            const on = groups.filter((g) => selected.has(g)).length;
-            return (
-              <div key={sec.key} className="card">
-                <div className="group-head">
-                  <Checkbox checked={on === groups.length} indeterminate={on > 0} onChange={(v) => toggle(groups, v)} label={sec.title} />
-                  {sec.trash ? <Trash size={16} color="var(--danger)" /> : <Folder size={16} color="var(--muted)" />}
-                  <span className="title">{sec.title}</span>
-                  {sec.sub && (
-                    <span className="muted ellipsis mono" style={{ flex: 1 }}>
-                      {sec.sub}
-                    </span>
-                  )}
-                  {!sec.sub && <span className="spacer" />}
-                  <span className="muted">{t("{0} 个", [sec.items.length])}</span>
-                </div>
-                {sec.items.map((it) => (
-                  <div
-                    key={it.group}
-                    className={`list-row clickable ${selected.has(it.group) ? "" : "off"}`}
-                    onClick={() => toggle([it.group], !selected.has(it.group))}
-                  >
-                    <Checkbox checked={selected.has(it.group)} onChange={(v) => toggle([it.group], v)} label={it.name} />
-                    <FileIcon category={it.category} />
-                    <div className="row-main">
-                      <div className="row-title ellipsis">
-                        {it.name}
-                        {it.renamedTo && (
-                          <span className="muted" style={{ fontWeight: 400 }}>
-                            {"  "}
-                            {t("→ 改名为 {0}", [it.renamedTo ?? ""])}
-                          </span>
-                        )}
-                      </div>
-                      <div className="item-dst">
-                        <span className={`chip ${it.reason === "手动指定位置" ? "accent" : ""}`}>{it.reason}</span>
-                        {groupBy === "rule" && it.kind !== "trash" && (
-                          <>
-                            <ArrowRight size={13} />
-                            <span className="ellipsis">{it.dirDisplay}</span>
-                          </>
-                        )}
-                        {groupBy === "target" && <span className="ellipsis">{t("来自 {0}", [it.originDir])}</span>}
-                        {it.note && <span className="chip warn">{it.note}</span>}
-                      </div>
-                    </div>
-                    <button
-                      className="icon-btn"
-                      aria-label={t("更多")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        itemMenu(e.currentTarget, it);
-                      }}
-                    >
-                      <Ellipsis size={17} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            );
-          })}
+          <ItemSections sections={sections} selected={selected} groupBy={groupBy} onToggle={toggle} onMenu={itemMenu} />
 
           {noMatch.length > 0 && (
-            <div className="card" id="no-match">
-              <div className="card-head">
-                <Sparkles size={16} color="var(--accent)" />
-                <h2>{t("没有匹配规则的文件")}</h2>
-                <span className="muted">{t("这些文件保持原位")}</span>
-                <span className="spacer" />
-                <button className="btn sm" onClick={() => onNewRule()}>
-                  <WandSparkles size={14} /> {t("新建规则")}
-                </button>
-              </div>
-              {noMatchByExtension.map(([extension, files]) => (
-                <div key={extension}>
-                  <button
-                    type="button"
-                    className="group-head path-link"
-                    style={{ width: "100%", textAlign: "left", textDecoration: "none", color: "inherit" }}
-                    aria-expanded={expandedExtensions.has(extension)}
-                    onClick={() =>
-                      setExpandedExtensions((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(extension)) next.delete(extension);
-                        else next.add(extension);
-                        return next;
-                      })
-                    }
-                  >
-                    {expandedExtensions.has(extension) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                    <span className="title">{extension || t("无扩展名")}</span>
-                    <span className="spacer" />
-                    <span className="muted">{t("{0} 个", [files.length])}</span>
-                  </button>
-                  {expandedExtensions.has(extension) &&
-                    files.map((s) => (
-                      <div key={s.path} className="list-row">
-                        <FileIcon category={null} />
-                        <div className="row-main">
-                          <div className="row-title ellipsis">{s.name}</div>
-                          <div className="row-sub ellipsis">{s.display}</div>
-                        </div>
-                        <button className="icon-btn" aria-label={t("更多")} onClick={(e) => skipMenu(e.currentTarget, s)}>
-                          <Ellipsis size={17} />
-                        </button>
-                      </div>
-                    ))}
-                </div>
-              ))}
-            </div>
+            <NoMatchCard
+              groups={noMatchByExtension}
+              expanded={expandedExtensions}
+              onToggle={(extension) =>
+                setExpandedExtensions((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(extension)) next.delete(extension);
+                  else next.add(extension);
+                  return next;
+                })
+              }
+              onNewRule={() => onNewRule()}
+              onMenu={skipMenu}
+            />
           )}
 
-          {kept.length > 0 && (
-            <div className="card" id="kept">
-              <button
-                className="card-head path-link"
-                style={{ width: "100%", borderBottom: showKept ? undefined : 0, textDecoration: "none", color: "inherit" }}
-                onClick={() => setShowKept(!showKept)}
-              >
-                {showKept ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                <h2>{t("保持原位的项目")}</h2>
-                <span className="muted ellipsis">{keptByLabel.map(([label, list]) => `${label} ${list.length}`).join(" · ")}</span>
-              </button>
-              {showKept &&
-                keptByLabel.map(([label, list]) => (
-                  <div key={label}>
-                    <div className="section-title" style={{ padding: "12px 16px 4px" }}>
-                      {label}
-                      {t("（")}
-                      {list.length}
-                      {t("）")}
-                    </div>
-                    {list.map((s) => (
-                      <SkipRow key={s.path} s={s} onMenu={(el) => skipMenu(el, s)} />
-                    ))}
-                  </div>
-                ))}
-            </div>
-          )}
+          {kept.length > 0 && <KeptCard groups={keptByLabel} open={showKept} onToggle={() => setShowKept(!showKept)} onMenu={skipMenu} />}
 
           {items.length === 0 && noMatch.length === 0 && (config.rules ?? []).length > 0 && (
             <div className="empty">
@@ -648,6 +446,7 @@ export default function TidyPage({
                 </button>
               )}
               <button
+                data-testid="execute"
                 className={`btn lg ${confirmTrash ? "danger" : "primary"}`}
                 disabled={selected.size === 0 || busy !== null}
                 onClick={execute}
@@ -672,115 +471,6 @@ export default function TidyPage({
           }}
         />
       )}
-    </div>
-  );
-}
-
-function SkipRow({ s, onMenu }: { s: SkipView; onMenu: (el: HTMLElement) => void }) {
-  return (
-    <div className="list-row">
-      <FileIcon category={null} size={28} />
-      <div className="row-main">
-        <div className="row-title ellipsis">{s.name}</div>
-        <div className="row-sub ellipsis">{s.reason}</div>
-      </div>
-      <button className="icon-btn" aria-label={t("更多")} onClick={(e) => onMenu(e.currentTarget)}>
-        <Ellipsis size={17} />
-      </button>
-    </div>
-  );
-}
-
-// ---------- 首次使用：选择要整理的文件夹 ----------
-
-function Onboarding({ onDone }: { onDone: () => void }) {
-  const { config, save } = useStore();
-  const [suggestions, setSuggestions] = useState<FolderSuggestion[]>([]);
-  const [chosen, setChosen] = useState<string[]>([]);
-  const [extra, setExtra] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    api
-      .suggestedFolders()
-      .then((s) => {
-        setSuggestions(s);
-        // 默认选下载和桌面；文稿里多是整理好的东西，默认不选
-        setChosen(s.filter((x) => x.key !== "documents").map((x) => x.path));
-      })
-      .catch(() => setSuggestions([]));
-  }, []);
-
-  const all = [
-    ...suggestions.map((s) => ({ path: s.path, title: s.label, sub: s.display })),
-    ...extra.map((p) => ({ path: p, title: baseName(p), sub: p })),
-  ];
-
-  const start = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      await save({
-        ...config,
-        version: 2,
-        folders: chosen.map((path) => ({ path, rules: [] })),
-        settings: config.settings ?? { buffer: "10m" },
-      });
-      onDone();
-    } catch (e) {
-      setError(errorText(e));
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="page">
-      <div className="empty" style={{ maxWidth: 520 }}>
-        <SetupSteps step={1} />
-        <div className="art" style={{ marginTop: 18 }}>
-          <Sparkles size={26} />
-        </div>
-        <h1>{t("选择要整理的文件夹")}</h1>
-        <p className="muted">
-          {t("第一步：选要整理的文件夹。接下来建规则，写明哪些文件或文件夹放到哪里；每次都先给你看预览，执行后也能撤销。")}
-        </p>
-        <div className="card" style={{ width: "100%", marginTop: 14, textAlign: "left" }}>
-          {all.map((f) => (
-            <label key={f.path} className="list-row clickable">
-              <Checkbox
-                checked={chosen.includes(f.path)}
-                onChange={(on) => setChosen(on ? [...chosen, f.path] : chosen.filter((p) => p !== f.path))}
-                label={f.title}
-              />
-              <Folder size={18} color="var(--accent)" />
-              <div className="row-main">
-                <div className="row-title">{f.title}</div>
-                <div className="row-sub mono">{f.sub}</div>
-              </div>
-            </label>
-          ))}
-          <div className="list-row">
-            <button
-              className="btn ghost sm"
-              onClick={async () => {
-                const d = await pickFolder(t("选择要整理的文件夹"));
-                if (d && !all.some((f) => f.path === d)) {
-                  setExtra([...extra, d]);
-                  setChosen([...chosen, d]);
-                }
-              }}
-            >
-              <FolderPlus size={15} /> {t("选择其他文件夹…")}
-            </button>
-          </div>
-        </div>
-        {error && <div className="banner error">{error}</div>}
-        <button className="btn primary lg" style={{ marginTop: 10 }} disabled={chosen.length === 0 || saving} onClick={start}>
-          {saving ? <Spinner size={15} /> : <ArrowRight size={16} />}
-          {t("下一步")}
-        </button>
-      </div>
     </div>
   );
 }

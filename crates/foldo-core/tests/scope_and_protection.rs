@@ -420,3 +420,63 @@ fn unknown_rule_in_folder_is_an_error() {
     );
     assert!(RuleSet::from_yaml(&yaml).is_err());
 }
+
+#[test]
+fn scan_reports_progress_and_can_be_cancelled() {
+    let (_t, inbox) = setup();
+    for i in 0..5 {
+        touch(&inbox, &format!("f{i}.pdf"), "");
+    }
+    let rs = rules(&format!(
+        "version: 2\nfolders:\n  - path: {}\n    rules: [文档]\nrules:\n  - name: 文档\n    when: {{ ext: pdf }}\n    actions: [{{ move: '文档/' }}]\n",
+        q(&inbox)
+    ));
+    let ctrl = foldo_core::ScanControl::default();
+    let plan = foldo_core::build_plan_with(&rs, None, chrono::Local::now(), &ctrl).unwrap();
+    assert_eq!(plan.ops.len(), 5);
+    let (found, checked) = ctrl.progress();
+    assert!(found >= 5 && checked == 5, "{found} {checked}");
+
+    // 取消后返回“已取消”
+    ctrl.reset();
+    ctrl.cancel();
+    assert!(foldo_core::build_plan_with(&rs, None, chrono::Local::now(), &ctrl).is_err());
+}
+
+#[test]
+fn switching_profiles_swaps_folder_setups() {
+    let yaml = "version: 2
+folders:
+  - path: /tmp/work
+    rules: [文档]
+profile: 工作
+profiles:
+  - name: 工作
+    folders: []
+  - name: 个人
+    folders:
+      - path: /tmp/home
+        rules: [文档, 已删除的规则]
+rules:
+  - name: 文档
+    actions: [keep]
+";
+    let mut file = foldo_core::parse_rule_file(yaml).unwrap();
+    file.switch_profile("个人").unwrap();
+    assert_eq!(file.profile.as_deref(), Some("个人"));
+    assert_eq!(file.folders[0].path, "/tmp/home");
+    // 已经不存在的规则被去掉
+    assert_eq!(
+        file.folders[0].rules.as_deref(),
+        Some(&["文档".to_string()][..])
+    );
+    // 原来的设置存回了“工作”
+    let work = file.profiles.iter().find(|p| p.name == "工作").unwrap();
+    assert_eq!(work.folders[0].path, "/tmp/work");
+    // 切回去，写成 YAML 再读一遍不变
+    file.switch_profile("工作").unwrap();
+    assert_eq!(file.folders[0].path, "/tmp/work");
+    let again = foldo_core::parse_rule_file(&file.to_yaml().unwrap()).unwrap();
+    assert_eq!(again.profiles.len(), 2);
+    assert!(file.switch_profile("不存在").is_err());
+}

@@ -1,0 +1,12 @@
+{
+  "name": "foldo-e2e",
+  "private": true,
+  "type": "module",
+  "description": "在真实的 Foldo 窗口里跑主流程（Windows / Linux，经由 tauri-driver）",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 foldo.e2e.mjs"
+  },
+  "dependencies": {
+    "selenium-webdriver": "4.52.0"
+  }
+}

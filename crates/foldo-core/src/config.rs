@@ -48,9 +48,66 @@ pub struct RuleFile {
     /// 规则里的枚举（条件、动作）用 `move: ...` 这种单键 map 写法，而不是 YAML 标签 `!move`。
     #[serde(default, with = "serde_yaml_ng::with::singleton_map_recursive")]
     pub rules: Vec<RuleDef>,
+    /// 配置方案：保存起来的几套“文件夹 → 规则”，可以一键切换。当前生效的是上面的 `folders`。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub profiles: Vec<ProfileDef>,
+    /// 当前方案的名称（没有方案时为空）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+}
+
+/// 一套配置方案：要整理的文件夹，以及各自使用的规则。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileDef {
+    pub name: String,
+    #[serde(default)]
+    pub folders: Vec<FolderDef>,
 }
 
 impl RuleFile {
+    /// 切换到另一套方案：当前的文件夹设置存回当前方案，再换成目标方案的文件夹设置。
+    /// 目标方案里引用的规则如果已经被删除，会被去掉。
+    pub fn switch_profile(&mut self, name: &str) -> Result<(), String> {
+        if self.profile.as_deref() == Some(name) {
+            return Ok(());
+        }
+        let target = self
+            .profiles
+            .iter()
+            .find(|p| p.name == name)
+            .ok_or_else(|| crate::t!("找不到配置方案「{name}」", name = name))?
+            .folders
+            .clone();
+        let current = self
+            .profile
+            .clone()
+            .unwrap_or_else(|| crate::t!("默认方案"));
+        match self.profiles.iter_mut().find(|p| p.name == current) {
+            Some(p) => p.folders = self.folders.clone(),
+            None => self.profiles.insert(
+                0,
+                ProfileDef {
+                    name: current,
+                    folders: self.folders.clone(),
+                },
+            ),
+        }
+        let known: std::collections::HashSet<&str> =
+            self.rules.iter().map(|r| r.name.as_str()).collect();
+        self.folders = target
+            .into_iter()
+            .map(|mut f| {
+                if let Some(list) = &mut f.rules {
+                    list.retain(|n| known.contains(n.as_str()));
+                }
+                f
+            })
+            .collect();
+        self.profile = Some(name.to_string());
+        Ok(())
+    }
+
     /// 写成 YAML 文本。
     pub fn to_yaml(&self) -> Result<String, serde_yaml_ng::Error> {
         serde_yaml_ng::to_string(self)
@@ -73,7 +130,7 @@ pub struct FolderDef {
     pub rules: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SettingsDef {
     /// 按内置类型 ID 覆盖扩展名列表；未配置的类型仍使用默认值。
@@ -88,6 +145,38 @@ pub struct SettingsDef {
     /// 保留整理后变空的文件夹。默认会删除它们（撤销时会自动重建）。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub keep_empty_folders: bool,
+    /// 历史记录保留多少天，更早的自动清理（清理后不能再撤销）。默认 365 天；0 表示一直保留。
+    #[serde(
+        default = "default_history_days",
+        skip_serializing_if = "is_default_history_days"
+    )]
+    pub keep_history_days: u32,
+    /// 定时整理：每天或每周固定时间整理一次（只做可以撤销的操作）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<crate::schedule::ScheduleDef>,
+}
+
+pub const DEFAULT_HISTORY_DAYS: u32 = 365;
+
+fn default_history_days() -> u32 {
+    DEFAULT_HISTORY_DAYS
+}
+
+fn is_default_history_days(d: &u32) -> bool {
+    *d == DEFAULT_HISTORY_DAYS
+}
+
+impl Default for SettingsDef {
+    fn default() -> Self {
+        Self {
+            category_extensions: Default::default(),
+            buffer: None,
+            auto: AutoMode::Off,
+            keep_empty_folders: false,
+            keep_history_days: DEFAULT_HISTORY_DAYS,
+            schedule: None,
+        }
+    }
 }
 
 impl SettingsDef {

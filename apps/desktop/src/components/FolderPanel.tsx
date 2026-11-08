@@ -1,5 +1,5 @@
 // 整理页顶部的文件夹列表：每个文件夹添加 / 移除规则，设置是否含子文件夹和隐藏文件。
-import { Check, Ellipsis, Folder, FolderPlus, Plus, Search, Trash, WandSparkles } from "lucide-react";
+import { Check, ChevronDown, Ellipsis, Folder, FolderPlus, Layers, Pencil, Plus, Search, Trash, WandSparkles } from "lucide-react";
 import { useState } from "react";
 import { api, baseName, errorText, type FolderDef, type RuleFile, type WatchStatus } from "../api";
 import { tilde } from "../rules";
@@ -21,7 +21,7 @@ export default function FolderPanel({
   /** 新建规则，保存后加入这个文件夹。 */
   onNewRule: (folder: string) => void;
 }) {
-  const { config, save } = useStore();
+  const { config, save, setView } = useStore();
   const folders = config.folders ?? [];
   const rules = config.rules ?? [];
   const [error, setError] = useState<string | null>(null);
@@ -115,6 +115,73 @@ export default function FolderPanel({
 
   const live = watch && watch.mode !== "off";
 
+  // ---------- 配置方案 ----------
+  const profiles = config.profiles ?? [];
+  const current = config.profile;
+  const [naming, setNaming] = useState<{ mode: "new" | "rename"; name: string } | null>(null);
+  const busy = saving || !!pending;
+  const runProfile = async (f: () => Promise<void>) => {
+    if (saving) return;
+    setError(null);
+    setSaving(true);
+    try {
+      await f();
+      onAdded();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const switchTo = (name: string) => runProfile(async () => setView(await api.switchProfile(name)));
+  const nameError = (name: string) => {
+    const n = name.trim();
+    if (!n) return t("请输入名称");
+    if (profiles.some((p) => p.name === n && p.name !== (naming?.mode === "rename" ? current : undefined))) return t("已经有同名的方案");
+    return null;
+  };
+  const submitName = () => {
+    if (!naming || nameError(naming.name)) return;
+    const name = naming.name.trim();
+    const { mode } = naming;
+    setNaming(null);
+    if (mode === "new") {
+      // 新方案从空白开始；当前的文件夹设置由后端存进当前方案（没有方案时叫“默认方案”）
+      void runProfile(async () => {
+        await save({ ...config, profiles: [...profiles, { name, folders: [] }] });
+        setView(await api.switchProfile(name));
+      });
+    } else {
+      void runProfile(() => save({ ...config, profile: name, profiles: profiles.map((p) => (p.name === current ? { ...p, name } : p)) }));
+    }
+  };
+  const removeCurrent = () => {
+    const other = profiles.find((p) => p.name !== current);
+    if (!other || !current) return;
+    void runProfile(async () => {
+      const v = await api.switchProfile(other.name);
+      if (!v.config) throw t("配置文件读取失败");
+      await save({ ...v.config, profiles: (v.config.profiles ?? []).filter((p) => p.name !== current) });
+    });
+  };
+  const profileMenu = (el: HTMLElement) => {
+    const items: MenuItem[] = profiles.map((p) => ({
+      label: p.name,
+      icon: p.name === current ? <Check size={15} /> : <span style={{ width: 15 }} />,
+      onClick: () => {
+        if (p.name !== current)
+          confirmIfAuto(t("自动整理已开启：切换后会立即按「{0}」里的文件夹和规则整理。", [p.name]), () => void switchTo(p.name));
+      },
+    }));
+    if (items.length) items.push("divider");
+    items.push({ label: t("新建方案…"), icon: <Plus size={15} />, onClick: () => setNaming({ mode: "new", name: "" }) });
+    if (current)
+      items.push({ label: t("重命名方案…"), icon: <Pencil size={15} />, onClick: () => setNaming({ mode: "rename", name: current }) });
+    if (current && profiles.length > 1)
+      items.push({ label: t("删除当前方案"), icon: <Trash size={15} />, danger: true, onClick: removeCurrent });
+    menu.open(el, items);
+  };
+
   return (
     <div className="card folder-panel">
       {error && (
@@ -122,6 +189,15 @@ export default function FolderPanel({
           {error}
         </div>
       )}
+      <div className="profile-bar">
+        <span className="muted">{t("配置方案")}</span>
+        <button className="profile-btn" disabled={busy} onClick={(e) => profileMenu(e.currentTarget)} data-testid="profile-menu">
+          <Layers size={14} />
+          <span className="ellipsis">{current ?? t("默认方案")}</span>
+          <ChevronDown size={14} />
+        </button>
+        <span className="muted profile-hint">{profiles.length < 2 && t("可以为工作、个人等场景各存一套文件夹和规则，一键切换")}</span>
+      </div>
       {folders.map((f, i) => {
         const list = used(f);
         const watching = live && list.some((r) => r.enabled !== false);
@@ -179,6 +255,44 @@ export default function FolderPanel({
         <FolderPlus size={15} /> {t("添加文件夹")}
       </button>
       {menu.node}
+      {naming && (
+        <Modal
+          title={naming.mode === "new" ? t("新建配置方案") : t("重命名配置方案")}
+          onClose={() => setNaming(null)}
+          width={400}
+          footer={
+            <>
+              <span className="spacer" />
+              <button className="btn" onClick={() => setNaming(null)}>
+                {t("取消")}
+              </button>
+              <button className="btn primary" disabled={!!nameError(naming.name)} onClick={submitName}>
+                {t("确定")}
+              </button>
+            </>
+          }
+        >
+          <input
+            className="input"
+            autoFocus
+            value={naming.name}
+            placeholder={t("例如：工作")}
+            onChange={(e) => setNaming({ ...naming, name: e.target.value })}
+            onKeyDown={(e) => e.key === "Enter" && submitName()}
+            style={{ width: "100%" }}
+          />
+          {naming.name.trim() !== "" && nameError(naming.name) && (
+            <div className="field-error" style={{ marginTop: 8 }}>
+              {nameError(naming.name)}
+            </div>
+          )}
+          {naming.mode === "new" && (
+            <p className="text-2" style={{ marginTop: 10, fontSize: 12.5 }}>
+              {t("新方案从空白开始。当前的文件夹设置会保存在「{0}」里，随时可以切换回来。", [current ?? t("默认方案")])}
+            </p>
+          )}
+        </Modal>
+      )}
       {pending && (
         <Modal
           title={t("立即生效")}

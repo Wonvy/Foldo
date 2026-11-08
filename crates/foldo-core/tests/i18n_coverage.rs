@@ -124,6 +124,20 @@ fn rs_keys() -> BTreeSet<String> {
             }
         }
     }
+    // 命令行帮助：i18n-help-start 和 i18n-help-end 之间的 /// 说明和 about = "…"
+    let cli = std::fs::read_to_string(repo().join("crates/foldo-cli/src/main.rs")).unwrap();
+    if let (Some(a), Some(b)) = (cli.find("i18n-help-start"), cli.find("i18n-help-end")) {
+        let about = Regex::new(r#"about = "((?:[^"\\]|\\.)*)""#).unwrap();
+        for line in cli[a..b].lines() {
+            let l = line.trim();
+            if let Some(doc) = l.strip_prefix("///") {
+                keys.insert(doc.trim().to_string());
+            }
+            for c in about.captures_iter(l) {
+                keys.insert(unescape(&c[1]));
+            }
+        }
+    }
     use foldo_core::SkipKind::*;
     for k in [
         Protected, Credential, Shortcut, System, Hidden, Partial, Buffer, InUse, Folder, NoMatch,

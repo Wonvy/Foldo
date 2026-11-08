@@ -38,6 +38,8 @@ pub struct AppState {
     /// 执行时必须带上对应的 plan_id，防止执行过期的预览。
     plans: Mutex<VecDeque<(u64, Plan)>>,
     plan_seq: AtomicU64,
+    /// 正在进行的扫描的进度（整理页显示，可以取消）
+    scan: std::sync::Arc<foldo_core::ScanControl>,
 }
 
 impl AppState {
@@ -144,14 +146,48 @@ pub(crate) fn current_config() -> CmdResult<RuleFile> {
                 ..Default::default()
             },
             rules: vec![],
+            profiles: vec![],
+            profile: None,
         }),
     }
 }
 
+/// 本月的整理统计（历史页顶部显示）。
+#[tauri::command]
+pub async fn stats(state: State<'_, AppState>) -> CmdResult<foldo_core::journal::Stats> {
+    use chrono::Datelike;
+    let now = Local::now();
+    let since = format!("{:04}-{:02}-01 00:00:00", now.year(), now.month());
+    state.with_journal(|j| j.stats(&since))
+}
+
+/// 按设置清理过期的历史记录（失败不影响整理本身）。
+pub(crate) fn prune_history(state: &AppState) {
+    let days = current_config()
+        .map(|c| c.settings.keep_history_days)
+        .unwrap_or(foldo_core::config::DEFAULT_HISTORY_DAYS);
+    let _ = state.with_journal(|j| j.prune(days));
+}
+
 /// 配置改变后：让后台立即按新配置检查，失败记录清零。
-fn config_changed(app: &tauri::AppHandle) {
+pub(crate) fn config_changed(app: &tauri::AppHandle) {
     crate::watch::reset_failures(app);
     crate::watch::wake();
+    crate::tray::refresh_profiles(app);
+}
+
+/// 切换到另一套配置方案（整理页和托盘都用）。
+pub(crate) fn switch_profile_to(app: &tauri::AppHandle, name: &str) -> CmdResult<ConfigView> {
+    let mut file = current_config()?;
+    file.switch_profile(name)?;
+    write_config(&file)?;
+    config_changed(app);
+    Ok(read_config())
+}
+
+#[tauri::command]
+pub async fn switch_profile(app: tauri::AppHandle, name: String) -> CmdResult<ConfigView> {
+    switch_profile_to(&app, &name)
 }
 
 #[tauri::command]
@@ -339,8 +375,29 @@ pub async fn scan(state: State<'_, AppState>) -> CmdResult<PlanView> {
     if set.folders.is_empty() && set.rules.is_empty() {
         return Err(foldo_core::t!("还没有选择要整理的文件夹"));
     }
-    let plan = build_plan(&set, None).map_err(err)?;
+    state.scan.reset();
+    let plan = foldo_core::build_plan_with(&set, None, Local::now(), &state.scan).map_err(err)?;
     state.store_plan(plan)
+}
+
+#[derive(Serialize)]
+pub struct ScanProgress {
+    found: usize,
+    checked: usize,
+}
+
+/// 正在进行的扫描的进度。
+#[tauri::command]
+pub async fn scan_progress(state: State<'_, AppState>) -> CmdResult<ScanProgress> {
+    let (found, checked) = state.scan.progress();
+    Ok(ScanProgress { found, checked })
+}
+
+/// 取消正在进行的扫描。
+#[tauri::command]
+pub async fn cancel_scan(state: State<'_, AppState>) -> CmdResult<()> {
+    state.scan.cancel();
+    Ok(())
 }
 
 /// 处理拖入窗口的文件和文件夹。
@@ -433,6 +490,7 @@ pub async fn execute_plan(
         return Err(foldo_core::t!("没有选中任何文件"));
     }
     let report = state.with_journal(|j| execute(&subset, j, "gui"))?;
+    prune_history(&state);
     let problems = |list: Vec<(foldo_core::Op, String)>| {
         list.into_iter()
             .map(|(op, e)| Problem {
@@ -1040,6 +1098,8 @@ pub async fn export_rules(names: Vec<String>, path: String) -> CmdResult<usize> 
         protect: vec![],
         settings: SettingsDef::default(),
         rules,
+        profiles: vec![],
+        profile: None,
     };
     let yaml = file.to_yaml().map_err(err)?;
     std::fs::write(

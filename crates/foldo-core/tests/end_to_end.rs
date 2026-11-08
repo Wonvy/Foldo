@@ -582,9 +582,9 @@ rules:
 }
 
 #[test]
-fn extract_only_supports_zip() {
+fn extract_rejects_unsupported_formats() {
     let e = env();
-    touch(&e.inbox, "资料.rar", "x");
+    touch(&e.inbox, "光盘.iso", "x");
     let rs = rules(&format!(
         "version: 2\nfolders:\n  - path: {}\n    rules: [解压]\nrules:\n  - name: 解压\n    actions: [{{ extract: '{{stem}}/' }}]\n",
         q(&e.inbox)
@@ -609,4 +609,74 @@ fn keep_source_actions_are_not_repeated() {
     // 再扫描一次：副本和压缩包都已经在了，不再重复生成
     let again = build_plan(&rs, None).unwrap();
     assert!(again.ops.is_empty(), "{:?}", again.ops);
+}
+
+/// 在 `dir` 下生成一个含 `内容/说明.txt` 的压缩包，返回路径。
+fn make_archive(dir: &Path, name: &str) -> PathBuf {
+    let src = dir.join("待压缩");
+    touch(&src, "内容/说明.txt", "压缩包里的文字");
+    let out = dir.join(name);
+    if name.ends_with(".7z") {
+        sevenz_rust2::compress_to_path(&src, &out).unwrap();
+    } else {
+        let file = fs::File::create(&out).unwrap();
+        let mut tar = tar::Builder::new(flate2::write::GzEncoder::new(
+            file,
+            flate2::Compression::default(),
+        ));
+        tar.append_dir_all(".", &src).unwrap();
+        tar.into_inner().unwrap().finish().unwrap();
+    }
+    fs::remove_dir_all(&src).unwrap();
+    set_mtime(&out, MAY_2024);
+    out
+}
+
+#[test]
+fn extract_7z_and_tar_gz() {
+    let e = env();
+    make_archive(&e.inbox, "资料.7z");
+    make_archive(&e.inbox, "备份.tar.gz");
+    let rs = rules(&format!(
+        "version: 2\nfolders:\n  - path: {}\n    rules: [解压]\nrules:\n  - name: 解压\n    actions: [{{ extract: '{{stem}}/' }}]\n",
+        q(&e.inbox)
+    ));
+    let journal = Journal::open_in_memory().unwrap();
+    let report = execute(&build_plan(&rs, None).unwrap(), &journal, "test").unwrap();
+    assert_eq!(report.done, 2, "{report:?}");
+    assert_eq!(
+        fs::read_to_string(e.inbox.join("资料/内容/说明.txt")).unwrap(),
+        "压缩包里的文字"
+    );
+    // tar.gz 的主名是“备份.tar”
+    assert_eq!(
+        fs::read_to_string(e.inbox.join("备份.tar/内容/说明.txt")).unwrap(),
+        "压缩包里的文字"
+    );
+}
+
+#[test]
+fn extract_never_writes_outside_the_target_folder() {
+    let e = env();
+    // 手工写一个含 ../逃逸.txt 的 tar（正常工具不会生成这种路径）
+    let path = e.inbox.join("危险.tar");
+    let mut builder = tar::Builder::new(fs::File::create(&path).unwrap());
+    let body = b"evil";
+    let mut header = tar::Header::new_old();
+    header.as_old_mut().name[..12].copy_from_slice(b"../evil.txt\0");
+    header.set_size(body.len() as u64);
+    header.set_mode(0o644);
+    header.set_cksum();
+    builder.append(&header, &body[..]).unwrap();
+    builder.into_inner().unwrap();
+    set_mtime(&path, MAY_2024);
+
+    let rs = rules(&format!(
+        "version: 2\nfolders:\n  - path: {}\n    rules: [解压]\nrules:\n  - name: 解压\n    actions: [{{ extract: '{{stem}}/' }}]\n",
+        q(&e.inbox)
+    ));
+    let journal = Journal::open_in_memory().unwrap();
+    execute(&build_plan(&rs, None).unwrap(), &journal, "test").unwrap();
+    assert!(!e.inbox.join("evil.txt").exists());
+    assert!(!e.inbox.parent().unwrap().join("evil.txt").exists());
 }

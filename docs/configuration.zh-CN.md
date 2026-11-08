@@ -24,6 +24,17 @@ settings:
   buffer: 10m                # 新文件缓冲期
   auto: notify               # 后台自动整理：off（默认）/ notify 发现文件时提醒 / run 直接整理（移到回收站仍需确认）
   keep_empty_folders: false  # true 时保留整理后变空的文件夹（默认删除，撤销时重建）
+  keep_history_days: 365     # 历史记录保留天数，更早的自动清理（清理后不能撤销）；0 表示一直保留
+  schedule:                  # 定时整理（可选）：到点整理一次，只做可以撤销的操作；关机错过的时间点下次打开时补上
+    every: weekly            # daily 每天 / weekly 每周
+    weekday: 1               # 每周时必填：1 = 周一 … 7 = 周日
+    at: "18:30"              # 24 小时制
+profile: 工作                # 当前配置方案（可选）
+profiles:                    # 配置方案：保存起来的几套“文件夹 → 规则”，一键切换；当前生效的是上面的 folders
+  - name: 个人
+    folders:
+      - path: ~/Pictures
+        rules: [规则名]
 rules:
   - name: 规则名（唯一）
     enabled: true            # 默认 true
@@ -31,6 +42,8 @@ rules:
     except: [...]            # 例外：命中任意一条则不适用
     actions: [...]
 ```
+
+配置方案可以在整理页文件夹列表上方或托盘菜单里切换。切换时，当前的 `folders` 存回当前方案，再换成目标方案的文件夹设置；目标方案里引用了已删除的规则会被去掉。没有方案时第一次新建方案，原来的设置会保存成“默认方案”。
 
 旧的 `version: 1` 写法（规则里写 `locations` / `recursive`）读取时会自动转换：规则加入对应的文件夹，没写 `locations` 的规则加入全部文件夹，整理结果不变。图形界面保存时会写成新写法。
 
@@ -72,7 +85,7 @@ when:
 
 | 分组 | 字段 |
 |---|---|
-| 基本 | `name` `stem` `ext` `parent` `path` `size` `category` `mime`（按文件头识别的真实格式） `hidden` `readonly` `empty` `duplicate`（同一整理文件夹里有内容完全相同的文件，最早修改的一份不算） `duplicate.of`（原件文件名） |
+| 基本 | `name` `stem` `ext` `parent` `path` `size` `category` `mime`（按文件头识别的真实格式） `hidden` `readonly` `empty` `duplicate`（全部整理文件夹里有内容完全相同的文件，跨文件夹比较；最早修改的一份不算） `duplicate.of`（原件文件名） |
 | 时间 | `created` `modified` `accessed`，以及分量 `modified.year` `.month` `.day` `.weekday`（周一为 1） `.hour`（`created.*` `accessed.*` 同理） |
 | 图片 | `image.width` `image.height` `image.pixels`（百万像素） `image.ratio` `image.orientation`（横 / 竖 / 方） |
 | 照片 EXIF | `exif.taken` `exif.make` `exif.model` `exif.lens` `exif.software` `exif.iso` `exif.focal` `exif.gps` |
@@ -92,7 +105,7 @@ when:
 | `move: "目标文件夹"` | 文件名不变；相对路径以文件所在的整理文件夹为基准 |
 | `copy: "目标文件夹"` | 后续动作仍作用于原文件 |
 | `rename: "新文件名"` | 在原文件夹内改名 |
-| `extract: "{stem}/"` | 解压 zip 到文件夹（相对压缩包所在位置），原文件保留 |
+| `extract: "{stem}/"` | 解压 zip、7z、rar、tar、tar.gz 到文件夹（相对压缩包所在位置），原文件保留；压缩包里越出目标文件夹的路径会被跳过 |
 | `compress: "{stem}.zip"` | 压缩成 zip（相对文件所在位置），原文件保留 |
 | `shortcut: "~/Desktop/常用/"` | 在目标文件夹创建快捷方式（Windows 为 .lnk，其他系统为符号链接），原文件保留 |
 | `trash` | 移入系统回收站，必须是最后一个动作 |

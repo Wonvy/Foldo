@@ -254,7 +254,7 @@ export default function RulesPage({
               <input placeholder={t("搜索规则")} value={query} onChange={(e) => setQuery(e.target.value)} />
             </div>
           )}
-          <button className="btn primary" onClick={() => setEditing(null)}>
+          <button data-testid="new-rule" className="btn primary" onClick={() => setEditing(null)}>
             <Plus size={16} /> {t("新建规则")}
           </button>
           <button

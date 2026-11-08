@@ -22,6 +22,13 @@ fn main() {
         .manage(watch::WatchState::default())
         .setup(|app| {
             commands::load_locale();
+            // 启动时清理一次过期的历史记录
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    commands::prune_history(&handle.state::<commands::AppState>())
+                });
+            }
             tray::build(app.handle())?;
             // 点系统通知：打开主窗口，显示待确认的文件或刚才的整理记录
             {
@@ -58,10 +65,14 @@ fn main() {
             commands::suggested_folders,
             commands::scan,
             commands::scan_paths,
+            commands::scan_progress,
+            commands::cancel_scan,
             commands::try_rule,
             commands::retarget,
             commands::execute_plan,
             commands::history,
+            commands::stats,
+            commands::switch_profile,
             commands::batch_ops,
             commands::undo_preview,
             commands::undo,

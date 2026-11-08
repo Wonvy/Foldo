@@ -2,6 +2,7 @@
 // 只在 import.meta.env.DEV 且不在 Tauri 中时加载（见 main.tsx），正式构建不包含这个文件。
 // 地址加 ?mock=empty 可以预览首次使用的引导页。
 import type { Batch, Category, ConfigView, OpView, PlanView, RuleFile, SkipKind, SkipView, UndoCheck } from "../api";
+import { switchProfile } from "../rules";
 
 const HOME = "/Users/demo";
 const DL = `${HOME}/Downloads`;
@@ -311,6 +312,9 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
     case "save_config":
       config = args.config as RuleFile;
       return view();
+    case "switch_profile":
+      config = switchProfile(config!, args.name as string, "默认方案");
+      return view();
     case "add_protect":
       config = { ...(config ?? { version: 1 }), protect: [...(config?.protect ?? []), args.entry as string] };
       return view();
@@ -326,17 +330,29 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
         { key: "desktop", path: DESK, display: "~/Desktop", label: "桌面" },
         { key: "documents", path: `${HOME}/Documents`, display: "~/Documents", label: "文稿" },
       ];
-    case "scan":
+    case "scan": {
       await sleep(450);
+      // ?mock=big：模拟几千个文件，用来检查长列表
+      const big = new URLSearchParams(location.search).get("mock") === "big";
+      const planned = big
+        ? Array.from({ length: 3000 }, (_, i): Planned => ({
+            name: `照片_${String(i).padStart(4, "0")}.jpg`,
+            from: DL,
+            to: `${DL}/Pictures/${2020 + (i % 6)}`,
+            reason: "规则「图片归档」",
+          }))
+        : PLANNED;
       return makePlan(
-        PLANNED,
+        planned,
         SKIPPED.map(([p, k, r]) => skip(p, k, r)),
       );
+    }
     case "scan_paths": {
       await sleep(300);
       const paths = args.paths as string[];
+      // 前三个按示例规则整理，其余没有匹配的规则
       return makePlan(
-        [],
+        PLANNED.slice(0, 3),
         paths.map((p) => skip(p, "no_match", "没有匹配的规则，保持原位")),
       );
     }
@@ -480,7 +496,23 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
       return { mode: config?.settings?.auto ?? "off", last_check: "14:32", pending: 2, last_batch: null, last_done: 0, error: null };
     case "watch_now":
     case "set_locale":
+    case "cancel_scan":
       return null;
+    case "stats":
+      return {
+        files: 128,
+        trashed: 6,
+        trashed_bytes: 734003200,
+        auto_runs: 9,
+        manual_runs: 3,
+        top_rules: [
+          ["图片归档", 61],
+          ["文档归档", 40],
+          ["3D 模型归档", 12],
+        ],
+      };
+    case "scan_progress":
+      return { found: 1234, checked: 567 };
     case "check_update":
       return { current: "0.2.0", version: null, notes: null, date: null, can_install: true };
     case "open_releases":

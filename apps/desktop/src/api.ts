@@ -71,9 +71,24 @@ export type RuleFile = {
   version: number;
   folders?: FolderDef[];
   protect?: string[];
-  settings?: { buffer?: string; auto?: AutoMode; keep_empty_folders?: boolean; category_extensions?: Record<string, string[]> };
+  settings?: {
+    buffer?: string;
+    auto?: AutoMode;
+    keep_empty_folders?: boolean;
+    /** 历史记录保留天数，默认 365；0 表示一直保留 */
+    keep_history_days?: number;
+    /** 定时整理：每天或每周固定时间 */
+    schedule?: { every: "daily" | "weekly"; at: string; weekday?: number };
+    category_extensions?: Record<string, string[]>;
+  };
   rules?: RuleDef[];
+  /** 配置方案：保存起来的几套“文件夹 → 规则”，当前生效的是上面的 folders */
+  profiles?: ProfileDef[];
+  /** 当前方案的名称 */
+  profile?: string;
 };
+
+export type ProfileDef = { name: string; folders: FolderDef[] };
 
 export type ConfigView = {
   /** 用户主目录，用于把路径显示成 ~/… */
@@ -222,6 +237,17 @@ export type DebugView = {
   reason: string | null;
 };
 
+/** 本月的整理统计。 */
+export type Stats = {
+  files: number;
+  trashed: number;
+  trashed_bytes: number;
+  auto_runs: number;
+  manual_runs: number;
+  /** [规则名, 次数] */
+  top_rules: [string, number][];
+};
+
 export type FolderSuggestion = { key: "downloads" | "desktop" | "documents"; path: string; display: string; label: string };
 
 export const api = {
@@ -234,10 +260,14 @@ export const api = {
   suggestedFolders: () => invoke<FolderSuggestion[]>("suggested_folders"),
   scan: () => invoke<PlanView>("scan"),
   scanPaths: (paths: string[]) => invoke<PlanView>("scan_paths", { paths }),
+  scanProgress: () => invoke<{ found: number; checked: number }>("scan_progress"),
+  cancelScan: () => invoke<void>("cancel_scan"),
   tryRule: (rule: RuleDef, paths: string[] | null) => invoke<PlanView>("try_rule", { rule, paths }),
   retarget: (planId: number, group: number, dir: string) => invoke<PlanView>("retarget", { planId, group, dir }),
   executePlan: (planId: number, groups: number[]) => invoke<ExecView>("execute_plan", { planId, groups }),
   history: (limit = 100) => invoke<Batch[]>("history", { limit }),
+  stats: () => invoke<Stats>("stats"),
+  switchProfile: (name: string) => invoke<ConfigView>("switch_profile", { name }),
   batchOps: (id: number) => invoke<OpRecord[]>("batch_ops", { id }),
   undoPreview: (id: number) => invoke<UndoCheck[]>("undo_preview", { id }),
   undo: (id: number) => invoke<UndoView>("undo", { id }),

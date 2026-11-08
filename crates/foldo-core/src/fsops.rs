@@ -110,22 +110,146 @@ pub fn ensure_parent(dst: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(missing)
 }
 
-/// 把 zip 解压到 `dir`（`dir` 不能已存在）。失败时删掉解压了一半的文件夹。
-pub fn extract_zip(archive: &Path, dir: &Path) -> io::Result<()> {
+/// 能解压的压缩包格式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArchiveKind {
+    Zip,
+    SevenZ,
+    Rar,
+    Tar,
+    TarGz,
+}
+
+/// 按文件名判断压缩包格式；不支持的返回 None。
+pub fn archive_kind(path: &Path) -> Option<ArchiveKind> {
+    let name = path.file_name()?.to_string_lossy().to_lowercase();
+    Some(if name.ends_with(".zip") {
+        ArchiveKind::Zip
+    } else if name.ends_with(".7z") {
+        ArchiveKind::SevenZ
+    } else if name.ends_with(".rar") {
+        ArchiveKind::Rar
+    } else if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
+        ArchiveKind::TarGz
+    } else if name.ends_with(".tar") {
+        ArchiveKind::Tar
+    } else {
+        return None;
+    })
+}
+
+/// 把压缩包里的相对路径接到 `dir` 下；绝对路径和 `..` 这类会越出目标文件夹的项目返回 None（跳过）。
+fn safe_join(dir: &Path, name: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+    let mut out = dir.to_path_buf();
+    let mut any = false;
+    for c in name.components() {
+        match c {
+            Component::Normal(p) => {
+                out.push(p);
+                any = true;
+            }
+            Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    any.then_some(out)
+}
+
+fn write_entry(path: &Path, reader: &mut dyn io::Read) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut out = fs::File::create(path)?;
+    io::copy(reader, &mut out)?;
+    Ok(())
+}
+
+/// 解压到 `dir`（`dir` 不能已存在）：支持 zip、7z、rar、tar、tar.gz。
+/// 越出目标文件夹的项目会被跳过；失败时删掉解压了一半的文件夹。
+pub fn extract_archive(archive: &Path, dir: &Path) -> io::Result<()> {
+    let kind =
+        archive_kind(archive).ok_or_else(|| io::Error::other(crate::t!("不支持的压缩包格式")))?;
     if exists(dir) {
         return Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
             crate::t!("目标文件夹已存在"),
         ));
     }
+    fs::create_dir_all(dir)?;
+    let result = match kind {
+        ArchiveKind::Zip => extract_zip(archive, dir),
+        ArchiveKind::SevenZ => extract_7z(archive, dir),
+        ArchiveKind::Rar => extract_rar(archive, dir),
+        ArchiveKind::Tar => extract_tar(fs::File::open(archive)?, dir),
+        ArchiveKind::TarGz => {
+            extract_tar(flate2::read::GzDecoder::new(fs::File::open(archive)?), dir)
+        }
+    };
+    if result.is_err() {
+        let _ = fs::remove_dir_all(dir);
+    }
+    result
+}
+
+fn extract_zip(archive: &Path, dir: &Path) -> io::Result<()> {
     let file = fs::File::open(archive)?;
     let mut zip = zip::ZipArchive::new(io::BufReader::new(file)).map_err(io::Error::other)?;
-    fs::create_dir_all(dir)?;
     // extract 会拒绝 ../ 之类越出目标文件夹的路径
-    zip.extract(dir).map_err(|e| {
-        let _ = fs::remove_dir_all(dir);
-        io::Error::other(e)
-    })
+    zip.extract(dir).map_err(io::Error::other)
+}
+
+fn extract_7z(archive: &Path, dir: &Path) -> io::Result<()> {
+    let mut reader = sevenz_rust2::ArchiveReader::open(archive, sevenz_rust2::Password::empty())
+        .map_err(io::Error::other)?;
+    reader
+        .for_each_entries(|entry, data| {
+            let Some(path) = safe_join(dir, Path::new(entry.name())) else {
+                return Ok(true);
+            };
+            if entry.is_directory() {
+                fs::create_dir_all(&path)?;
+            } else {
+                write_entry(&path, data)?;
+            }
+            Ok(true)
+        })
+        .map_err(io::Error::other)
+}
+
+fn extract_rar(archive: &Path, dir: &Path) -> io::Result<()> {
+    let mut open = unrar::Archive::new(archive)
+        .open_for_processing()
+        .map_err(io::Error::other)?;
+    while let Some(header) = open.read_header().map_err(io::Error::other)? {
+        let entry = header.entry();
+        let target = safe_join(dir, &entry.filename);
+        open = match target {
+            Some(path) if entry.is_file() => {
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                header.extract_to(&path).map_err(io::Error::other)?
+            }
+            Some(path) => {
+                if entry.is_directory() {
+                    fs::create_dir_all(&path)?;
+                }
+                header.skip().map_err(io::Error::other)?
+            }
+            None => header.skip().map_err(io::Error::other)?,
+        };
+    }
+    Ok(())
+}
+
+fn extract_tar(reader: impl io::Read, dir: &Path) -> io::Result<()> {
+    let mut tar = tar::Archive::new(reader);
+    for entry in tar.entries()? {
+        // unpack_in 会跳过越出目标文件夹的项目
+        entry?.unpack_in(dir)?;
+    }
+    Ok(())
 }
 
 /// 把整个文件夹压缩成 zip，压缩包里保留文件夹本身这一层（`dst` 不能已存在）。

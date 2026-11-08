@@ -154,6 +154,40 @@ export default function TidyOptions() {
             }
           />
         </div>
+        <div className="card-body row" style={{ borderTop: "1px solid var(--border)" }}>
+          <div style={{ flex: 1 }}>
+            <div>{t("定时整理")}</div>
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              {t("到时间自动整理一次，只做可以撤销的操作；错过的时间点会在下次打开时补上")}
+            </div>
+          </div>
+          <ScheduleInput
+            value={config.settings?.schedule}
+            onChange={(schedule) => update({ ...config, settings: { ...config.settings, schedule } })}
+          />
+        </div>
+        <div className="card-body row" style={{ borderTop: "1px solid var(--border)" }}>
+          <div style={{ flex: 1 }}>
+            <div>{t("历史记录保留")}</div>
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              {t("更早的整理记录会自动清理，清理后不能再撤销")}
+            </div>
+          </div>
+          <select
+            className="input"
+            style={{ width: "auto" }}
+            value={String(config.settings?.keep_history_days ?? 365)}
+            onChange={(e) => {
+              const days = Number(e.target.value);
+              update({ ...config, settings: { ...config.settings, keep_history_days: days === 365 ? undefined : days } });
+            }}
+          >
+            <option value="30">{t("30 天")}</option>
+            <option value="90">{t("90 天")}</option>
+            <option value="365">{t("1 年")}</option>
+            <option value="0">{t("一直保留")}</option>
+          </select>
+        </div>
       </div>
 
       <div className="card">
@@ -173,5 +207,55 @@ export default function TidyOptions() {
         ))}
       </div>
     </>
+  );
+}
+
+type Schedule = NonNullable<NonNullable<RuleFile["settings"]>["schedule"]>;
+
+/** 定时整理：关闭 / 每天 / 每周几，加上时间。 */
+function ScheduleInput({ value, onChange }: { value: Schedule | undefined; onChange: (v: Schedule | undefined) => void }) {
+  const mode = value?.every ?? "off";
+  const at = value?.at ?? "09:00";
+  const weekday = value?.weekday ?? 1;
+  const days = [t("周一"), t("周二"), t("周三"), t("周四"), t("周五"), t("周六"), t("周日")];
+  return (
+    <span className="row" style={{ gap: 6 }}>
+      <select
+        className="input"
+        style={{ width: "auto" }}
+        value={mode}
+        onChange={(e) => {
+          const v = e.target.value;
+          onChange(v === "off" ? undefined : v === "daily" ? { every: "daily", at } : { every: "weekly", at, weekday });
+        }}
+      >
+        <option value="off">{t("关闭")}</option>
+        <option value="daily">{t("每天")}</option>
+        <option value="weekly">{t("每周")}</option>
+      </select>
+      {mode === "weekly" && (
+        <select
+          className="input"
+          style={{ width: "auto" }}
+          value={weekday}
+          onChange={(e) => onChange({ every: "weekly", at, weekday: Number(e.target.value) })}
+        >
+          {days.map((d, i) => (
+            <option key={d} value={i + 1}>
+              {d}
+            </option>
+          ))}
+        </select>
+      )}
+      {mode !== "off" && (
+        <input
+          type="time"
+          className="input"
+          style={{ width: "auto" }}
+          value={at}
+          onChange={(e) => e.target.value && onChange({ ...(value as Schedule), at: e.target.value })}
+        />
+      )}
+    </span>
   );
 }

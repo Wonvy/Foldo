@@ -7,3 +7,6 @@ node_modules/
 *.key
 __pycache__/
 *.pyc
+
+# 端到端测试失败时的截图
+apps/desktop/e2e/artifacts/

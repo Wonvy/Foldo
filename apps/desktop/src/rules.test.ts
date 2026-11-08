@@ -11,6 +11,7 @@ import {
   nodeToDef,
   pruneFolderRules,
   renameInFolders,
+  switchProfile,
   ruleToForm,
   shortPath,
   type FieldMap,
@@ -192,5 +193,36 @@ describe("路径显示", () => {
   it("长路径只留最后两级", () => {
     expect(shortPath("/Users/me/Documents/工作/2026/发票/")).toBe("…/2026/发票");
     expect(shortPath("照片/")).toBe("照片");
+  });
+});
+
+describe("配置方案", () => {
+  const file: RuleFile = {
+    version: 2,
+    folders: [{ path: "/work", rules: ["甲"] }],
+    profile: "工作",
+    profiles: [
+      { name: "工作", folders: [] },
+      { name: "个人", folders: [{ path: "/home", rules: ["甲", "乙"] }] },
+    ],
+    rules: [
+      { name: "甲", actions: ["keep"] },
+      { name: "乙", actions: ["keep"] },
+    ],
+  };
+  it("切换时存回当前方案、换上目标方案", () => {
+    const next = switchProfile(file, "个人", "默认方案");
+    expect(next.profile).toBe("个人");
+    expect(next.folders?.[0].path).toBe("/home");
+    expect(next.profiles?.find((p) => p.name === "工作")?.folders[0].path).toBe("/work");
+  });
+  it("没有当前方案时存成默认方案", () => {
+    const next = switchProfile({ ...file, profile: undefined }, "个人", "默认方案");
+    expect(next.profiles?.[0].name).toBe("默认方案");
+  });
+  it("改名和删除规则也同步到其他方案", () => {
+    expect(renameInFolders(file, "乙", "丙").profiles?.[1].folders[0].rules).toEqual(["甲", "丙"]);
+    const pruned = pruneFolderRules({ ...file, rules: [{ name: "甲", actions: ["keep"] }] });
+    expect(pruned.profiles?.[1].folders[0].rules).toEqual(["甲"]);
   });
 });

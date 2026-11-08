@@ -520,3 +520,30 @@ fn duplicate_checks_reuse_cached_content_between_scans() {
     assert_eq!(second.ops.len(), 2);
     assert_eq!(foldo_core::meta::content_reads(), reads);
 }
+
+#[test]
+fn duplicates_are_found_across_folders() {
+    use foldo_core::{RuleSet, build_plan};
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let (desk, dl) = (root.join("desk"), root.join("dl"));
+    std::fs::create_dir_all(&desk).unwrap();
+    std::fs::create_dir_all(&dl).unwrap();
+    let put = |dir: &std::path::Path, name: &str, mtime: i64| {
+        let p = dir.join(name);
+        std::fs::write(&p, "同一份合同的内容").unwrap();
+        filetime::set_file_mtime(&p, filetime::FileTime::from_unix_time(mtime, 0)).unwrap();
+    };
+    put(&desk, "合同.pdf", 1_600_000_000); // 最早的一份：原件
+    put(&dl, "合同 (1).pdf", 1_700_000_000);
+    let rs = RuleSet::from_yaml(&format!(
+        "version: 2\nfolders:\n  - path: '{}'\n    rules: [重复]\n  - path: '{}'\n    rules: [重复]\nrules:\n  - name: 重复\n    when: {{ duplicate: true }}\n    actions: [{{ move: '重复/' }}]\n",
+        desk.display(),
+        dl.display()
+    ))
+    .unwrap();
+    let plan = build_plan(&rs, None).unwrap();
+    // 只有下载里那份是重复的
+    assert_eq!(plan.ops.len(), 1, "{:?}", plan.ops);
+    assert_eq!(plan.ops[0].origin, dl.join("合同 (1).pdf"));
+}
