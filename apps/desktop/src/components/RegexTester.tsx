@@ -8,12 +8,10 @@ export default function RegexTester({
   pattern = "",
   caseSensitive = false,
   onApply,
-  text = false,
 }: {
   pattern?: string;
   caseSensitive?: boolean;
   onApply?: (pattern: string, caseSensitive: boolean) => void;
-  text?: boolean;
 }) {
   const [id] = useState(() => crypto.randomUUID());
   const [error, setError] = useState<string | null>(null);
@@ -51,9 +49,8 @@ export default function RegexTester({
   };
   return (
     <>
-      <button type="button" className={text ? "btn" : "icon-btn"} disabled={opening} title={t("正则助手")} onClick={() => void open()}>
+      <button type="button" className="icon-btn" disabled={opening} title={t("正则助手")} onClick={() => void open()}>
         <FlaskConical size={16} />
-        {text && t("正则助手")}
       </button>
       {error && (
         <span className="text-danger" role="alert" title={error}>

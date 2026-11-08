@@ -63,7 +63,7 @@ export default function FileList({
         <Checkbox checked={on} onChange={(checked) => onToggle([item.path], checked)} label={item.name} />
         <FileIcon category={item.category} name={item.name} size={20} />
         <span className="ellipsis name">{item.name}</span>
-        <span className="float-to ellipsis">
+        <span className="float-to ellipsis" title={item.kind === "trash" ? t("回收站") : (item.destination ?? "")}>
           {item.kind === "trash" ? (
             <>
               <Trash size={12} /> {t("回收站")}

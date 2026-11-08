@@ -10,6 +10,7 @@ export type FloatItem = {
   category: string | null;
   kind: OpKind;
   dir: string | null;
+  destination: string | null;
   rule: string;
 };
 export type FloatGroup = { key: string; title: string; items: FloatItem[] };
@@ -35,6 +36,7 @@ export function toItems(plan: PlanView | null): FloatItem[] {
     category: op.category,
     kind: op.kind,
     dir: op.dst_dir_display,
+    destination: op.dst,
     rule: op.rule,
   }));
 }

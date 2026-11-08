@@ -1,4 +1,4 @@
-//! Independent regex workbenches, bound to the condition that opened each window.
+//! Owned regex workbenches, bound to the rule condition that opened each window.
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Mutex};
 use tauri::{Emitter, Manager};
@@ -30,6 +30,9 @@ pub async fn open_regex_lab(app: tauri::AppHandle, session: Session) -> Result<(
         window.show().map_err(|e| e.to_string())?;
         return window.set_focus().map_err(|e| e.to_string());
     }
+    let parent = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Rule editor window closed".to_owned())?;
     app.state::<Sessions>()
         .0
         .lock()
@@ -44,7 +47,10 @@ pub async fn open_regex_lab(app: tauri::AppHandle, session: Session) -> Result<(
     .inner_size(1060.0, 780.0)
     .min_inner_size(760.0, 560.0)
     .resizable(true)
-    .build();
+    .skip_taskbar(true)
+    .center()
+    .parent(&parent)
+    .and_then(|builder| builder.build());
     if let Err(error) = result {
         app.state::<Sessions>()
             .0

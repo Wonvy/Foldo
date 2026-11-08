@@ -23,7 +23,7 @@ afterEach(() => {
   mocks.callbacks.clear();
   vi.clearAllMocks();
 });
-it("独立窗口带入当前表达式，只向对应条件回填，编辑器关闭后清理窗口", async () => {
+it("子窗口带入当前表达式，只向对应条件回填，编辑器关闭后清理窗口", async () => {
   const first = vi.fn();
   const second = vi.fn();
   const ui = render(

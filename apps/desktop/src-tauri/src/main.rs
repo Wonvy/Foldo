@@ -72,6 +72,11 @@ fn main() {
                 && let WindowEvent::CloseRequested { api, .. } = event
             {
                 api.prevent_close();
+                for (label, child) in window.app_handle().webview_windows() {
+                    if label.starts_with("regex-") {
+                        let _ = child.close();
+                    }
+                }
                 let _ = window.hide();
             }
         })
