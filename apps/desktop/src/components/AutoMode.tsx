@@ -7,11 +7,12 @@ import { api, baseName, errorText, type AutoMode as Mode, type PlanView, type Wa
 import { tilde } from "../rules";
 import { useStore } from "../store";
 import { Modal, Segmented, Spinner } from "./ui";
+import { t } from "../i18n";
 
 const HINT: Record<Mode, string> = {
-  off: "只在你点“扫描”时整理",
-  notify: "后台监听文件夹，有可以整理的文件时发通知，由你确认",
-  run: "后台监听文件夹并直接整理，可在历史里撤销；移到回收站仍需你确认",
+  off: t("只在你点“扫描”时整理"),
+  notify: t("后台监听文件夹，有可以整理的文件时发通知，由你确认"),
+  run: t("后台监听文件夹并直接整理，可在历史里撤销；移到回收站仍需你确认"),
 };
 
 export default function AutoMode({ watch }: { watch: WatchStatus | null }) {
@@ -47,8 +48,8 @@ export default function AutoMode({ watch }: { watch: WatchStatus | null }) {
     if (mode === "off" || !watch) return HINT[mode];
     if (watch.error) return watch.error;
     const parts = [HINT[mode]];
-    if (watch.last_check) parts.push(`${watch.last_check} 检查过`);
-    if (watch.last_done) parts.push(`上次自动整理了 ${watch.last_done} 个文件`);
+    if (watch.last_check) parts.push(t("{0} 检查过", [watch.last_check]));
+    if (watch.last_done) parts.push(t("上次自动整理了 {0} 个文件", [watch.last_done]));
     return parts.join("\n");
   })();
 
@@ -58,9 +59,9 @@ export default function AutoMode({ watch }: { watch: WatchStatus | null }) {
         value={mode}
         onChange={(v) => (v === "run" ? setConfirming(true) : void setMode(v))}
         options={[
-          { value: "off", label: <><Hand size={14} /> 手动</> },
-          { value: "notify", label: <><Bell size={14} /> 提醒</> },
-          { value: "run", label: <><Zap size={14} /> 自动</> },
+          { value: "off", label: <><Hand size={14} /> {t("手动")}</> },
+          { value: "notify", label: <><Bell size={14} /> {t("提醒")}</> },
+          { value: "run", label: <><Zap size={14} /> {t("自动")}</> },
         ]}
       />
       {confirming && mode !== "run" && (
@@ -104,7 +105,7 @@ function ConfirmAuto({ onCancel, onConfirm }: { onCancel: () => void; onConfirm:
 
   return (
     <Modal
-      title="开启自动整理"
+      title={t("开启自动整理")}
       icon={<Zap size={18} color="var(--accent)" />}
       onClose={onCancel}
       width={560}
@@ -112,7 +113,7 @@ function ConfirmAuto({ onCancel, onConfirm }: { onCancel: () => void; onConfirm:
         <>
           <span className="spacer" />
           <button className="btn" onClick={onCancel}>
-            取消
+            {t("取消")}
           </button>
           <button
             className="btn primary"
@@ -122,41 +123,41 @@ function ConfirmAuto({ onCancel, onConfirm }: { onCancel: () => void; onConfirm:
               await onConfirm();
             }}
           >
-            {busy ? <Spinner size={14} /> : <Zap size={14} />} 开启自动整理
+            {busy ? <Spinner size={14} /> : <Zap size={14} />} {t("开启自动整理")}
           </button>
         </>
       }
     >
       <p className="text-2" style={{ marginBottom: 12 }}>
-        Foldo 会在后台监听下面的文件夹，有新文件时直接按规则整理。整理过的都可以在“历史”里撤销；移到回收站的文件仍会先问你。
+        {t("Foldo 会在后台监听下面的文件夹，有新文件时直接按规则整理。整理过的都可以在“历史”里撤销；移到回收站的文件仍会先问你。")}
       </p>
 
       <div className="confirm-section">
-        <div className="section-title">监听的文件夹</div>
+        <div className="section-title">{t("监听的文件夹")}</div>
         {watched.length === 0 && (
           <div className="banner warn">
             <TriangleAlert size={16} />
-            还没有文件夹添加了启用的规则，开启后不会整理任何文件。
+            {t("还没有文件夹添加了启用的规则，开启后不会整理任何文件。")}
           </div>
         )}
         {folders.map((f) => (
           <div key={f.path} className={`confirm-folder ${f.rules.length ? "" : "off"}`} title={tilde(f.path)}>
             <Folder size={15} />
             <b>{baseName(f.path)}</b>
-            <span className="muted ellipsis">{f.rules.length ? f.rules.join("、") : "没有规则，不整理"}</span>
+            <span className="muted ellipsis">{f.rules.length ? f.rules.join(t("、")) : t("没有规则，不整理")}</span>
           </div>
         ))}
       </div>
 
       <div className="confirm-section">
-        <div className="section-title">现在开启会立刻整理</div>
+        <div className="section-title">{t("现在开启会立刻整理")}</div>
         {error && <div className="banner error selectable">{error}</div>}
         {!plan && !error && (
           <div className="row muted">
-            <Spinner size={14} /> 正在预览…
+            <Spinner size={14} /> {t("正在预览…")}
           </div>
         )}
-        {plan && now.length === 0 && <div className="muted">目前没有需要整理的文件，之后有新文件时才会整理。</div>}
+        {plan && now.length === 0 && <div className="muted">{t("目前没有需要整理的文件，之后有新文件时才会整理。")}</div>}
         {now.slice(0, SHOW).map((ops) => {
           const last = ops[ops.length - 1];
           return (
@@ -167,10 +168,10 @@ function ConfirmAuto({ onCancel, onConfirm }: { onCancel: () => void; onConfirm:
             </div>
           );
         })}
-        {now.length > SHOW && <div className="muted">还有 {now.length - SHOW} 个文件…</div>}
+        {now.length > SHOW && <div className="muted">{t("还有 {0} 个文件…", [now.length - SHOW])}</div>}
         {held.length > 0 && (
           <div className="row muted" style={{ marginTop: 6 }}>
-            <Trash size={14} /> {held.length} 个要移到回收站的文件不会自动处理，会提醒你确认
+            <Trash size={14} /> {t("{0} 个要移到回收站的文件不会自动处理，会提醒你确认", [held.length])}
           </div>
         )}
       </div>

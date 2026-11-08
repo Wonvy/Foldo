@@ -2637,3 +2637,13 @@ html.float #root {
   gap: 8px;
   font-size: 13px;
 }
+
+/* 规则编辑器：处理对象（文件 / 文件夹） */
+.target-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+}

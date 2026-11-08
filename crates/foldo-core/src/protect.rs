@@ -87,13 +87,13 @@ const CREDENTIAL_PREFIXES: &[&str] = &["id_rsa", "id_dsa", "id_ecdsa", "id_ed255
 /// 不看用户设置、按文件名和内容就能判断的排除项。
 pub fn builtin_exclusion(path: &Path, name: &str) -> Option<(SkipKind, String)> {
     if SYSTEM_NAMES.iter().any(|n| n.eq_ignore_ascii_case(name)) {
-        return Some((SkipKind::System, "系统自动生成的文件".into()));
+        return Some((SkipKind::System, crate::t!("系统自动生成的文件")));
     }
     let lower = name.to_lowercase();
     if PARTIAL_SUFFIXES.iter().any(|s| lower.ends_with(s)) || name.starts_with("~$") {
         return Some((
             SkipKind::Partial,
-            "正在下载或被 Office 打开的临时文件".into(),
+            crate::t!("正在下载或被 Office 打开的临时文件"),
         ));
     }
     let ext = Path::new(&lower)
@@ -107,11 +107,11 @@ pub fn builtin_exclusion(path: &Path, name: &str) -> Option<(SkipKind, String)> 
     {
         return Some((
             SkipKind::Credential,
-            "可能是私钥、证书或密码库，默认不移动".into(),
+            crate::t!("可能是私钥、证书或密码库，默认不移动"),
         ));
     }
     if SHORTCUT_EXTS.contains(&ext.as_str()) {
-        return Some((SkipKind::Shortcut, "快捷方式默认保留在原位".into()));
+        return Some((SkipKind::Shortcut, crate::t!("快捷方式默认保留在原位")));
     }
     None
 }
@@ -160,14 +160,19 @@ impl Protect {
             if e.starts_with('~') || e.contains('/') || e.contains('\\') {
                 let p = expand_home(e);
                 if !p.is_absolute() {
-                    return Err(format!("固定保留的路径「{e}」必须是绝对路径或以 ~ 开头"));
+                    return Err(crate::t!(
+                        "固定保留的路径「{e}」必须是绝对路径或以 ~ 开头",
+                        e = e
+                    ));
                 }
                 paths.push((p.clone(), path_key(&p)));
             } else {
                 let glob = GlobBuilder::new(e)
                     .case_insensitive(true)
                     .build()
-                    .map_err(|err| format!("固定保留的通配符「{e}」无效: {err}"))?;
+                    .map_err(|err| {
+                        crate::t!("固定保留的通配符「{e}」无效: {err}", e = e, err = err)
+                    })?;
                 builder.add(glob);
                 patterns.push(e.to_string());
             }
@@ -188,11 +193,14 @@ impl Protect {
         let key = path_key(path);
         for (p, pk) in &self.paths {
             if key == *pk || key.starts_with(&format!("{pk}{MAIN_SEPARATOR}")) {
-                return Some(format!("在固定保留列表中（{}）", crate::paths::display(p)));
+                return Some(crate::t!(
+                    "在固定保留列表中（{a0}）",
+                    a0 = crate::paths::display(p)
+                ));
             }
         }
         if self.globs.is_match(name) {
-            return Some("文件名符合固定保留的通配符".into());
+            return Some(crate::t!("文件名符合固定保留的通配符"));
         }
         None
     }

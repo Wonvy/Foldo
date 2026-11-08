@@ -672,6 +672,7 @@ mod tests {
             accessed: None,
             hidden: false,
             readonly: false,
+            is_dir: false,
         }
         .into()
     }

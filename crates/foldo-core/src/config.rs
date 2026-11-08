@@ -121,6 +121,9 @@ pub struct RuleDef {
     pub name: String,
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub enabled: bool,
+    /// 处理对象：file（默认）或 folder（整理文件夹第一层的子文件夹）。
+    #[serde(default, skip_serializing_if = "Target::is_file")]
+    pub target: Target,
     /// 旧版（version 1）写法：规则自己的生效文件夹。读取时自动移到 `folders` 里，不再写出。
     #[serde(default, skip_serializing)]
     pub locations: Option<OneOrMany<String>>,
@@ -141,6 +144,22 @@ pub struct RuleDef {
     #[serde(rename = "except", default, skip_serializing_if = "Vec::is_empty")]
     pub exceptions: Vec<ConditionDef>,
     pub actions: Vec<ActionDef>,
+}
+
+/// 规则处理的对象。
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Target {
+    #[default]
+    File,
+    /// 整理文件夹第一层的子文件夹（整个文件夹一起处理）
+    Folder,
+}
+
+impl Target {
+    pub fn is_file(&self) -> bool {
+        *self == Target::File
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]

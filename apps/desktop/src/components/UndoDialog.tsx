@@ -3,6 +3,7 @@ import { CircleCheck, RotateCcw, Trash, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, errorText, KIND_LABEL, type UndoCheck, type UndoView } from "../api";
 import { Modal, Spinner } from "./ui";
+import { t } from "../i18n";
 
 export default function UndoDialog({
   batchId,
@@ -40,18 +41,18 @@ export default function UndoDialog({
 
   return (
     <Modal
-      title={`撤销第 ${batchId} 次整理`}
-      subtitle="把这次移动过的文件放回原处"
+      title={t("撤销第 {0} 次整理", [batchId])}
+      subtitle={t("把这次移动过的文件放回原处")}
       onClose={onClose}
       footer={
         <>
           <span className="spacer" />
           <button className="btn" onClick={onClose}>
-            取消
+            {t("取消")}
           </button>
           <button className="btn primary" disabled={!checks || restore.length === 0 || busy} onClick={run}>
             {busy ? <Spinner size={14} /> : <RotateCcw size={15} />}
-            恢复 {restore.length} 项
+            {t("恢复 {0} 项", [restore.length])}
           </button>
         </>
       }
@@ -64,7 +65,7 @@ export default function UndoDialog({
       )}
       {!checks && !error && (
         <div className="row muted">
-          <Spinner /> 正在检查…
+          <Spinner /> {t("正在检查…")}
         </div>
       )}
       {checks && (
@@ -72,15 +73,15 @@ export default function UndoDialog({
           <div className="stats">
             <div className="stat">
               <div className="num" style={{ color: "var(--ok)" }}>{restore.length}</div>
-              <div className="label">可以恢复</div>
+              <div className="label">{t("可以恢复")}</div>
             </div>
             <div className="stat">
               <div className="num">{trash.length}</div>
-              <div className="label">在回收站，需手动还原</div>
+              <div className="label">{t("在回收站，需手动还原")}</div>
             </div>
             <div className="stat">
               <div className="num" style={{ color: blocked.length ? "var(--warn)" : undefined }}>{blocked.length}</div>
-              <div className="label">无法恢复</div>
+              <div className="label">{t("无法恢复")}</div>
             </div>
           </div>
           <div className="card">
@@ -103,7 +104,7 @@ export default function UndoDialog({
                 </div>
               </div>
             ))}
-            {checks.length === 0 && <div className="list-row muted">这次整理没有可撤销的操作。</div>}
+            {checks.length === 0 && <div className="list-row muted">{t("这次整理没有可撤销的操作。")}</div>}
           </div>
         </>
       )}

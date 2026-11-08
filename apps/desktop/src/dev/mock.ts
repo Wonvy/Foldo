@@ -73,7 +73,25 @@ const FIELD_ROWS: F[] = [
   ["video.duration", "视频时长", "视频", "number", "秒", ""],
   ["video.width", "视频宽度", "视频", "number", "像素", ""],
 ];
-const FIELDS = FIELD_ROWS.map(([key, label, group, type, unit, desc, options]) => ({ key, label, group, type, unit, desc, options: options ?? [] }));
+FIELD_ROWS.push(
+  ["folder.kind", "文件夹类型", "文件夹", "enum", null, "", ["代码工程", "应用程序", "空文件夹", "普通文件夹"]],
+  ["folder.content", "内容类型", "文件夹", "enum", null, "", ["图片", "文档", "视频", "音频", "混合"]],
+  ["folder.names", "里面的项目名", "文件夹", "list", null, "第一层的文件和文件夹名"],
+  ["folder.exts", "里面的扩展名", "文件夹", "list", null, ""],
+  ["folder.items", "项目数", "文件夹", "number", "个", ""],
+  ["folder.changed", "里面最近改动", "文件夹", "date", null, ""],
+);
+const BOTH = ["name", "parent", "path", "size", "hidden", "readonly", "empty"];
+const FIELDS = FIELD_ROWS.map(([key, label, group, type, unit, desc, options]) => ({
+  key,
+  label,
+  group,
+  type,
+  unit,
+  desc,
+  options: options ?? [],
+  applies: group === "文件夹" ? "folder" : BOTH.includes(key as string) || group === "时间" ? "both" : "file",
+}));
 const VARS = [
   { key: "now:%Y-%m-%d", label: "当前时间", group: "时间", desc: "" },
   { key: "match.1", label: "正则捕获 1", group: "正则", desc: "" },
@@ -433,6 +451,7 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
     case "watch_status":
       return { mode: config?.settings?.auto ?? "off", last_check: "14:32", pending: 2, last_batch: null, last_done: 0, error: null };
     case "watch_now":
+    case "set_locale":
       return null;
     case "check_update":
       return { current: "0.2.0", version: null, notes: null, date: null, can_install: true };

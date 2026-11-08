@@ -7,7 +7,7 @@
 //! 拖入的文件没有扫描位置，以文件所在文件夹为基准。
 
 use crate::condition::MatchCtx;
-use crate::config::OnConflict;
+use crate::config::{OnConflict, Target};
 use crate::error::{Error, Result};
 use crate::fileinfo::{FileInfo, is_hidden};
 use crate::meta::FileCtx;
@@ -170,16 +170,18 @@ impl Plan {
             .ops
             .iter()
             .position(|o| o.group == group)
-            .ok_or("找不到这一项")?;
+            .ok_or_else(|| crate::t!("找不到这一项"))?;
         if !dir.is_absolute() {
-            return Err("目标文件夹必须是绝对路径".into());
+            return Err(crate::t!("目标文件夹必须是绝对路径"));
         }
         let template = self.ops[first].clone();
         let origin = template.origin.clone();
-        let name = origin.file_name().ok_or("无法获取文件名")?;
+        let name = origin
+            .file_name()
+            .ok_or_else(|| crate::t!("无法获取文件名"))?;
         let target = dir.join(name);
         if target == origin {
-            return Err("文件已经在这个文件夹里".into());
+            return Err(crate::t!("文件已经在这个文件夹里"));
         }
 
         let others: HashSet<String> = self
@@ -190,7 +192,7 @@ impl Plan {
             .collect();
         let occupied = |p: &Path| others.contains(&path_key(p)) || p.symlink_metadata().is_ok();
         let dst = if occupied(&target) {
-            free_variant(&target, occupied).ok_or("找不到可用的文件名")?
+            free_variant(&target, occupied).ok_or_else(|| crate::t!("找不到可用的文件名"))?
         } else {
             target
         };
@@ -202,7 +204,7 @@ impl Plan {
                 group,
                 origin: origin.clone(),
                 rule: "手动指定".into(),
-                reason: "手动指定位置".into(),
+                reason: crate::t!("手动指定位置"),
                 category: template.category,
                 kind: OpKind::Move,
                 src: origin,
@@ -227,7 +229,7 @@ pub fn build_plan_at(set: &RuleSet, only: Option<&str>, now: DateTime<Local>) ->
     let only = match only {
         Some(name) => Some(
             set.index_of(name)
-                .ok_or_else(|| Error::Other(format!("找不到规则「{name}」")))?,
+                .ok_or_else(|| Error::Other(crate::t!("找不到规则「{name}」", name = name)))?,
         ),
         None => None,
     };
@@ -249,7 +251,7 @@ pub fn build_plan_at(set: &RuleSet, only: Option<&str>, now: DateTime<Local>) ->
                 .collect(),
         };
         if !folder.path.is_dir() {
-            let w = format!("目录不存在：{}", display(&folder.path));
+            let w = crate::t!("目录不存在：{a0}", a0 = display(&folder.path));
             if !p.plan.warnings.contains(&w) {
                 p.plan.warnings.push(w);
             }
@@ -257,9 +259,36 @@ pub fn build_plan_at(set: &RuleSet, only: Option<&str>, now: DateTime<Local>) ->
         }
         // 没有规则的文件夹也要扫描：里面的文件列为“没有匹配的规则”
         let res = p.scan_cached(&folder.path, folder.recursive, folder.include_hidden);
-        for f in &res.files {
+        // 先处理子文件夹（文件夹规则）；被文件夹规则处理的子文件夹，里面的文件不再单独处理
+        let mut taken: Vec<String> = Vec::new();
+        for d in &res.folders {
+            let mut handled = false;
+            for rule in rules.iter().filter(|r| r.target == Target::Folder) {
+                if p.consider(rule, Some(&folder.path), d) {
+                    handled = true;
+                    break;
+                }
+            }
+            if handled && p.claimed_src.contains(&path_key(&d.path)) {
+                taken.push(path_key(&d.path));
+            } else if !handled && !folder.recursive {
+                p.add_skip(
+                    &d.path,
+                    SkipKind::Folder,
+                    crate::t!("已有文件夹作为整体保留，不拆分内部文件"),
+                    None,
+                );
+            }
+        }
+        let inside_taken = |f: &FileCtx| {
+            let k = path_key(&f.path);
+            taken
+                .iter()
+                .any(|t| k.starts_with(t.as_str()) && k[t.len()..].starts_with(['/', '\\']))
+        };
+        for f in res.files.iter().filter(|f| !inside_taken(f)) {
             p.see(f);
-            for rule in &rules {
+            for rule in rules.iter().filter(|r| r.target == Target::File) {
                 if p.consider(rule, Some(&folder.path), f) {
                     break;
                 }
@@ -276,13 +305,15 @@ pub fn build_plan_for_paths(set: &RuleSet, paths: &[PathBuf], now: DateTime<Loca
     let mut files: Vec<FileCtx> = Vec::new();
     for path in paths {
         let Ok(md) = path.symlink_metadata() else {
-            p.plan.warnings.push(format!("找不到 {}", display(path)));
+            p.plan
+                .warnings
+                .push(crate::t!("找不到 {a0}", a0 = display(path)));
             continue;
         };
         if path.to_str().is_none() {
-            p.plan.warnings.push(format!(
-                "跳过文件名不是 UTF-8 编码的项目: {}",
-                path.display()
+            p.plan.warnings.push(crate::t!(
+                "跳过文件名不是 UTF-8 编码的项目: {a0}",
+                a0 = path.display()
             ));
             continue;
         }
@@ -291,12 +322,24 @@ pub fn build_plan_for_paths(set: &RuleSet, paths: &[PathBuf], now: DateTime<Loca
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         if md.is_dir() {
-            p.add_skip(
-                path,
-                SkipKind::Folder,
-                "文件夹作为整体保留，不拆分内部文件".into(),
-                None,
-            );
+            if let Some(reason) = set.protect.check(path, &name) {
+                p.add_skip(path, SkipKind::Protected, reason, None);
+                continue;
+            }
+            let mut d: FileCtx = FileInfo::new(path.clone(), &md, is_hidden(&name, &md)).into();
+            d.set_categories(&set.categories);
+            let handled = rules
+                .iter()
+                .filter(|r| r.target == Target::Folder)
+                .any(|r| p.consider(r, None, &d));
+            if !handled {
+                p.add_skip(
+                    path,
+                    SkipKind::Folder,
+                    crate::t!("文件夹作为整体保留，不拆分内部文件（可以新建处理文件夹的规则）"),
+                    None,
+                );
+            }
             continue;
         }
         if !md.is_file() {
@@ -315,7 +358,7 @@ pub fn build_plan_for_paths(set: &RuleSet, paths: &[PathBuf], now: DateTime<Loca
     }
     for f in &files {
         p.see(f);
-        for rule in &rules {
+        for rule in rules.iter().filter(|r| r.target == Target::File) {
             if p.consider(rule, None, f) {
                 break;
             }
@@ -370,7 +413,7 @@ impl<'a> Planner<'a> {
             self.plan.skipped.push(Skip {
                 path,
                 kind: SkipKind::NoMatch,
-                reason: "没有匹配的规则，保持原位".into(),
+                reason: crate::t!("没有匹配的规则，保持原位"),
                 rule: None,
             });
         }
@@ -401,7 +444,7 @@ impl<'a> Planner<'a> {
             return r.clone();
         }
         let mut res = scan(loc, recursive, include_hidden, &self.set.protect);
-        for f in &mut res.files {
+        for f in res.files.iter_mut().chain(res.folders.iter_mut()) {
             f.set_categories(&self.set.categories);
         }
         let res = Rc::new(res);
@@ -417,10 +460,14 @@ impl<'a> Planner<'a> {
         if self.set.buffer.is_zero() {
             return false;
         }
-        let newest = match (f.created, f.modified) {
+        let mut newest = match (f.created, f.modified) {
             (Some(a), Some(b)) => Some(a.max(b)),
             (a, b) => a.or(b),
         };
+        // 文件夹：里面有刚加进来或刚改过的东西（比如还在解压、下载）也先不动
+        if let Some(inner) = f.folder().and_then(|m| m.last_change()) {
+            newest = newest.max(Some(inner));
+        }
         newest.is_some_and(|t| (self.now - t).to_std().unwrap_or_default() < self.set.buffer)
     }
 
@@ -435,7 +482,7 @@ impl<'a> Planner<'a> {
             self.add_skip(
                 &f.path,
                 SkipKind::Buffer,
-                format!("最近 {span} 内新增或修改，暂不整理"),
+                crate::t!("最近 {span} 内新增或修改，暂不整理", span = span),
                 None,
             );
             return true;
@@ -449,11 +496,11 @@ impl<'a> Planner<'a> {
         {
             return false;
         }
-        if is_in_use(&f.path) {
+        if !f.is_dir && is_in_use(&f.path) {
             self.add_skip(
                 &f.path,
                 SkipKind::InUse,
-                "文件正被其他程序使用，稍后再整理".into(),
+                crate::t!("文件正被其他程序使用，稍后再整理"),
                 Some(rule),
             );
             return true;
@@ -499,7 +546,11 @@ impl<'a> Planner<'a> {
         let mut ops: Vec<Op> = Vec::new();
         let mut local: HashSet<String> = HashSet::new();
         let mut cur = f.path.clone();
-        let category = f.category().map(|c| c.name.to_string());
+        let category = if f.is_dir {
+            Some("文件夹".to_string())
+        } else {
+            f.category().map(|c| c.name.to_string())
+        };
         let op = |kind: OpKind, src: &Path, dst: Option<PathBuf>, note: Option<String>| Op {
             group: 0, // 计划汇总时再分配
             origin: f.path.clone(),
@@ -523,7 +574,7 @@ impl<'a> Planner<'a> {
                 Action::Keep => {
                     return Outcome::Skipped(
                         SkipKind::Protected,
-                        format!("{}：保持原位", rule.reason),
+                        crate::t!("{a0}：保持原位", a0 = rule.reason),
                     );
                 }
                 Action::Trash => {
@@ -542,7 +593,7 @@ impl<'a> Planner<'a> {
                         dir = base.join(&dir);
                     }
                     let Some(fname) = cur.file_name() else {
-                        return Outcome::Skipped(SkipKind::Invalid, "无法获取文件名".into());
+                        return Outcome::Skipped(SkipKind::Invalid, crate::t!("无法获取文件名"));
                     };
                     let kind = if matches!(action, Action::Move { .. }) {
                         OpKind::Move
@@ -558,7 +609,7 @@ impl<'a> Planner<'a> {
                     {
                         return Outcome::Skipped(
                             SkipKind::Invalid,
-                            format!("{}：目前只能解压 zip 文件", rule.reason),
+                            crate::t!("{a0}：目前只能解压 zip 文件", a0 = rule.reason),
                         );
                     }
                     let dir = match render_near(to, &ctx, &cur) {
@@ -574,7 +625,12 @@ impl<'a> Planner<'a> {
                     };
                     let rendered_dir = to.render(&ctx).is_ok_and(|s| s.ends_with(['/', '\\']));
                     if rendered_dir {
-                        let stem = cur.file_stem().unwrap_or_default().to_string_lossy();
+                        // 文件夹名里的点不是扩展名
+                        let stem = if f.is_dir {
+                            cur.file_name().unwrap_or_default().to_string_lossy()
+                        } else {
+                            cur.file_stem().unwrap_or_default().to_string_lossy()
+                        };
                         dst = dst.join(format!("{stem}.zip"));
                     } else if !dst
                         .extension()
@@ -594,7 +650,7 @@ impl<'a> Planner<'a> {
                         dir = base.join(&dir);
                     }
                     let Some(fname) = cur.file_name() else {
-                        return Outcome::Skipped(SkipKind::Invalid, "无法获取文件名".into());
+                        return Outcome::Skipped(SkipKind::Invalid, crate::t!("无法获取文件名"));
                     };
                     let mut name = fname.to_os_string();
                     if cfg!(windows) {
@@ -614,7 +670,10 @@ impl<'a> Planner<'a> {
                     {
                         return Outcome::Skipped(
                             SkipKind::Invalid,
-                            format!("重命名结果「{new_name}」不是合法的文件名"),
+                            crate::t!(
+                                "重命名结果「{new_name}」不是合法的文件名",
+                                new_name = new_name
+                            ),
                         );
                     }
                     (OpKind::Rename, cur.with_file_name(&new_name), *on_conflict)
@@ -641,7 +700,7 @@ impl<'a> Planner<'a> {
                     OnConflict::Skip => {
                         return Outcome::Skipped(
                             SkipKind::Conflict,
-                            format!("目标位置已有同名文件：{}", display(&dst)),
+                            crate::t!("目标位置已有同名文件：{a0}", a0 = display(&dst)),
                         );
                     }
                     OnConflict::Rename => match free_variant(&dst, occupied) {
@@ -649,7 +708,7 @@ impl<'a> Planner<'a> {
                         None => {
                             return Outcome::Skipped(
                                 SkipKind::Conflict,
-                                "找不到可用的文件名".into(),
+                                crate::t!("找不到可用的文件名"),
                             );
                         }
                     },
@@ -662,17 +721,22 @@ impl<'a> Planner<'a> {
                                 None => {
                                     return Outcome::Skipped(
                                         SkipKind::Conflict,
-                                        "找不到可用的文件名".into(),
+                                        crate::t!("找不到可用的文件名"),
                                     );
                                 }
                             }
                         } else if dst.is_dir() {
                             return Outcome::Skipped(
                                 SkipKind::Conflict,
-                                format!("目标是一个文件夹，无法覆盖：{}", display(&dst)),
+                                crate::t!("目标是一个文件夹，无法覆盖：{a0}", a0 = display(&dst)),
                             );
                         } else {
-                            ops.push(op(OpKind::Trash, &dst, None, Some("被覆盖的旧文件".into())));
+                            ops.push(op(
+                                OpKind::Trash,
+                                &dst,
+                                None,
+                                Some(crate::t!("被覆盖的旧文件")),
+                            ));
                             dst
                         }
                     }
@@ -703,6 +767,7 @@ impl<'a> Planner<'a> {
 fn already_done(kind: OpKind, cur: &Path, dst: &Path) -> bool {
     match kind {
         OpKind::Copy => match (cur.metadata(), dst.metadata()) {
+            (Ok(a), Ok(b)) if a.is_dir() => b.is_dir(),
             (Ok(a), Ok(b)) => b.is_file() && a.len() == b.len(),
             _ => false,
         },
@@ -719,7 +784,7 @@ fn render_near(
     let rendered = to.render(ctx)?;
     let rendered = rendered.trim_end_matches(['/', '\\']);
     if rendered.is_empty() {
-        return Err("目标路径为空".into());
+        return Err(crate::t!("目标路径为空"));
     }
     let p = crate::paths::expand_home(rendered);
     Ok(if p.is_relative() {

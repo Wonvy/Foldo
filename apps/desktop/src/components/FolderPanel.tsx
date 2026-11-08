@@ -6,6 +6,7 @@ import { tilde } from "../rules";
 import { pickFolder, useStore } from "../store";
 import { Modal, useMenu, type MenuItem } from "./ui";
 import FolderRuleList from "./FolderRuleList";
+import { t } from "../i18n";
 
 export default function FolderPanel({
   watch,
@@ -48,7 +49,7 @@ export default function FolderPanel({
     update({ ...config, folders: folders.map((f, j) => (j === i ? { ...f, ...patch } : f)) });
 
   const addFolder = async () => {
-    const dir = await pickFolder("添加要整理的文件夹");
+    const dir = await pickFolder(t("添加要整理的文件夹"));
     if (!dir || folders.some((f) => f.path === dir)) return;
     // 新文件夹还没有规则，不会立即整理，不需要确认
     await update({ ...config, folders: [...folders, { path: dir, rules: [] }] });
@@ -64,15 +65,15 @@ export default function FolderPanel({
     const f = folders[i];
     const rest = rules.filter((r) => !f.rules?.includes(r.name));
     const items: MenuItem[] = rest.map((r) => ({
-      label: r.enabled === false ? `${r.name}（已停用）` : r.name,
+      label: r.enabled === false ? t("{0}（已停用）", [r.name]) : r.name,
       icon: <WandSparkles size={15} />,
       onClick: () =>
-        confirmIfAuto(`自动整理已开启：添加后会立即按「${r.name}」整理「${baseName(f.path)}」里的文件。`, () =>
+        confirmIfAuto(t("自动整理已开启：添加后会立即按「{0}」整理「{1}」里的文件。", [r.name, baseName(f.path)]), () =>
           setFolder(i, { rules: [...(f.rules ?? []), r.name] }),
         ),
     }));
     if (items.length) items.push("divider");
-    items.push({ label: "新建规则…", icon: <Plus size={15} />, onClick: () => onNewRule(f.path) });
+    items.push({ label: t("新建规则…"), icon: <Plus size={15} />, onClick: () => onNewRule(f.path) });
     menu.open(el, items);
   };
 
@@ -81,29 +82,29 @@ export default function FolderPanel({
     const tick = (on: boolean | undefined) => (on ? <Check size={15} /> : <span style={{ width: 15 }} />);
     menu.open(el, [
       {
-        label: "包含子文件夹",
+        label: t("包含子文件夹"),
         icon: tick(f.recursive),
         onClick: () =>
           f.recursive
             ? setFolder(i, { recursive: undefined })
-            : confirmIfAuto(`自动整理已开启：「${baseName(f.path)}」的子文件夹里的文件也会立即按规则整理。`, () =>
+            : confirmIfAuto(t("自动整理已开启：「{0}」的子文件夹里的文件也会立即按规则整理。", [baseName(f.path)]), () =>
                 setFolder(i, { recursive: true }),
               ),
       },
       {
-        label: "包含隐藏文件",
+        label: t("包含隐藏文件"),
         icon: tick(f.include_hidden),
         onClick: () =>
           f.include_hidden
             ? setFolder(i, { include_hidden: undefined })
-            : confirmIfAuto(`自动整理已开启：「${baseName(f.path)}」里的隐藏文件也会立即按规则整理。`, () =>
+            : confirmIfAuto(t("自动整理已开启：「{0}」里的隐藏文件也会立即按规则整理。", [baseName(f.path)]), () =>
                 setFolder(i, { include_hidden: true }),
               ),
       },
       "divider",
-      { label: "在文件管理器中显示", icon: <Search size={15} />, onClick: () => api.reveal(f.path) },
+      { label: t("在文件管理器中显示"), icon: <Search size={15} />, onClick: () => api.reveal(f.path) },
       {
-        label: "移除文件夹",
+        label: t("移除文件夹"),
         icon: <Trash size={15} />,
         danger: true,
         onClick: () => update({ ...config, folders: folders.filter((_, j) => j !== i) }),
@@ -126,44 +127,44 @@ export default function FolderPanel({
               <div className="row-main">
                 <div className="row-title ellipsis">
                   {baseName(f.path)}
-                  {watching && <span className="dot-live" title="正在监听" />}
+                  {watching && <span className="dot-live" title={t("正在监听")} />}
                 </div>
                 <div className="row-sub ellipsis">
-                  {[f.recursive && "含子文件夹", f.include_hidden && "含隐藏文件"].filter(Boolean).join(" · ") || tilde(f.path)}
+                  {[f.recursive && t("含子文件夹"), f.include_hidden && t("含隐藏文件")].filter(Boolean).join(" · ") || tilde(f.path)}
                 </div>
               </div>
             </div>
             <div className="folder-rules">
-              {list.length === 0 && <span className="muted" style={{ fontSize: 12.5 }}>还没有规则，这里的文件不会被整理</span>}
+              {list.length === 0 && <span className="muted" style={{ fontSize: 12.5 }}>{t("还没有规则，这里的文件不会被整理")}</span>}
               {list.length > 0 && <FolderRuleList rules={list} folder={baseName(f.path)} disabled={saving || !!pending}
                 onEdit={onEditRule}
                 onRemove={(name) => setFolder(i, { rules: (f.rules ?? []).filter((n) => n !== name) })}
-                onReorder={(names) => confirmIfAuto(`自动整理已开启：调整顺序后，「${baseName(f.path)}」会立即按新的优先级整理。`, () => setFolder(i, { rules: names }))} />}
+                onReorder={(names) => confirmIfAuto(t("自动整理已开启：调整顺序后，「{0}」会立即按新的优先级整理。", [baseName(f.path)]), () => setFolder(i, { rules: names }))} />}
               <button className="add-btn" disabled={saving || !!pending} onClick={(e) => addRuleMenu(e.currentTarget, i)}>
-                <Plus size={14} /> 规则
+                <Plus size={14} /> {t("规则")}
               </button>
             </div>
-            <button className="icon-btn" disabled={saving || !!pending} aria-label="文件夹选项" onClick={(e) => folderMenu(e.currentTarget, i)}>
+            <button className="icon-btn" disabled={saving || !!pending} aria-label={t("文件夹选项")} onClick={(e) => folderMenu(e.currentTarget, i)}>
               <Ellipsis size={16} />
             </button>
           </div>
         );
       })}
-      <div className="folder-order-hint">拖动规则左侧的手柄调整顺序，越靠左越优先；每个文件夹独立生效。</div>
+      <div className="folder-order-hint">{t("拖动规则左侧的手柄调整顺序，越靠左越优先；每个文件夹独立生效。")}</div>
       <button className="folder-add" disabled={saving || !!pending} onClick={addFolder}>
-        <FolderPlus size={15} /> 添加文件夹
+        <FolderPlus size={15} /> {t("添加文件夹")}
       </button>
       {menu.node}
       {pending && (
         <Modal
-          title="立即生效"
+          title={t("立即生效")}
           onClose={() => setPending(null)}
           width={440}
           footer={
             <>
               <span className="spacer" />
               <button className="btn" onClick={() => setPending(null)}>
-                取消
+                {t("取消")}
               </button>
               <button
                 className="btn primary"
@@ -172,13 +173,13 @@ export default function FolderPanel({
                   setPending(null);
                 }}
               >
-                确定
+                {t("确定")}
               </button>
             </>
           }
         >
           <p className="text-2" style={{ marginBottom: 12 }}>
-            {pending.text}整理过的文件可以在“历史”里撤销。
+            {pending.text}{t("整理过的文件可以在“历史”里撤销。")}
           </p>
         </Modal>
       )}

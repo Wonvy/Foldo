@@ -42,7 +42,7 @@ pub fn execute(plan: &Plan, journal: &Journal, source: &str) -> Result<ExecRepor
         if broken_groups.contains(&op.group) {
             report
                 .skipped
-                .push((op.clone(), "同一文件的前一步没有完成".into()));
+                .push((op.clone(), crate::t!("同一文件的前一步没有完成")));
             continue;
         }
         if let Some(dst) = &op.dst {
@@ -59,7 +59,7 @@ pub fn execute(plan: &Plan, journal: &Journal, source: &str) -> Result<ExecRepor
                     broken_groups.insert(op.group);
                     report
                         .failed
-                        .push((op.clone(), format!("无法创建目标文件夹：{e}")));
+                        .push((op.clone(), crate::t!("无法创建目标文件夹：{e}", e = e)));
                     continue;
                 }
             }
@@ -184,7 +184,7 @@ fn remove_if_empty(dir: &Path) -> bool {
 fn apply(op: &Op) -> Result<(), Problem> {
     let src = &op.src;
     if !exists(src) {
-        return Err(Problem::Skip("源文件已不在原位置".into()));
+        return Err(Problem::Skip(crate::t!("源文件已不在原位置")));
     }
     let fail = |e: std::io::Error| Problem::Fail(e.to_string());
     match op.kind {
@@ -193,22 +193,22 @@ fn apply(op: &Op) -> Result<(), Problem> {
             let dst = dst_of(op)?;
             // 计划生成后目标位置可能又出现了文件，绝不覆盖。
             if exists(dst) && !is_case_only_change(src, dst) {
-                return Err(Problem::Skip(
-                    "目标位置出现了同名文件，为避免覆盖已跳过".into(),
-                ));
+                return Err(Problem::Skip(crate::t!(
+                    "目标位置出现了同名文件，为避免覆盖已跳过"
+                )));
             }
             fsops::move_file(src, dst).map_err(fail)
         }
         OpKind::Extract | OpKind::Compress | OpKind::Shortcut => {
             let dst = dst_of(op)?;
             if exists(dst) {
-                return Err(Problem::Skip(
-                    "目标位置出现了同名文件，为避免覆盖已跳过".into(),
-                ));
+                return Err(Problem::Skip(crate::t!(
+                    "目标位置出现了同名文件，为避免覆盖已跳过"
+                )));
             }
             match op.kind {
                 OpKind::Extract => fsops::extract_zip(src, dst),
-                OpKind::Compress => fsops::compress_file(src, dst),
+                OpKind::Compress => fsops::compress(src, dst),
                 _ => fsops::create_shortcut(src, dst),
             }
             .map_err(fail)
@@ -216,11 +216,15 @@ fn apply(op: &Op) -> Result<(), Problem> {
         OpKind::Copy => {
             let dst = dst_of(op)?;
             if exists(dst) {
-                return Err(Problem::Skip(
-                    "目标位置出现了同名文件，为避免覆盖已跳过".into(),
-                ));
+                return Err(Problem::Skip(crate::t!(
+                    "目标位置出现了同名文件，为避免覆盖已跳过"
+                )));
             }
-            fsops::copy_file(src, dst).map_err(fail)
+            if src.is_dir() {
+                fsops::copy_tree(src, dst).map_err(fail)
+            } else {
+                fsops::copy_file(src, dst).map_err(fail)
+            }
         }
     }
 }
@@ -228,5 +232,5 @@ fn apply(op: &Op) -> Result<(), Problem> {
 fn dst_of(op: &Op) -> Result<&Path, Problem> {
     op.dst
         .as_deref()
-        .ok_or_else(|| Problem::Fail("缺少目标路径".into()))
+        .ok_or_else(|| Problem::Fail(crate::t!("缺少目标路径")))
 }

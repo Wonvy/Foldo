@@ -1,5 +1,6 @@
 // 与 Rust 端（src-tauri/src/commands.rs）对应的类型和调用封装。
 import { invoke } from "@tauri-apps/api/core";
+import { t } from "./i18n";
 
 // ---------- 配置（与 foldo-core 的 config.rs 对应） ----------
 
@@ -21,9 +22,13 @@ export type ActionDef =
   | "trash"
   | "keep";
 
+/** 规则处理的对象：文件（默认）或整理文件夹第一层的子文件夹。 */
+export type RuleTarget = "file" | "folder";
+
 export type RuleDef = {
   name: string;
   enabled?: boolean;
+  target?: RuleTarget;
   match?: "all" | "any";
   conditions?: ConditionDef[];
   when?: ConditionDef;
@@ -82,7 +87,7 @@ export type ConfigView = {
 
 export type Category = { id: string; name: string; aliases: string[]; extensions: string[] };
 
-export type FieldType = "text" | "number" | "size" | "date" | "enum" | "bool";
+export type FieldType = "text" | "number" | "size" | "date" | "enum" | "bool" | "list";
 export type FieldDef = {
   key: string;
   label: string;
@@ -91,6 +96,8 @@ export type FieldDef = {
   unit: string | null;
   desc: string;
   options: string[];
+  /** 适用于文件、文件夹还是两者 */
+  applies: "file" | "folder" | "both";
 };
 export type VarDef = { key: string; label: string; group: string; desc: string };
 export type FieldsView = { fields: FieldDef[]; vars: VarDef[] };
@@ -250,6 +257,7 @@ export const api = {
   setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
   exportRules: (names: string[], path: string) => invoke<number>("export_rules", { names, path }),
   readRulesFile: (path: string) => invoke<RuleDef[]>("read_rules_file", { path }),
+  setLocale: (lang: string) => invoke<void>("set_locale", { lang }),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   openReleases: () => invoke<void>("open_releases"),
   installUpdate: () => invoke<void>("install_update"),
@@ -269,23 +277,23 @@ export function baseName(p: string): string {
 }
 
 export const STATUS_LABEL: Record<string, string> = {
-  running: "执行中断",
-  pending: "未完成",
-  done: "完成",
-  failed: "失败",
-  skipped: "已跳过",
-  partial: "部分完成",
-  undone: "已撤销",
-  partially_undone: "部分撤销",
+  running: t("执行中断"),
+  pending: t("未完成"),
+  done: t("完成"),
+  failed: t("失败"),
+  skipped: t("已跳过"),
+  partial: t("部分完成"),
+  undone: t("已撤销"),
+  partially_undone: t("部分撤销"),
 };
 
 export const KIND_LABEL: Record<string, string> = {
-  move: "移动",
-  copy: "复制",
-  rename: "改名",
-  trash: "移到回收站",
-  extract: "解压",
-  compress: "压缩",
-  shortcut: "快捷方式",
-  mkdir: "新建文件夹",
+  move: t("移动"),
+  copy: t("复制"),
+  rename: t("改名"),
+  trash: t("移到回收站"),
+  extract: t("解压"),
+  compress: t("压缩"),
+  shortcut: t("快捷方式"),
+  mkdir: t("新建文件夹"),
 };

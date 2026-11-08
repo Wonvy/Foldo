@@ -36,6 +36,7 @@ import RuleEditor from "../components/RuleEditor";
 import { FileIcon, Spinner, Switch, useMenu } from "../components/ui";
 import { describeConditions, foldersUsing, ruleChips, tilde, type ActionKind } from "../rules";
 import { pickFile, pickRulesFile, pickSavePath, useStore } from "../store";
+import { t } from "../i18n";
 
 const ACTION_ICON: Record<ActionKind, LucideIcon> = {
   move: ArrowRight,
@@ -130,12 +131,12 @@ export default function RulesPage({
 
   const exportRules = async (names: string[]) => {
     setError(null);
-    const file = names.length === 1 ? `${names[0]}.yaml` : "Foldo 规则.yaml";
-    const path = await pickSavePath("导出规则", file);
+    const file = names.length === 1 ? `${names[0]}.yaml` : t("Foldo 规则.yaml");
+    const path = await pickSavePath(t("导出规则"), file);
     if (!path) return;
     try {
       const n = await api.exportRules(names, path);
-      setNotice(`已导出 ${n} 条规则`);
+      setNotice(t("已导出 {0} 条规则", [n]));
     } catch (e) {
       setError(errorText(e));
     }
@@ -143,19 +144,19 @@ export default function RulesPage({
 
   const importRules = async () => {
     setError(null);
-    const path = await pickRulesFile("导入规则");
+    const path = await pickRulesFile(t("导入规则"));
     if (!path) return;
     try {
       const incoming = await api.readRulesFile(path);
       const names = new Set(rules.map((r) => r.name));
       const added = incoming.map((r) => {
         let name = r.name;
-        for (let n = 1; names.has(name); n++) name = n === 1 ? `${r.name}（导入）` : `${r.name}（导入 ${n}）`;
+        for (let n = 1; names.has(name); n++) name = n === 1 ? t("{0}（导入）", [r.name]) : t("{0}（导入 {1}）", [r.name, n]);
         names.add(name);
         return { ...r, name };
       });
       await save({ ...config, rules: [...rules, ...added] });
-      setNotice(`已导入 ${added.length} 条规则。在整理页把它们添加到文件夹后才会生效。`);
+      setNotice(t("已导入 {0} 条规则。在整理页把它们添加到文件夹后才会生效。", [added.length]));
     } catch (e) {
       setError(errorText(e));
     }
@@ -180,8 +181,8 @@ export default function RulesPage({
 
   const duplicate = (i: number) => {
     const names = new Set(rules.map((r) => r.name));
-    let name = `${rules[i].name} 副本`;
-    for (let n = 2; names.has(name); n++) name = `${rules[i].name} 副本 ${n}`;
+    let name = t("{0} 副本", [rules[i].name]);
+    for (let n = 2; names.has(name); n++) name = t("{0} 副本 {1}", [rules[i].name, n]);
     const next = [...rules];
     next.splice(i + 1, 0, { ...rules[i], name });
     void update(next);
@@ -239,10 +240,10 @@ export default function RulesPage({
     <div className="page rules-page">
       <div className="page-head">
         <div className="row" style={{ alignItems: "baseline", gap: 10 }}>
-          <h1>规则</h1>
+          <h1>{t("规则")}</h1>
           {rules.length > 0 && (
             <span className="muted">
-              {enabledCount}/{rules.length} 启用
+              {enabledCount}/{rules.length} {t("启用")}
             </span>
           )}
         </div>
@@ -250,20 +251,20 @@ export default function RulesPage({
           {rules.length > 3 && (
             <div className="search-box rules-search">
               <Search size={14} />
-              <input placeholder="搜索规则" value={query} onChange={(e) => setQuery(e.target.value)} />
+              <input placeholder={t("搜索规则")} value={query} onChange={(e) => setQuery(e.target.value)} />
             </div>
           )}
           <button className="btn primary" onClick={() => setEditing(null)}>
-            <Plus size={16} /> 新建规则
+            <Plus size={16} /> {t("新建规则")}
           </button>
           <button
             className="icon-btn"
-            aria-label="更多"
+            aria-label={t("更多")}
             onClick={(e) =>
               menu.open(e.currentTarget, [
-                { label: "导入规则…", icon: <FileUp size={15} />, onClick: importRules },
+                { label: t("导入规则…"), icon: <FileUp size={15} />, onClick: importRules },
                 ...(rules.length
-                  ? [{ label: "导出全部规则…", icon: <FileDown size={15} />, onClick: () => exportRules([]) }]
+                  ? [{ label: t("导出全部规则…"), icon: <FileDown size={15} />, onClick: () => exportRules([]) }]
                   : []),
               ])
             }
@@ -277,7 +278,7 @@ export default function RulesPage({
         <div className="banner info">
           <CircleCheck size={16} />
           <span style={{ flex: 1 }}>{notice}</span>
-          <button className="icon-btn" aria-label="关闭" onClick={() => setNotice(null)}>
+          <button className="icon-btn" aria-label={t("关闭")} onClick={() => setNotice(null)}>
             <X size={15} />
           </button>
         </div>
@@ -286,9 +287,9 @@ export default function RulesPage({
       {view?.error && (
         <div className="banner error">
           <TriangleAlert size={16} />
-          <span style={{ flex: 1 }}>配置文件有错误：{view.error}</span>
+          <span style={{ flex: 1 }}>{t("配置文件有错误：{0}", [view.error])}</span>
           <button className="link" onClick={onOpenAdvanced}>
-            去修正
+            {t("去修正")}
           </button>
         </div>
       )}
@@ -304,10 +305,10 @@ export default function RulesPage({
           <div className="art">
             <WandSparkles size={24} />
           </div>
-          <h2>还没有规则</h2>
-          <p className="muted">规则决定哪些文件放到哪里，从上到下判断，第一条命中的生效。</p>
+          <h2>{t("还没有规则")}</h2>
+          <p className="muted">{t("规则决定哪些文件放到哪里，从上到下判断，第一条命中的生效。")}</p>
           <button className="btn primary" style={{ marginTop: 8 }} onClick={() => setEditing(null)}>
-            <Plus size={16} /> 新建规则
+            <Plus size={16} /> {t("新建规则")}
           </button>
         </div>
       ) : (
@@ -340,7 +341,7 @@ export default function RulesPage({
               >
                 <span
                   className="grip"
-                  title={query ? "清空搜索后可拖动排序" : "拖动调整列表及拖入文件的匹配顺序；文件夹优先级在整理页调整"}
+                  title={query ? t("清空搜索后可拖动排序") : t("拖动调整列表及拖入文件的匹配顺序；文件夹优先级在整理页调整")}
                   onPointerDown={(e) => !query && startDrag(e, i)}
                   onClick={(e) => e.stopPropagation()}
                 >
@@ -352,11 +353,11 @@ export default function RulesPage({
                     <span className="ellipsis">{r.name}</span>
                     {winner && (
                       <span className="chip ok">
-                        <CircleCheck size={12} /> 处理
+                        <CircleCheck size={12} /> {t("处理")}
                       </span>
                     )}
-                    {debug && !winner && hit?.matched && enabled && <span className="chip">也满足</span>}
-                    {debug && hit?.matched && !hit.in_scope && <span className="chip warn" title="这个文件所在的文件夹没有使用这条规则">文件夹未使用</span>}
+                    {debug && !winner && hit?.matched && enabled && <span className="chip">{t("也满足")}</span>}
+                    {debug && hit?.matched && !hit.in_scope && <span className="chip warn" title={t("这个文件所在的文件夹没有使用这条规则")}>{t("文件夹未使用")}</span>}
                   </div>
                   <div className="rule-chips">
                     {(() => {
@@ -364,20 +365,25 @@ export default function RulesPage({
                       return used.length ? (
                         <span className="cchip scope" title={used.map((f) => tilde(f.path)).join("\n")}>
                           <Folder size={12} />
-                          {used.map((f) => baseName(f.path)).join("、")}
+                          {used.map((f) => baseName(f.path)).join(t("、"))}
                         </span>
                       ) : (
-                        <span className="cchip warn" title="在“文件夹”页把这条规则添加到文件夹后才会生效">
+                        <span className="cchip warn" title={t("在“文件夹”页把这条规则添加到文件夹后才会生效")}>
                           <Folder size={12} />
-                          未用于文件夹
+                          {t("未用于文件夹")}
                         </span>
                       );
                     })()}
-                    {chips.mode !== "all" && chips.conds.length > 1 && <span className="cchip mode">{chips.mode === "any" ? "任一" : "都不"}</span>}
-                    {chips.conds.length === 0 && <span className="cchip">所有文件</span>}
+                    {r.target === "folder" && (
+                      <span className="cchip mode" title={t("这条规则处理文件夹第一层的子文件夹")}>
+                        <Folder size={12} /> {t("文件夹")}
+                      </span>
+                    )}
+                    {chips.mode !== "all" && chips.conds.length > 1 && <span className="cchip mode">{chips.mode === "any" ? t("任一") : t("都不")}</span>}
+                    {chips.conds.length === 0 && <span className="cchip">{t("所有文件")}</span>}
                     {chips.conds.slice(0, MAX_CHIPS).map((c, k) => (
                       <span key={k} className={`cchip ${c.not ? "neg" : ""}`} title={c.title}>
-                        {c.not && <span className="neg-mark">非</span>}
+                        {c.not && <span className="neg-mark">{t("非")}</span>}
                         {c.kind === "group" ? <Layers size={12} /> : <GroupIcon group={c.group} size={12} />}
                         <span className="ellipsis">{c.text}</span>
                       </span>
@@ -388,8 +394,8 @@ export default function RulesPage({
                       </span>
                     )}
                     {chips.exceptions > 0 && (
-                      <span className="cchip neg" title="满足例外时不处理">
-                        <ShieldCheck size={12} /> {chips.exceptions} 个例外
+                      <span className="cchip neg" title={t("满足例外时不处理")}>
+                        <ShieldCheck size={12} /> {t("{0} 个例外", [chips.exceptions])}
                       </span>
                     )}
                     <span className="flow-arrow">
@@ -407,21 +413,21 @@ export default function RulesPage({
                   </div>
                 </div>
                 <span className="rule-side" onClick={(e) => e.stopPropagation()}>
-                  <Switch on={enabled} label="启用" onChange={(on) => update(rules.map((x, j) => (j === i ? { ...x, enabled: on } : x)))} />
+                  <Switch on={enabled} label={t("启用")} onChange={(on) => update(rules.map((x, j) => (j === i ? { ...x, enabled: on } : x)))} />
                   <button
                     className="icon-btn"
-                    aria-label="更多"
+                    aria-label={t("更多")}
                     onClick={(e) =>
                       menu.open(e.currentTarget, [
-                        { label: "编辑", icon: <Pencil size={15} />, onClick: () => setEditing(i) },
-                        { label: "复制一份", icon: <Copy size={15} />, onClick: () => duplicate(i) },
-                        { label: "导出…", icon: <FileDown size={15} />, onClick: () => exportRules([r.name]) },
-                        ...(i > 0 ? [{ label: "移到最前", icon: <ArrowUpToLine size={15} />, onClick: () => moveTo(i, 0) }] : []),
+                        { label: t("编辑"), icon: <Pencil size={15} />, onClick: () => setEditing(i) },
+                        { label: t("复制一份"), icon: <Copy size={15} />, onClick: () => duplicate(i) },
+                        { label: t("导出…"), icon: <FileDown size={15} />, onClick: () => exportRules([r.name]) },
+                        ...(i > 0 ? [{ label: t("移到最前"), icon: <ArrowUpToLine size={15} />, onClick: () => moveTo(i, 0) }] : []),
                         ...(i < rules.length - 1
-                          ? [{ label: "移到最后", icon: <ArrowDownToLine size={15} />, onClick: () => moveTo(i, rules.length - 1) }]
+                          ? [{ label: t("移到最后"), icon: <ArrowDownToLine size={15} />, onClick: () => moveTo(i, rules.length - 1) }]
                           : []),
                         "divider" as const,
-                        { label: "删除规则", icon: <Trash size={15} />, danger: true, onClick: () => update(rules.filter((_, j) => j !== i)) },
+                        { label: t("删除规则"), icon: <Trash size={15} />, danger: true, onClick: () => update(rules.filter((_, j) => j !== i)) },
                       ])
                     }
                   >
@@ -431,7 +437,7 @@ export default function RulesPage({
               </div>
             );
           })}
-          {shown.length === 0 && <div className="muted" style={{ padding: 20, textAlign: "center" }}>没有匹配的规则</div>}
+          {shown.length === 0 && <div className="muted" style={{ padding: 20, textAlign: "center" }}>{t("没有匹配的规则")}</div>}
         </div>
       )}
 
@@ -441,19 +447,19 @@ export default function RulesPage({
           <button
             className="debug-hint"
             onClick={async () => {
-              const p = await pickFile("选择一个文件，看它会被哪条规则处理");
+              const p = await pickFile(t("选择一个文件，看它会被哪条规则处理"));
               if (p) {
                 setDebugPaths([p]);
                 setDebugAt(0);
               }
             }}
           >
-            <FileDown size={16} /> 拖入文件，看它会被哪条规则处理
+            <FileDown size={16} /> {t("拖入文件，看它会被哪条规则处理")}
           </button>
         ) : (
           <>
             {debugging && !debug ? <Spinner size={15} /> : <FileIcon category={debug?.category} size={26} />}
-            <button className="debug-name ellipsis" title={`${current}\n点击查看全部属性`} onClick={() => setInspect(current)}>
+            <button className="debug-name ellipsis" title={t("{0}\n点击查看全部属性", [current])} onClick={() => setInspect(current)}>
               {debug?.name ?? current.split(/[\\/]/).pop()}
             </button>
             <span className="debug-result ellipsis">
@@ -461,36 +467,36 @@ export default function RulesPage({
                 <span style={{ color: "var(--danger)" }}>{debugError}</span>
               ) : debug?.excluded ? (
                 <>
-                  <ShieldCheck size={14} /> 不会被处理：{debug.excluded}
+                  <ShieldCheck size={14} /> {t("不会被处理：{0}", [debug.excluded])}
                 </>
               ) : debug && debug.winner !== null ? (
                 <>
-                  第 {debug.winner + 1} 条「{rules[debug.winner]?.name}」· {debug.action ?? "处理"}
+                  {t("第 {0} 条「{1}」· {2}", [debug.winner + 1, rules[debug.winner]?.name ?? "", debug.action ? t(debug.action) : t("处理")])}
                   {debug.destination && <span className="mono"> {tilde(debug.destination)}</span>}
-                  {!debug.destination && debug.reason && `：${debug.reason}`}
+                  {!debug.destination && debug.reason && t("：{0}", [debug.reason])}
                 </>
               ) : debug ? (
-                <>没有规则命中，保持原位</>
+                <>{t("没有规则命中，保持原位")}</>
               ) : null}
             </span>
             <span className="spacer" />
             {debugPaths.length > 1 && (
               <span className="row" style={{ gap: 2 }}>
-                <button className="icon-btn" disabled={debugAt === 0} onClick={() => setDebugAt(debugAt - 1)} aria-label="上一个">
+                <button className="icon-btn" disabled={debugAt === 0} onClick={() => setDebugAt(debugAt - 1)} aria-label={t("上一个")}>
                   <ChevronLeft size={16} />
                 </button>
                 <span className="muted mono" style={{ fontSize: 12 }}>
                   {debugAt + 1}/{debugPaths.length}
                 </span>
-                <button className="icon-btn" disabled={debugAt === debugPaths.length - 1} onClick={() => setDebugAt(debugAt + 1)} aria-label="下一个">
+                <button className="icon-btn" disabled={debugAt === debugPaths.length - 1} onClick={() => setDebugAt(debugAt + 1)} aria-label={t("下一个")}>
                   <ChevronRight size={16} />
                 </button>
               </span>
             )}
-            <button className="icon-btn" title="查看文件属性" onClick={() => setInspect(current)}>
+            <button className="icon-btn" title={t("查看文件属性")} onClick={() => setInspect(current)}>
               <FileSearch size={16} />
             </button>
-            <button className="icon-btn" title="结束调试" onClick={() => (setDebugPaths([]), setDebug(null))}>
+            <button className="icon-btn" title={t("结束调试")} onClick={() => (setDebugPaths([]), setDebug(null))}>
               <X size={16} />
             </button>
           </>

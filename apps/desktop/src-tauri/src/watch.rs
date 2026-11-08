@@ -241,8 +241,11 @@ fn cycle(app: &AppHandle, set: &RuleSet, mode: AutoMode, last_notified: &mut usi
                                 .len();
                             notify(
                                 app,
-                                "Foldo 已自动整理",
-                                &format!("整理了 {files} 个文件，可在“历史”里撤销"),
+                                &foldo_core::t!("Foldo 已自动整理"),
+                                &foldo_core::t!(
+                                    "整理了 {files} 个文件，可在“历史”里撤销",
+                                    files = files
+                                ),
                             );
                             status_done = Some((report.batch_id, report.done));
                         }
@@ -258,9 +261,15 @@ fn cycle(app: &AppHandle, set: &RuleSet, mode: AutoMode, last_notified: &mut usi
     // 只在待确认的数量增加时提醒，避免每分钟都弹
     if pending > *last_notified {
         let body = if mode == AutoMode::Run {
-            format!("有 {pending} 个文件要移到回收站，请打开 Foldo 确认")
+            foldo_core::t!(
+                "有 {pending} 个文件要移到回收站，请打开 Foldo 确认",
+                pending = pending
+            )
         } else {
-            format!("有 {pending} 个文件可以整理，打开 Foldo 查看")
+            foldo_core::t!(
+                "有 {pending} 个文件可以整理，打开 Foldo 查看",
+                pending = pending
+            )
         };
         notify(app, "Foldo", &body);
     }

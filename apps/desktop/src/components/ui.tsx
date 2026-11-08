@@ -7,6 +7,7 @@ import {
   FileSpreadsheet,
   FileText,
   Film,
+  Folder,
   Image,
   LoaderCircle,
   Package,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { t } from "../i18n";
 
 // ---------- 文件类型图标 ----------
 
@@ -32,6 +34,7 @@ const CATEGORY_STYLE: Record<string, { icon: LucideIcon; color: string }> = {
   "3D 模型": { icon: Box, color: "#4f46e5" },
   代码: { icon: Code, color: "#64748b" },
   字体: { icon: Type, color: "#a16207" },
+  文件夹: { icon: Folder, color: "#2f7de1" },
 };
 
 export function FileIcon({ category, size = 32 }: { category: string | null | undefined; size?: number }) {
@@ -169,7 +172,7 @@ export function Modal({
             <h2>{title}</h2>
             {subtitle && <div className="muted ellipsis" style={{ marginTop: 2 }}>{subtitle}</div>}
           </div>
-          <button className="icon-btn" onClick={onClose} aria-label="关闭">
+          <button className="icon-btn" onClick={onClose} aria-label={t("关闭")}>
             <X size={17} />
           </button>
         </div>
@@ -273,8 +276,8 @@ export function Toast({
   timeout?: number;
 }) {
   useEffect(() => {
-    const t = setTimeout(onClose, timeout);
-    return () => clearTimeout(t);
+    const timer = setTimeout(onClose, timeout);
+    return () => clearTimeout(timer);
   }, [onClose, timeout]);
   return createPortal(
     <div className="toast" role="status">

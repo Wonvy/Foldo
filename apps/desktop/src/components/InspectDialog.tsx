@@ -3,6 +3,7 @@ import { Copy, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, baseName, errorText, type AttrView } from "../api";
 import { Checkbox, Modal, Spinner } from "./ui";
+import { t, tv } from "../i18n";
 
 export default function InspectDialog({ path, onClose }: { path: string; onClose: () => void }) {
   const [attrs, setAttrs] = useState<AttrView[] | null>(null);
@@ -31,7 +32,7 @@ export default function InspectDialog({ path, onClose }: { path: string; onClose
   };
 
   return (
-    <Modal title="文件属性" subtitle={baseName(path)} onClose={onClose} width={640}>
+    <Modal title={t("文件属性")} subtitle={baseName(path)} onClose={onClose} width={640}>
       {error && (
         <div className="banner error">
           <TriangleAlert size={16} />
@@ -40,30 +41,30 @@ export default function InspectDialog({ path, onClose }: { path: string; onClose
       )}
       {!attrs && !error && (
         <div className="row muted">
-          <Spinner /> 正在读取…
+          <Spinner /> {t("正在读取…")}
         </div>
       )}
       {attrs && (
         <>
           <label className="row muted" style={{ fontSize: 12.5 }}>
-            <Checkbox checked={all} onChange={setAll} label="显示读不到的字段" />
-            显示读不到的字段
+            <Checkbox checked={all} onChange={setAll} label={t("显示读不到的字段")} />
+            {t("显示读不到的字段")}
             <span className="spacer" />
-            点字段名可复制为变量
+            {t("点字段名可复制为变量")}
           </label>
           {groups.map((g) => (
             <div key={g} className="card">
               <div className="group-head">
-                <span className="title">{g}</span>
+                <span className="title">{t(g)}</span>
               </div>
               {shown
                 .filter((a) => a.group === g)
                 .map((a) => (
                   <div key={a.key} className="list-row" style={{ minHeight: 38 }}>
                     <div style={{ width: 150 }}>
-                      <div>{a.label}</div>
-                      <button className="path-link mono muted" style={{ fontSize: 12 }} onClick={() => copy(a.key)} title="复制为变量">
-                        {copied === a.key ? "已复制" : a.key} <Copy size={11} />
+                      <div>{t(a.label)}</div>
+                      <button className="path-link mono muted" style={{ fontSize: 12 }} onClick={() => copy(a.key)} title={t("复制为变量")}>
+                        {copied === a.key ? t("已复制") : a.key} <Copy size={11} />
                       </button>
                     </div>
                     <div className="row-main selectable" style={{ overflowWrap: "anywhere" }}>
@@ -71,7 +72,7 @@ export default function InspectDialog({ path, onClose }: { path: string; onClose
                         <span className="muted">—</span>
                       ) : (
                         <span>
-                          {a.value}
+                          {tv(a.value)}
                           {a.unit && !a.unit.includes("/") && <span className="muted"> {a.unit}</span>}
                         </span>
                       )}

@@ -39,6 +39,7 @@ import InspectDialog from "../components/InspectDialog";
 import UndoDialog from "../components/UndoDialog";
 import { Checkbox, FileIcon, Segmented, Spinner, useMenu } from "../components/ui";
 import { pickFolder, useStore } from "../store";
+import { t } from "../i18n";
 
 type Item = {
   group: number;
@@ -58,10 +59,10 @@ type Section = { key: string; title: string; sub: string | null; items: Item[]; 
 
 /** 原文件不动、只生成新东西的动作，在分组标题上注明。 */
 const SECTION_PREFIX: Partial<Record<OpKind, string>> = {
-  copy: "复制到 ",
-  extract: "解压到 ",
-  compress: "压缩到 ",
-  shortcut: "快捷方式放到 ",
+  copy: t("复制到 "),
+  extract: t("解压到 "),
+  compress: t("压缩到 "),
+  shortcut: t("快捷方式放到 "),
 };
 
 const ATTENTION = new Set(["conflict", "invalid", "in_use"]);
@@ -177,7 +178,7 @@ export default function TidyPage({
         s = { key, title: it.reason, sub: null };
       } else if (it.kind === "trash") {
         key = "trash";
-        s = { key, title: "移到回收站", sub: "撤销时需要到回收站手动还原", trash: true };
+        s = { key, title: t("移到回收站"), sub: t("撤销时需要到回收站手动还原"), trash: true };
       } else {
         key = `${it.kind}:${it.dir}`;
         s = {
@@ -254,7 +255,7 @@ export default function TidyPage({
 
   const retarget = async (it: Item) => {
     if (!plan) return;
-    const dir = await pickFolder(`把「${it.name}」放到…`);
+    const dir = await pickFolder(t("把「{0}」放到…", [it.name]));
     if (!dir) return;
     try {
       setPlan(await api.retarget(plan.plan_id, it.group, dir));
@@ -277,8 +278,8 @@ export default function TidyPage({
               name: baseName(path),
               display: path,
               kind: "protected",
-              label: "固定保留",
-              reason: "在固定保留列表中",
+              label: t("固定保留"),
+              reason: t("在固定保留列表中"),
               rule: null,
             },
           ],
@@ -291,18 +292,18 @@ export default function TidyPage({
 
   const itemMenu = (el: HTMLElement, it: Item) =>
     menu.open(el, [
-      { label: "这次改到其他位置…", icon: <FolderInput size={15} />, onClick: () => retarget(it) },
-      { label: "固定保留（以后都不动）", icon: <Lock size={15} />, onClick: () => protect(it.origin, it.group) },
+      { label: t("这次改到其他位置…"), icon: <FolderInput size={15} />, onClick: () => retarget(it) },
+      { label: t("固定保留（以后都不动）"), icon: <Lock size={15} />, onClick: () => protect(it.origin, it.group) },
       "divider",
-      { label: "查看文件属性", icon: <FileSearch size={15} />, onClick: () => setInspectPath(it.origin) },
-      { label: "在文件管理器中显示", icon: <Search size={15} />, onClick: () => api.reveal(it.origin) },
+      { label: t("查看文件属性"), icon: <FileSearch size={15} />, onClick: () => setInspectPath(it.origin) },
+      { label: t("在文件管理器中显示"), icon: <Search size={15} />, onClick: () => api.reveal(it.origin) },
     ]);
 
   const skipMenu = (el: HTMLElement, s: SkipView) =>
     menu.open(el, [
-      { label: "固定保留（以后都不动）", icon: <Lock size={15} />, onClick: () => protect(s.path) },
-      { label: "查看文件属性", icon: <FileSearch size={15} />, onClick: () => setInspectPath(s.path) },
-      { label: "在文件管理器中显示", icon: <Search size={15} />, onClick: () => api.reveal(s.path) },
+      { label: t("固定保留（以后都不动）"), icon: <Lock size={15} />, onClick: () => protect(s.path) },
+      { label: t("查看文件属性"), icon: <FileSearch size={15} />, onClick: () => setInspectPath(s.path) },
+      { label: t("在文件管理器中显示"), icon: <Search size={15} />, onClick: () => api.reveal(s.path) },
     ]);
 
   // ---------- 首次使用 ----------
@@ -312,14 +313,14 @@ export default function TidyPage({
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>整理</h1>
-          <p className="sub">每个文件夹按添加的规则整理，先预览再执行，随时可以撤销。</p>
+          <h1>{t("整理")}</h1>
+          <p className="sub">{t("每个文件夹按添加的规则整理，先预览再执行，随时可以撤销。")}</p>
         </div>
         <div className="page-actions">
           <AutoMode watch={watch} />
           <button className="btn primary" onClick={() => run(null)} disabled={busy !== null}>
             {busy === "scan" ? <Spinner size={15} /> : <RefreshCw size={15} />}
-            {plan || result ? "重新扫描" : "扫描"}
+            {plan || result ? t("重新扫描") : t("扫描")}
           </button>
         </div>
       </div>
@@ -336,9 +337,9 @@ export default function TidyPage({
       {dropPaths && plan && (
         <div className="banner info">
           <Upload size={16} />
-          <span style={{ flex: 1 }}>正在按你的规则处理拖入的 {dropPaths.length} 个项目。</span>
+          <span style={{ flex: 1 }}>{t("正在按你的规则处理拖入的 {0} 个项目。", [dropPaths.length])}</span>
           <button className="link" onClick={() => run(null)}>
-            返回整理文件夹
+            {t("返回整理文件夹")}
           </button>
         </div>
       )}
@@ -346,9 +347,9 @@ export default function TidyPage({
       {(config.rules ?? []).length === 0 && (
         <div className="banner info">
           <WandSparkles size={16} />
-          <span style={{ flex: 1 }}>还没有规则。Foldo 只会按你建的规则移动文件，其余文件保持原位。</span>
+          <span style={{ flex: 1 }}>{t("还没有规则。Foldo 只会按你建的规则移动文件，其余文件保持原位。")}</span>
           <button className="btn sm primary" onClick={() => onNewRule()}>
-            新建规则
+            {t("新建规则")}
           </button>
         </div>
       )}
@@ -369,26 +370,26 @@ export default function TidyPage({
             </div>
             <h2>
               {undone
-                ? `已撤销，恢复了 ${undone.restored} 项`
-                : `整理完成：成功 ${result.done} 项`}
+                ? t("已撤销，恢复了 {0} 项", [undone.restored])
+                : t("整理完成：成功 {0} 项", [result.done])}
             </h2>
             <p className="muted">
-              {result.skipped.length > 0 && `跳过 ${result.skipped.length} 项（执行时出现了新冲突）。`}
-              {result.failed.length > 0 && `失败 ${result.failed.length} 项。`}
-              {!undone && result.skipped.length + result.failed.length === 0 && "所有选中的文件都已放到位。"}
+              {result.skipped.length > 0 && t("跳过 {0} 项（执行时出现了新冲突）。", [result.skipped.length])}
+              {result.failed.length > 0 && t("失败 {0} 项。", [result.failed.length])}
+              {!undone && result.skipped.length + result.failed.length === 0 && t("所有选中的文件都已放到位。")}
             </p>
             <div className="row" style={{ marginTop: 10 }}>
               {!undone && result.done > 0 && (
                 <button className="btn" onClick={() => setUndoFor(result.batch_id)}>
-                  <RotateCcw size={15} /> 撤销这次整理
+                  <RotateCcw size={15} /> {t("撤销这次整理")}
                 </button>
               )}
               <button className="btn primary" onClick={() => run(null)}>
-                继续整理
+                {t("继续整理")}
               </button>
             </div>
           </div>
-          {[...result.skipped.map((p) => ({ ...p, t: "跳过" })), ...result.failed.map((p) => ({ ...p, t: "失败" }))].map(
+          {[...result.skipped.map((p) => ({ ...p, t: t("跳过") })), ...result.failed.map((p) => ({ ...p, t: t("失败") }))].map(
             (p, i) => (
               <div key={i} className="list-row">
                 <span className={`chip ${p.t === "失败" ? "danger" : "warn"}`}>{p.t}</span>
@@ -401,9 +402,9 @@ export default function TidyPage({
           )}
           {undone?.in_trash.map((p) => (
             <div key={p} className="list-row">
-              <span className="chip">回收站</span>
+              <span className="chip">{t("回收站")}</span>
               <div className="row-main">
-                <div className="row-sub">需要到回收站手动还原：{p}</div>
+                <div className="row-sub">{t("需要到回收站手动还原：{0}", [p])}</div>
               </div>
             </div>
           ))}
@@ -414,7 +415,7 @@ export default function TidyPage({
       {!plan && !result && busy === "scan" && (
         <div className="empty muted">
           <Spinner size={22} />
-          正在扫描…
+          {t("正在扫描…")}
         </div>
       )}
 
@@ -423,11 +424,11 @@ export default function TidyPage({
         <>
           <div className="summary-line">
             <span>
-              <b>{items.length}</b> 个文件待整理
+              {t("{0} 个文件待整理", [items.length])}
             </span>
             {noMatch.length > 0 && (
               <button className="link" onClick={() => document.getElementById("no-match")?.scrollIntoView({ behavior: "smooth" })}>
-                {noMatch.length} 个没有匹配的规则
+                {t("{0} 个没有匹配的规则", [noMatch.length])}
               </button>
             )}
             {kept.length + attention.length > 0 && (
@@ -438,7 +439,7 @@ export default function TidyPage({
                   setTimeout(() => document.getElementById("kept")?.scrollIntoView({ behavior: "smooth" }), 0);
                 }}
               >
-                {kept.length + attention.length} 项保持原位
+                {t("{0} 项保持原位", [kept.length + attention.length])}
               </button>
             )}
           </div>
@@ -447,8 +448,8 @@ export default function TidyPage({
             <div className="card">
               <div className="card-head">
                 <TriangleAlert size={16} color="var(--warn)" />
-                <h2>需要留意</h2>
-                <span className="muted">这些文件本次不会移动</span>
+                <h2>{t("需要留意")}</h2>
+                <span className="muted">{t("这些文件本次不会移动")}</span>
               </div>
               {attention.map((s) => (
                 <SkipRow key={s.path} s={s} onMenu={(el) => skipMenu(el, s)} />
@@ -462,16 +463,16 @@ export default function TidyPage({
                 checked={selected.size === items.length}
                 indeterminate={selected.size > 0}
                 onChange={(on) => toggle(items.map((i) => i.group), on)}
-                label="全选"
+                label={t("全选")}
               />
-              <span className="text-2">全选</span>
+              <span className="text-2">{t("全选")}</span>
               <span className="spacer" />
               <Segmented
                 value={groupBy}
                 onChange={setGroupBy}
                 options={[
-                  { value: "target", label: "按目标位置" },
-                  { value: "rule", label: "按整理原因" },
+                  { value: "target", label: t("按目标位置") },
+                  { value: "rule", label: t("按整理原因") },
                 ]}
               />
             </div>
@@ -493,7 +494,7 @@ export default function TidyPage({
                   <span className="title">{sec.title}</span>
                   {sec.sub && <span className="muted ellipsis mono" style={{ flex: 1 }}>{sec.sub}</span>}
                   {!sec.sub && <span className="spacer" />}
-                  <span className="muted">{sec.items.length} 个</span>
+                  <span className="muted">{t("{0} 个", [sec.items.length])}</span>
                 </div>
                 {sec.items.map((it) => (
                   <div
@@ -508,7 +509,7 @@ export default function TidyPage({
                         {it.name}
                         {it.renamedTo && (
                           <span className="muted" style={{ fontWeight: 400 }}>
-                            {"  "}→ 改名为 {it.renamedTo}
+                            {"  "}{t("→ 改名为 {0}", [it.renamedTo ?? ""])}
                           </span>
                         )}
                       </div>
@@ -520,13 +521,13 @@ export default function TidyPage({
                             <span className="ellipsis">{it.dirDisplay}</span>
                           </>
                         )}
-                        {groupBy === "target" && <span className="ellipsis">来自 {it.originDir}</span>}
+                        {groupBy === "target" && <span className="ellipsis">{t("来自 {0}", [it.originDir])}</span>}
                         {it.note && <span className="chip warn">{it.note}</span>}
                       </div>
                     </div>
                     <button
                       className="icon-btn"
-                      aria-label="更多"
+                      aria-label={t("更多")}
                       onClick={(e) => {
                         e.stopPropagation();
                         itemMenu(e.currentTarget, it);
@@ -544,11 +545,11 @@ export default function TidyPage({
             <div className="card" id="no-match">
               <div className="card-head">
                 <Sparkles size={16} color="var(--accent)" />
-                <h2>没有匹配规则的文件</h2>
-                <span className="muted">这些文件保持原位</span>
+                <h2>{t("没有匹配规则的文件")}</h2>
+                <span className="muted">{t("这些文件保持原位")}</span>
                 <span className="spacer" />
                 <button className="btn sm" onClick={() => onNewRule()}>
-                  <WandSparkles size={14} /> 新建规则
+                  <WandSparkles size={14} /> {t("新建规则")}
                 </button>
               </div>
               {noMatchByExtension.map(([extension, files]) => (
@@ -566,9 +567,9 @@ export default function TidyPage({
                     })}
                   >
                     {expandedExtensions.has(extension) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                    <span className="title">{extension || "无扩展名"}</span>
+                    <span className="title">{extension || t("无扩展名")}</span>
                     <span className="spacer" />
-                    <span className="muted">{files.length} 个</span>
+                    <span className="muted">{t("{0} 个", [files.length])}</span>
                   </button>
                   {expandedExtensions.has(extension) && files.map((s) => (
                     <div key={s.path} className="list-row">
@@ -577,7 +578,7 @@ export default function TidyPage({
                         <div className="row-title ellipsis">{s.name}</div>
                         <div className="row-sub ellipsis">{s.display}</div>
                       </div>
-                      <button className="icon-btn" aria-label="更多" onClick={(e) => skipMenu(e.currentTarget, s)}>
+                      <button className="icon-btn" aria-label={t("更多")} onClick={(e) => skipMenu(e.currentTarget, s)}>
                         <Ellipsis size={17} />
                       </button>
                     </div>
@@ -595,7 +596,7 @@ export default function TidyPage({
                 onClick={() => setShowKept(!showKept)}
               >
                 {showKept ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                <h2>保持原位的项目</h2>
+                <h2>{t("保持原位的项目")}</h2>
                 <span className="muted ellipsis">
                   {keptByLabel.map(([label, list]) => `${label} ${list.length}`).join(" · ")}
                 </span>
@@ -604,7 +605,7 @@ export default function TidyPage({
                 keptByLabel.map(([label, list]) => (
                   <div key={label}>
                     <div className="section-title" style={{ padding: "12px 16px 4px" }}>
-                      {label}（{list.length}）
+                      {label}{t("（")}{list.length}{t("）")}
                     </div>
                     {list.map((s) => (
                       <SkipRow key={s.path} s={s} onMenu={(el) => skipMenu(el, s)} />
@@ -619,26 +620,26 @@ export default function TidyPage({
               <div className="art">
                 <CircleCheck size={26} />
               </div>
-              <h2>已经很整齐了</h2>
-              <p className="muted">没有需要整理的文件。</p>
+              <h2>{t("已经很整齐了")}</h2>
+              <p className="muted">{t("没有需要整理的文件。")}</p>
             </div>
           )}
 
           {items.length > 0 && (
             <div className="footer-bar">
               <span className="text-2">
-                已选 <b>{selected.size}</b> / {items.length} 个文件
+                {t("已选 {0} / {1} 个文件", [selected.size, items.length])}
               </span>
               <span className="spacer" />
               {confirmTrash && (
                 <span className="chip warn" style={{ height: 30 }}>
                   <TriangleAlert size={14} />
-                  选中的文件里有要移到回收站的，确定继续？
+                  {t("选中的文件里有要移到回收站的，确定继续？")}
                 </span>
               )}
               {confirmTrash && (
                 <button className="btn" onClick={() => setConfirmTrash(false)}>
-                  取消
+                  {t("取消")}
                 </button>
               )}
               <button
@@ -647,7 +648,7 @@ export default function TidyPage({
                 onClick={execute}
               >
                 {busy === "exec" ? <Spinner size={15} /> : <MousePointerClick size={16} />}
-                {confirmTrash ? "确定执行" : `整理选中的 ${selected.size} 个文件`}
+                {confirmTrash ? t("确定执行") : t("整理选中的 {0} 个文件", [selected.size])}
               </button>
             </div>
           )}
@@ -678,7 +679,7 @@ function SkipRow({ s, onMenu }: { s: SkipView; onMenu: (el: HTMLElement) => void
         <div className="row-title ellipsis">{s.name}</div>
         <div className="row-sub ellipsis">{s.reason}</div>
       </div>
-      <button className="icon-btn" aria-label="更多" onClick={(e) => onMenu(e.currentTarget)}>
+      <button className="icon-btn" aria-label={t("更多")} onClick={(e) => onMenu(e.currentTarget)}>
         <Ellipsis size={17} />
       </button>
     </div>
@@ -730,9 +731,9 @@ function Onboarding({ onDone }: { onDone: () => void }) {
         <div className="art">
           <Sparkles size={26} />
         </div>
-        <h1>选择要整理的文件夹</h1>
+        <h1>{t("选择要整理的文件夹")}</h1>
         <p className="muted">
-          Foldo 只整理这些文件夹第一层的散落文件，已有的文件夹会整体保留。之后在“规则”里写下哪些文件放到哪里，先看建议再执行，随时可以撤销。
+          {t("Foldo 只整理这些文件夹第一层的散落文件，已有的文件夹会整体保留。之后在“规则”里写下哪些文件放到哪里，先看建议再执行，随时可以撤销。")}
         </p>
         <div className="card" style={{ width: "100%", marginTop: 14, textAlign: "left" }}>
           {all.map((f) => (
@@ -753,21 +754,21 @@ function Onboarding({ onDone }: { onDone: () => void }) {
             <button
               className="btn ghost sm"
               onClick={async () => {
-                const d = await pickFolder("选择要整理的文件夹");
+                const d = await pickFolder(t("选择要整理的文件夹"));
                 if (d && !all.some((f) => f.path === d)) {
                   setExtra([...extra, d]);
                   setChosen([...chosen, d]);
                 }
               }}
             >
-              <FolderPlus size={15} /> 选择其他文件夹…
+              <FolderPlus size={15} /> {t("选择其他文件夹…")}
             </button>
           </div>
         </div>
         {error && <div className="banner error">{error}</div>}
         <button className="btn primary lg" style={{ marginTop: 10 }} disabled={chosen.length === 0 || saving} onClick={start}>
           {saving ? <Spinner size={15} /> : <ArrowRight size={16} />}
-          开始整理
+          {t("开始整理")}
         </button>
       </div>
     </div>

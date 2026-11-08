@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import FloatApp from "./float/FloatApp";
+import { lang } from "./i18n";
 import { loadTheme } from "./theme";
 import "./styles.css";
 
@@ -18,5 +19,9 @@ const inTauri = "__TAURI_INTERNALS__" in window;
 const ready = import.meta.env.DEV && !inTauri ? import("./dev/mock").then((m) => m.installMock()) : Promise.resolve();
 
 void ready.then(() => {
+  // 后台的提示、通知和托盘菜单使用同一种语言
+  if (!isFloat) void import("./api").then(({ api }) => api.setLocale(lang).catch(() => {}));
+  // 主窗口切换语言后，悬浮窗也重新加载
+  if (isFloat) window.addEventListener("storage", (e) => e.key === "foldo.lang" && location.reload());
   createRoot(document.getElementById("root")!).render(<StrictMode>{isFloat ? <FloatApp /> : <App />}</StrictMode>);
 });

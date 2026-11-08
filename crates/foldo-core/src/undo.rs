@@ -43,45 +43,55 @@ pub struct UndoCheck {
 fn ensure_undoable(journal: &Journal, batch_id: i64) -> Result<()> {
     let batch = journal
         .batch(batch_id)?
-        .ok_or_else(|| Error::Other(format!("找不到批次 #{batch_id}")))?;
+        .ok_or_else(|| Error::Other(crate::t!("找不到批次 #{batch_id}", batch_id = batch_id)))?;
     if batch.status == status::UNDONE {
-        return Err(Error::Other(format!("批次 #{batch_id} 已经撤销过了")));
+        return Err(Error::Other(crate::t!(
+            "批次 #{batch_id} 已经撤销过了",
+            batch_id = batch_id
+        )));
     }
     Ok(())
 }
 
 /// 检查一个已完成的操作能否撤销。`exists` 由调用方提供，预览时用模拟的文件状态。
 fn check(rec: &OpRecord, exists: &dyn Fn(&Path) -> bool) -> std::result::Result<(), String> {
-    let dst = rec.dst.as_ref().ok_or("日志缺少目标路径")?;
+    let dst = rec
+        .dst
+        .as_ref()
+        .ok_or_else(|| crate::t!("日志缺少目标路径"))?;
     match rec.kind.as_str() {
         "move" | "rename" => {
             if !exists(dst) {
-                return Err(format!("文件已不在 {}，可能被移走或删除", display(dst)));
+                return Err(crate::t!(
+                    "文件已不在 {a0}，可能被移走或删除",
+                    a0 = display(dst)
+                ));
             }
             if exists(&rec.src) && !is_case_only_change(&rec.src, dst) {
-                return Err("原位置已经有同名的新文件，为避免覆盖不恢复".into());
+                return Err(crate::t!("原位置已经有同名的新文件，为避免覆盖不恢复"));
             }
             Ok(())
         }
         "copy" => {
             if !exists(dst) {
-                return Err(format!("副本已不在 {}", display(dst)));
+                return Err(crate::t!("副本已不在 {a0}", a0 = display(dst)));
             }
-            // 预览时副本可能是模拟出来的，只在真实存在时比较大小
+            // 预览时副本可能是模拟出来的，只在真实存在时比较大小（文件夹不比较）
             if let (Some(expected), Ok(md)) = (rec.size, std::fs::metadata(dst))
+                && md.is_file()
                 && md.len() != expected
             {
-                return Err("副本之后被修改过，为安全起见保留".into());
+                return Err(crate::t!("副本之后被修改过，为安全起见保留"));
             }
             Ok(())
         }
         "extract" | "compress" | "shortcut" => {
             if !exists(dst) {
-                return Err(format!("{} 已不存在", display(dst)));
+                return Err(crate::t!("{a0} 已不存在", a0 = display(dst)));
             }
             Ok(())
         }
-        other => Err(format!("未知的操作类型 {other}")),
+        other => Err(crate::t!("未知的操作类型 {other}", other = other)),
     }
 }
 
@@ -106,7 +116,7 @@ pub fn preview_undo(journal: &Journal, batch_id: i64) -> Result<Vec<UndoCheck>> 
         let (outcome, reason) = if rec.kind == "trash" {
             (
                 UndoOutcome::InTrash,
-                Some("已在系统回收站中，需要手动还原".to_string()),
+                Some(crate::t!("已在系统回收站中，需要手动还原")),
             )
         } else {
             let virt = |p: &Path| {
@@ -160,6 +170,8 @@ pub fn undo_batch(journal: &Journal, batch_id: i64) -> Result<UndoReport> {
             _ => check(rec, &exists).and_then(|()| {
                 let dst = rec.dst.as_ref().expect("check 已确认有目标路径");
                 match rec.kind.as_str() {
+                    // 复制出的文件夹可能被改动过，放进回收站
+                    "copy" if dst.is_dir() => fsops::trash(dst)?,
                     "copy" | "shortcut" => {
                         std::fs::remove_file(dst).map_err(|e| e.to_string())?;
                     }

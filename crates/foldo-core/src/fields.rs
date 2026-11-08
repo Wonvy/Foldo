@@ -19,6 +19,17 @@ pub enum FieldType {
     /// 有固定可选值的文本
     Enum,
     Bool,
+    /// 一组名称（如文件夹里的项目名）：任意一项满足即算满足；“不包含 / 不等于”表示没有任何一项满足
+    List,
+}
+
+/// 字段适用于文件、文件夹还是两者。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Applies {
+    File,
+    Folder,
+    Both,
 }
 
 /// 字段的值。
@@ -29,6 +40,7 @@ pub enum Value {
     Size(u64),
     Date(DateTime<Local>),
     Bool(bool),
+    List(Vec<String>),
 }
 
 impl Value {
@@ -40,6 +52,7 @@ impl Value {
             Value::Size(b) => b.to_string(),
             Value::Date(d) => d.format("%Y-%m-%d %H:%M:%S").to_string(),
             Value::Bool(b) => if *b { "是" } else { "否" }.to_string(),
+            Value::List(items) => items.join("、"),
         }
     }
 }
@@ -66,6 +79,8 @@ pub struct FieldDef {
     pub desc: &'static str,
     /// 枚举字段的可选值。
     pub options: &'static [&'static str],
+    /// 适用于文件、文件夹还是两者（规则编辑器按“处理对象”筛选字段）。
+    pub applies: Applies,
     #[serde(skip)]
     pub get: fn(&FileCtx) -> Option<Value>,
 }
@@ -92,6 +107,37 @@ pub const CATEGORY_NAMES: &[&str] = &[
 ];
 
 pub const ORIENTATIONS: &[&str] = &["横", "竖", "方"];
+
+/// 文件夹“内容类型”的可选值：文件类型名，加上“混合”。
+pub const FOLDER_CONTENTS: &[&str] = &[
+    "图片",
+    "文档",
+    "表格与演示",
+    "压缩包",
+    "安装包",
+    "视频",
+    "音频",
+    "设计文件",
+    "3D 模型",
+    "代码",
+    "字体",
+    crate::meta::MIXED,
+];
+
+/// 文件和文件夹都能用的字段。
+const BOTH: &[&str] = &[
+    "name", "parent", "path", "size", "hidden", "readonly", "empty",
+];
+
+fn applies_of(f: &FieldDef) -> Applies {
+    if f.group == "文件夹" {
+        Applies::Folder
+    } else if BOTH.contains(&f.key) || f.group == "时间" {
+        Applies::Both
+    } else {
+        Applies::File
+    }
+}
 
 fn text(s: impl Into<String>) -> Option<Value> {
     let s = s.into();
@@ -132,6 +178,7 @@ macro_rules! field {
             unit: $unit,
             desc: $desc,
             options: $opts,
+            applies: Applies::File,
             get: $get,
         }
     };
@@ -259,8 +306,8 @@ pub static FIELDS: std::sync::LazyLock<Vec<FieldDef>> = std::sync::LazyLock::new
             "基本",
             Size,
             Some("B / KB / MB / GB"),
-            "文件大小",
-            |f| Some(Value::Size(f.size))
+            "文件大小；文件夹为里面所有文件的总大小",
+            |f| Some(Value::Size(f.total_size()))
         ),
         field!(
             "category",
@@ -301,12 +348,15 @@ pub static FIELDS: std::sync::LazyLock<Vec<FieldDef>> = std::sync::LazyLock::new
         ),
         field!(
             "empty",
-            "空文件",
+            "空的",
             "基本",
             Bool,
             None,
-            "大小为 0",
-            |f| Some(Value::Bool(f.size == 0))
+            "文件大小为 0，或文件夹里什么都没有",
+            |f| Some(Value::Bool(match f.folder() {
+                Some(m) => m.entries.is_empty(),
+                None => !f.is_dir && f.size == 0,
+            }))
         ),
         field!(
             "duplicate",
@@ -328,6 +378,84 @@ pub static FIELDS: std::sync::LazyLock<Vec<FieldDef>> = std::sync::LazyLock::new
                 .duplicate_original()
                 .and_then(|p| p.file_name())
                 .map(|n| Value::Text(n.to_string_lossy().into_owned()))
+        ),
+        // ---------- 文件夹 ----------
+        field!(
+            "folder.kind",
+            "文件夹类型",
+            "文件夹",
+            Enum,
+            None,
+            "代码工程（有 .git、package.json 等）、应用程序（.app）、空文件夹或普通文件夹",
+            crate::meta::FOLDER_KINDS,
+            |f| f.folder().map(|m| Value::Text(m.kind(&f.name).to_string()))
+        ),
+        field!(
+            "folder.content",
+            "内容类型",
+            "文件夹",
+            Enum,
+            None,
+            "第一层文件里超过一半是同一类型时为该类型（如 图片），否则为 混合",
+            FOLDER_CONTENTS,
+            |f| f.folder_content().map(Value::Text)
+        ),
+        field!(
+            "folder.names",
+            "里面的项目名",
+            "文件夹",
+            List,
+            None,
+            "第一层的文件和文件夹名；任意一个满足即可，如“包含 README”“符合 *.sln”",
+            |f| f.folder().map(|m| Value::List(m.names()))
+        ),
+        field!(
+            "folder.exts",
+            "里面的扩展名",
+            "文件夹",
+            List,
+            None,
+            "第一层文件的扩展名（小写），如 有 jpg",
+            |f| f.folder().map(|m| Value::List(m.exts()))
+        ),
+        field!(
+            "folder.items",
+            "项目数",
+            "文件夹",
+            Number,
+            Some("个"),
+            "第一层的文件和文件夹总数",
+            |f| f.folder().map(|m| Value::Number(m.entries.len() as f64))
+        ),
+        field!(
+            "folder.files",
+            "文件数",
+            "文件夹",
+            Number,
+            Some("个"),
+            "第一层的文件数",
+            |f| f.folder().map(|m| Value::Number(m.file_count() as f64))
+        ),
+        field!(
+            "folder.folders",
+            "子文件夹数",
+            "文件夹",
+            Number,
+            Some("个"),
+            "第一层的子文件夹数",
+            |f| f.folder().map(|m| Value::Number(m.folder_count() as f64))
+        ),
+        field!(
+            "folder.changed",
+            "里面最近改动",
+            "文件夹",
+            Date,
+            None,
+            "第一层里最近一次修改的时间，如“超过 30 天没动过”",
+            |f| f
+                .folder()
+                .and_then(|m| m.last_change().or(f.modified))
+                .map(Value::Date)
         ),
         // ---------- 时间 ----------
         field!(
@@ -746,6 +874,9 @@ pub static FIELDS: std::sync::LazyLock<Vec<FieldDef>> = std::sync::LazyLock::new
             |f| { f.source_url().and_then(crate::meta::domain).and_then(text) }
         ),
     ]);
+    for f in &mut v {
+        f.applies = applies_of(f);
+    }
     v
 });
 

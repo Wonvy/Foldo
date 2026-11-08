@@ -1,6 +1,7 @@
 import { GripVertical, X } from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import type { RuleDef } from "../api";
+import { t } from "../i18n";
 
 type Target = { name: string; after: boolean };
 type Drag = { name: string; pointer: number; x: number; y: number; moved: boolean; order: string[] };
@@ -74,8 +75,8 @@ export default function FolderRuleList({ rules, folder, disabled, onReorder, onE
           className={["rule-chip", rule.enabled === false ? "off" : "", dragging === rule.name ? "dragging" : "",
             target?.name === rule.name ? (target.after ? "insert-after" : "insert-before") : ""].join(" ")}>
           <button type="button" className="rule-chip-grip" disabled={disabled || rules.length < 2}
-            aria-label={`调整 ${rule.name} 的顺序，当前位置 ${index + 1}，可用左右方向键`}
-            title="左右拖动调整顺序，左侧优先；也可使用左右方向键"
+            aria-label={t("调整 {0} 的顺序，当前位置 {1}，可用左右方向键", [rule.name, index + 1])}
+            title={t("左右拖动调整顺序，左侧优先；也可使用左右方向键")}
             onPointerDown={(e) => {
               if (e.button !== 0 || !e.isPrimary || disabled) return;
               e.preventDefault();
@@ -94,8 +95,8 @@ export default function FolderRuleList({ rules, folder, disabled, onReorder, onE
               [names[index], names[to]] = [names[to], names[index]];
               onReorder(names);
             }}><GripVertical size={12} /></button>
-          <button className="rule-chip-name" disabled={disabled} title={rule.enabled === false ? "已停用，点击编辑" : "编辑规则"} onClick={() => onEdit(rule.name)}>{rule.name}</button>
-          <button className="rule-chip-x" disabled={disabled} aria-label={`从 ${folder} 移除 ${rule.name}`} onClick={() => onRemove(rule.name)}><X size={12} /></button>
+          <button className="rule-chip-name" disabled={disabled} title={rule.enabled === false ? t("已停用，点击编辑") : t("编辑规则")} onClick={() => onEdit(rule.name)}>{rule.name}</button>
+          <button className="rule-chip-x" disabled={disabled} aria-label={t("从 {0} 移除 {1}", [folder, rule.name])} onClick={() => onRemove(rule.name)}><X size={12} /></button>
         </span>
       ))}
     </span>

@@ -176,7 +176,7 @@ impl Condition {
 
 fn op_names(ty: FieldType) -> &'static str {
     match ty {
-        FieldType::Text | FieldType::Enum => {
+        FieldType::Text | FieldType::Enum | FieldType::List => {
             "eq ne contains not_contains starts_with ends_with in not_in glob matches empty exists"
         }
         FieldType::Number | FieldType::Size => {
@@ -401,7 +401,7 @@ fn compile_op(field: &'static FieldDef, op: &str, v: &Json, cs: bool) -> Result<
         ));
     }
     match field.ty {
-        FieldType::Text | FieldType::Enum => Ok(match op {
+        FieldType::Text | FieldType::Enum | FieldType::List => Ok(match op {
             "eq" => Check::Text(TextOp::Eq, operand(field, v, cs)?),
             "ne" => Check::Text(TextOp::Ne, operand(field, v, cs)?),
             "contains" => Check::Text(TextOp::Contains, operand(field, v, cs)?),
@@ -592,9 +592,31 @@ impl Condition {
 impl Test {
     fn matches(&self, f: &FileCtx, ctx: &mut MatchCtx) -> bool {
         let value = (self.field.get)(f);
-        self.checks
-            .iter()
-            .all(|c| self.check(c, value.as_ref(), f, ctx))
+        self.checks.iter().all(|c| match &value {
+            Some(Value::List(items)) => self.check_list(c, items, f, ctx),
+            v => self.check(c, v.as_ref(), f, ctx),
+        })
+    }
+
+    /// 列表字段：任意一项满足即算满足；否定的比较（不等于、不包含、不在列表中）要求每一项都满足，
+    /// 也就是“没有任何一项”命中对应的肯定比较。
+    fn check_list(&self, c: &Check, items: &[String], f: &FileCtx, ctx: &mut MatchCtx) -> bool {
+        match c {
+            Check::Exists(b) => *b,
+            Check::Empty(b) => items.is_empty() == *b,
+            _ => {
+                let negative = matches!(
+                    c,
+                    Check::Text(TextOp::Ne | TextOp::NotContains, _) | Check::In(_, true)
+                );
+                let mut one = |s: &String| self.check(c, Some(&Value::Text(s.clone())), f, ctx);
+                if negative {
+                    items.iter().all(&mut one)
+                } else {
+                    items.iter().any(&mut one)
+                }
+            }
+        }
     }
 
     fn resolve(&self, op: &Operand, f: &FileCtx, ctx: &MatchCtx) -> Option<String> {
@@ -797,6 +819,7 @@ mod tests {
             accessed: None,
             hidden: false,
             readonly: false,
+            is_dir: false,
         }
         .into()
     }

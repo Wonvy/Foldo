@@ -131,7 +131,10 @@ pub(crate) fn current_config() -> CmdResult<RuleFile> {
     let view = read_config();
     match (view.config, view.error) {
         (Some(c), None) => Ok(c),
-        (_, Some(e)) => Err(format!("配置文件有错误，请先在“设置 → 高级”中修正：{e}")),
+        (_, Some(e)) => Err(foldo_core::t!(
+            "配置文件有错误，请先在“设置 → 高级”中修正：{e}",
+            e = e
+        )),
         (None, None) => Ok(RuleFile {
             version: foldo_core::rule::SUPPORTED_VERSION,
             folders: vec![],
@@ -188,7 +191,7 @@ pub async fn get_yaml() -> CmdResult<String> {
 /// 高级模式：直接保存 YAML 源码（通过校验才写入）。
 #[tauri::command]
 pub async fn save_yaml(app: tauri::AppHandle, text: String) -> CmdResult<ConfigView> {
-    RuleSet::from_yaml(&text).map_err(|e| format!("有错误，未保存：{e}"))?;
+    RuleSet::from_yaml(&text).map_err(|e| foldo_core::t!("有错误，未保存：{e}", e = e))?;
     let path = default_rules_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(err)?;
@@ -207,16 +210,16 @@ pub async fn categories() -> CmdResult<Vec<&'static Category>> {
 pub struct FolderSuggestion {
     path: String,
     display: String,
-    label: &'static str,
+    label: String,
 }
 
 /// 首次使用时推荐的文件夹（存在的才列出）。
 #[tauri::command]
 pub async fn suggested_folders() -> CmdResult<Vec<FolderSuggestion>> {
     let candidates = [
-        (dirs::download_dir(), "下载"),
-        (dirs::desktop_dir(), "桌面"),
-        (dirs::document_dir(), "文稿"),
+        (dirs::download_dir(), foldo_core::t!("下载")),
+        (dirs::desktop_dir(), foldo_core::t!("桌面")),
+        (dirs::document_dir(), foldo_core::t!("文稿")),
     ];
     Ok(candidates
         .into_iter()
@@ -257,7 +260,7 @@ pub struct SkipView {
     name: String,
     display: String,
     kind: SkipKind,
-    label: &'static str,
+    label: String,
     reason: String,
     rule: Option<String>,
 }
@@ -310,7 +313,7 @@ fn plan_view(id: u64, plan: &Plan) -> PlanView {
                 name: file_name(&s.path),
                 display: display(&s.path),
                 kind: s.kind,
-                label: s.kind.label(),
+                label: foldo_core::i18n::tr(s.kind.label()),
                 reason: s.reason.clone(),
                 rule: s.rule.clone(),
             })
@@ -331,7 +334,7 @@ fn load_set() -> CmdResult<RuleSet> {
 pub async fn scan(state: State<'_, AppState>) -> CmdResult<PlanView> {
     let set = load_set()?;
     if set.folders.is_empty() && set.rules.is_empty() {
-        return Err("还没有选择要整理的文件夹".into());
+        return Err(foldo_core::t!("还没有选择要整理的文件夹"));
     }
     let plan = build_plan(&set, None).map_err(err)?;
     state.store_plan(plan)
@@ -389,7 +392,7 @@ pub async fn retarget(
             plan.retarget_group(group, Path::new(&dir))?;
             Ok(plan_view(*id, plan))
         }
-        None => Err("预览已过期，请重新扫描".into()),
+        None => Err(foldo_core::t!("预览已过期，请重新扫描")),
     }
 }
 
@@ -418,13 +421,13 @@ pub async fn execute_plan(
         let mut plans = state.plans.lock().map_err(err)?;
         match plans.iter().position(|(id, _)| *id == plan_id) {
             Some(i) => plans.remove(i).expect("位置有效").1,
-            None => return Err("预览已过期，请重新扫描".into()),
+            None => return Err(foldo_core::t!("预览已过期，请重新扫描")),
         }
     };
     let selected: HashSet<usize> = groups.into_iter().collect();
     let subset = plan.select_groups(&selected);
     if subset.is_empty() {
-        return Err("没有选中任何文件".into());
+        return Err(foldo_core::t!("没有选中任何文件"));
     }
     let report = state.with_journal(|j| execute(&subset, j, "gui"))?;
     let problems = |list: Vec<(foldo_core::Op, String)>| {
@@ -558,7 +561,7 @@ pub struct AttrView {
 fn attr_value(v: foldo_core::fields::Value) -> String {
     use foldo_core::fields::Value;
     match v {
-        Value::Size(b) => format!("{} 字节", b),
+        Value::Size(b) => foldo_core::t!("{a0} 字节", a0 = b),
         other => other.display(),
     }
 }
@@ -567,12 +570,20 @@ fn attr_value(v: foldo_core::fields::Value) -> String {
 #[tauri::command]
 pub async fn inspect(path: String) -> CmdResult<Vec<AttrView>> {
     let mut file = FileCtx::from_path(&path).map_err(err)?;
-    let categories = foldo_core::categories::CategoryMap::compile(
+    let categories = std::sync::Arc::new(foldo_core::categories::CategoryMap::compile(
         &current_config()?.settings.category_extensions,
-    )?;
+    )?);
     file.set_categories(&categories);
+    use foldo_core::fields::Applies;
+    // 文件只列文件的属性，文件夹只列文件夹的属性
+    let wanted = if file.is_dir {
+        Applies::Folder
+    } else {
+        Applies::File
+    };
     Ok(foldo_core::fields::inspect(&file)
         .into_iter()
+        .filter(|(d, _)| d.applies == wanted || d.applies == Applies::Both)
         .map(|(d, v)| AttrView {
             key: d.key,
             label: d.label,
@@ -603,8 +614,9 @@ pub struct TestView {
 #[tauri::command]
 pub async fn test_rule(rule: RuleDef, path: String) -> CmdResult<TestView> {
     let config = current_config()?;
-    let categories =
-        foldo_core::categories::CategoryMap::compile(&config.settings.category_extensions)?;
+    let categories = std::sync::Arc::new(foldo_core::categories::CategoryMap::compile(
+        &config.settings.category_extensions,
+    )?);
     let mut file = FileCtx::from_path(&path).map_err(err)?;
     file.set_categories(&categories);
     let now = Local::now();
@@ -622,6 +634,7 @@ pub async fn test_rule(rule: RuleDef, path: String) -> CmdResult<TestView> {
         .collect();
 
     // 用这条规则单独处理这个文件，得到目标位置或跳过原因
+    // 内部标记，不翻译
     let name = "__测试__".to_string();
     let config = single_rule_config(
         config,
@@ -634,7 +647,7 @@ pub async fn test_rule(rule: RuleDef, path: String) -> CmdResult<TestView> {
     let set = RuleSet::from_file(config).map_err(err)?;
     let plan = build_plan_for_paths(&set, &[PathBuf::from(&path)], now);
     let destination = plan.ops.iter().rev().find_map(|o| match o.kind {
-        OpKind::Trash => Some("系统回收站".to_string()),
+        OpKind::Trash => Some(foldo_core::t!("系统回收站")),
         _ => o.dst.as_deref().map(display),
     });
     let reason = if destination.is_some() {
@@ -706,15 +719,25 @@ pub async fn debug_file(path: String) -> CmdResult<DebugView> {
         reason: None,
     };
     if md.is_dir() {
-        view.excluded = Some("文件夹作为整体保留，不拆分内部文件".into());
-        return Ok(view);
-    }
-    if let Some((_, reason)) = classify_file(&p, &view.name, &md, false, &set.protect) {
+        // 文件夹交给“处理文件夹”的规则；固定保留的文件夹不处理
+        if let Some(reason) = set.protect.check(&p, &view.name) {
+            view.excluded = Some(reason);
+        }
+    } else if let Some((_, reason)) = classify_file(&p, &view.name, &md, false, &set.protect) {
         view.excluded = Some(reason);
     }
     let mut file = FileCtx::from_path(&p).map_err(err)?;
     file.set_categories(&set.categories);
-    view.category = file.category().map(|c| c.name.to_string());
+    view.category = if file.is_dir {
+        Some("文件夹".into())
+    } else {
+        file.category().map(|c| c.name.to_string())
+    };
+    let target = if file.is_dir {
+        foldo_core::config::Target::Folder
+    } else {
+        foldo_core::config::Target::File
+    };
     let now = Local::now();
     view.rules = set
         .rules
@@ -722,7 +745,8 @@ pub async fn debug_file(path: String) -> CmdResult<DebugView> {
         .enumerate()
         .map(|(index, r)| {
             let mut ctx = MatchCtx::new(now);
-            let matched = r.condition.matches(&file, &mut ctx)
+            let matched = r.target == target
+                && r.condition.matches(&file, &mut ctx)
                 && !r
                     .exception
                     .as_ref()
@@ -761,7 +785,7 @@ pub async fn debug_file(path: String) -> CmdResult<DebugView> {
         view.destination = last.dst.as_deref().map(display);
     } else if let Some(s) = plan.skipped.first() {
         if view.winner.is_some() && s.kind == foldo_core::SkipKind::Protected {
-            view.action = Some("保持原位".into());
+            view.action = Some(foldo_core::t!("保持原位"));
         }
         view.reason = Some(s.reason.clone());
     }
@@ -839,7 +863,7 @@ pub async fn reveal(path: String) -> CmdResult<()> {
     while !p.exists() {
         match p.parent() {
             Some(parent) => p = parent.to_path_buf(),
-            None => return Err("路径不存在".into()),
+            None => return Err(foldo_core::t!("路径不存在")),
         }
     }
     tauri_plugin_opener::reveal_item_in_dir(&p).map_err(err)
@@ -916,7 +940,7 @@ pub async fn check_update(app: tauri::AppHandle) -> CmdResult<UpdateInfo> {
         .map_err(err)?
         .check()
         .await
-        .map_err(|e| format!("暂时无法检查更新：{e}"))?;
+        .map_err(|e| foldo_core::t!("暂时无法检查更新：{e}", e = e))?;
     Ok(UpdateInfo {
         current,
         can_install: can_install_update(),
@@ -941,7 +965,9 @@ pub async fn install_update(app: tauri::AppHandle) -> CmdResult<()> {
     use tauri::Emitter;
     use tauri_plugin_updater::UpdaterExt;
     if !can_install_update() {
-        return Err("此安装方式请前往 GitHub 下载新版安装包；AppImage 支持应用内更新".into());
+        return Err(foldo_core::t!(
+            "此安装方式请前往 GitHub 下载新版安装包；AppImage 支持应用内更新"
+        ));
     }
     let update = app
         .updater_builder()
@@ -951,7 +977,7 @@ pub async fn install_update(app: tauri::AppHandle) -> CmdResult<()> {
         .check()
         .await
         .map_err(err)?
-        .ok_or("已经是最新版本")?;
+        .ok_or_else(|| foldo_core::t!("已经是最新版本"))?;
     let mut downloaded = 0u64;
     let progress = app.clone();
     update
@@ -963,8 +989,34 @@ pub async fn install_update(app: tauri::AppHandle) -> CmdResult<()> {
             || {},
         )
         .await
-        .map_err(|e| format!("更新失败：{e}"))?;
+        .map_err(|e| foldo_core::t!("更新失败：{e}", e = e))?;
     app.restart()
+}
+
+// ---------- 语言 ----------
+
+fn locale_file() -> PathBuf {
+    foldo_core::paths::default_data_dir().join("locale")
+}
+
+/// 启动时读取上次的界面语言（托盘和通知在窗口打开之前就要用）。
+pub(crate) fn load_locale() {
+    if let Ok(code) = std::fs::read_to_string(locale_file()) {
+        foldo_core::i18n::set_locale(code.trim());
+    }
+}
+
+/// 界面语言变了：后台的提示、通知和托盘菜单也换成这种语言。
+#[tauri::command]
+pub async fn set_locale(app: tauri::AppHandle, lang: String) -> CmdResult<()> {
+    foldo_core::i18n::set_locale(&lang);
+    let path = locale_file();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(path, foldo_core::i18n::locale());
+    crate::tray::relabel(&app);
+    Ok(())
 }
 
 // ---------- 规则导入导出 ----------
@@ -989,7 +1041,7 @@ pub async fn export_rules(names: Vec<String>, path: String) -> CmdResult<usize> 
     let yaml = file.to_yaml().map_err(err)?;
     std::fs::write(
         &path,
-        format!("# Foldo 规则（{count} 条）\n# 导入：打开 Foldo → 规则 → 导入规则…，再在整理页把规则添加到文件夹\n\n{yaml}"),
+        foldo_core::t!("# Foldo 规则（{count} 条）\n# 导入：打开 Foldo → 规则 → 导入规则…，再在整理页把规则添加到文件夹\n\n{yaml}", count = count, yaml = yaml),
     )
     .map_err(err)?;
     Ok(count)
@@ -999,10 +1051,10 @@ pub async fn export_rules(names: Vec<String>, path: String) -> CmdResult<usize> 
 #[tauri::command]
 pub async fn read_rules_file(path: String) -> CmdResult<Vec<RuleDef>> {
     let text = std::fs::read_to_string(&path).map_err(err)?;
-    let file =
-        foldo_core::parse_rule_file(&text).map_err(|e| format!("不是有效的规则文件：{e}"))?;
+    let file = foldo_core::parse_rule_file(&text)
+        .map_err(|e| foldo_core::t!("不是有效的规则文件：{e}", e = e))?;
     if file.rules.is_empty() {
-        return Err("这个文件里没有规则".into());
+        return Err(foldo_core::t!("这个文件里没有规则"));
     }
     for r in &file.rules {
         foldo_core::Rule::compile(r.clone()).map_err(err)?;

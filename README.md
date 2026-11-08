@@ -31,11 +31,13 @@ Builds are not Windows Authenticode-signed or Apple-notarized, so your OS may di
 | **Preview before organizing** | Inspect destinations, skipped files and conflicts before executing a plan. |
 | **Rules per folder** | Attach rules and drag their handles left or right to set independent priorities. The first matching rule wins. |
 | **Flexible conditions** | Match names, extensions, size, dates, image dimensions, metadata, text and duplicates; combine groups and exceptions. |
+| **Folders, too** | Rules can target subfolders as a whole: by folder type (code project, app bundle, empty), main content type, item names and extensions inside, size or last change. |
 | **Custom file types** | Add or remove extension tags for pictures, documents and other built-in types. |
 | **Useful actions** | Move, copy, rename, compress, extract ZIP files, create shortcuts, keep files or send them to the recycle bin. |
 | **History and undo** | Review operations and preview what an undo can restore. |
 | **Background organization** | Watch folders from the tray, choose notifications or automatic organization, or drag files onto the app. |
 | **Local configuration** | A readable YAML file and local SQLite journal; GUI and CLI share the same engine. |
+| **Four languages** | English, 简体中文, 繁體中文 and 日本語. Follows the system language by default; switch in Settings. |
 
 ## A quick tour
 

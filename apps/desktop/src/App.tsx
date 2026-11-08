@@ -9,6 +9,7 @@ import SettingsPage from "./pages/SettingsPage";
 import TidyPage from "./pages/TidyPage";
 import { StoreProvider, useStore } from "./store";
 import { applyTheme, loadTheme, type ThemePref } from "./theme";
+import { t } from "./i18n";
 
 type Page = "tidy" | "rules" | "history" | "settings";
 
@@ -73,8 +74,8 @@ function Shell() {
   useEffect(() => {
     const check = () => api.floatVisible().then(setFloatOn).catch(() => {});
     check();
-    const t = setInterval(check, 2000);
-    return () => clearInterval(t);
+    const timer = setInterval(check, 2000);
+    return () => clearInterval(timer);
   }, []);
 
   // 启动时悄悄检查一次更新；没联网或还没有发布版本时不提示
@@ -174,10 +175,10 @@ function Shell() {
 
   const ruleCount = config.rules?.length ?? 0;
   const nav: { id: Page; label: string; icon: ReactNode; count?: number | string }[] = [
-    { id: "tidy", label: "整理", icon: <Sparkles size={17} />, count: watch?.pending || undefined },
-    { id: "rules", label: "规则", icon: <WandSparkles size={17} />, count: ruleCount || undefined },
-    { id: "history", label: "历史", icon: <Clock size={17} /> },
-    { id: "settings", label: "设置", icon: <Settings size={17} />, count: update?.version ? "新" : undefined },
+    { id: "tidy", label: t("整理"), icon: <Sparkles size={17} />, count: watch?.pending || undefined },
+    { id: "rules", label: t("规则"), icon: <WandSparkles size={17} />, count: ruleCount || undefined },
+    { id: "history", label: t("历史"), icon: <Clock size={17} /> },
+    { id: "settings", label: t("设置"), icon: <Settings size={17} />, count: update?.version ? t("新") : undefined },
   ];
 
   return (
@@ -204,7 +205,7 @@ function Shell() {
         <div className="sidebar-foot">
           <button
             className={`icon-btn ${floatOn ? "active" : ""}`}
-            title={floatOn ? "关闭悬浮窗" : "打开悬浮窗（把文件拖上去就能整理）"}
+            title={floatOn ? t("关闭悬浮窗") : t("打开悬浮窗（把文件拖上去就能整理）")}
             onClick={() => api.toggleFloat().then(setFloatOn).catch(() => {})}
           >
             <PictureInPicture2 size={16} />
@@ -216,7 +217,7 @@ function Shell() {
       </nav>
       <div
         className={`splitter ${resizing ? "active" : ""}`}
-        title="拖动调整宽度，双击切换图标模式"
+        title={t("拖动调整宽度，双击切换图标模式")}
         onPointerDown={(e) => {
           if (e.button !== 0) return;
           e.preventDefault();
@@ -226,7 +227,7 @@ function Shell() {
       />
 
       <main className="content">
-        {loadError && <div className="banner error" style={{ margin: 24 }}>读取配置失败：{loadError}</div>}
+        {loadError && <div className="banner error" style={{ margin: 24 }}>{t("读取配置失败：{0}", [loadError])}</div>}
         <div hidden={page !== "tidy"}>
           <TidyPage
             dropped={dropped}
@@ -264,9 +265,9 @@ function Shell() {
         <div className="drop-overlay">
           <div className="box">
             <Upload size={28} color="var(--accent)" />
-            <h2 style={{ marginTop: 10 }}>{page === "rules" ? "松开以调试规则" : "松开即可整理这些文件"}</h2>
+            <h2 style={{ marginTop: 10 }}>{page === "rules" ? t("松开以调试规则") : t("松开即可整理这些文件")}</h2>
             <p className="muted" style={{ marginTop: 4 }}>
-              {page === "rules" ? "看它会被哪条规则处理，不会改动文件" : "按你的规则给出整理建议，确认后再执行"}
+              {page === "rules" ? t("看它会被哪条规则处理，不会改动文件") : t("按你的规则给出整理建议，确认后再执行")}
             </p>
           </div>
         </div>

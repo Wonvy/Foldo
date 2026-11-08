@@ -1,7 +1,7 @@
 //! 配置校验与编译：把 YAML 结构变成可直接执行的 `RuleSet`。
 
 use crate::condition::Condition;
-use crate::config::{ActionDef, FolderDef, MatchMode, OnConflict, RuleDef, RuleFile};
+use crate::config::{ActionDef, FolderDef, MatchMode, OnConflict, RuleDef, RuleFile, Target};
 use crate::error::{Error, Result};
 use crate::paths::{check_location, expand_home, path_key};
 use crate::protect::Protect;
@@ -16,7 +16,7 @@ pub const SUPPORTED_VERSION: u32 = 2;
 /// 编译后的完整配置。只有用户建的规则会移动文件；没有规则命中的文件保持原位。
 #[derive(Debug)]
 pub struct RuleSet {
-    pub categories: crate::categories::CategoryMap,
+    pub categories: std::sync::Arc<crate::categories::CategoryMap>,
     /// 用户规则，按优先级排列。
     pub rules: Vec<Rule>,
     /// 整理的文件夹，以及各自使用的规则。
@@ -56,6 +56,8 @@ pub struct Rule {
     /// 给用户看的“为什么这样整理”，如“规则「截图归档」”。
     pub reason: String,
     pub enabled: bool,
+    /// 处理文件还是文件夹。
+    pub target: Target,
     pub condition: Condition,
     /// 例外：命中则这条规则不适用。
     pub exception: Option<Condition>,
@@ -114,9 +116,10 @@ pub fn parse_rule_file(text: &str) -> Result<RuleFile> {
 /// - version 1 中没写 `locations` 的规则原本对全部文件夹生效，迁移后加入每个原有文件夹
 pub fn migrate(file: &mut RuleFile) -> Result<()> {
     if file.version == 0 || file.version > SUPPORTED_VERSION {
-        return Err(Error::Other(format!(
-            "不支持的规则文件版本 {}，当前支持 version: 1 和 {SUPPORTED_VERSION}",
-            file.version
+        return Err(Error::Other(crate::t!(
+            "不支持的规则文件版本 {a0}，当前支持 version: 1 和 {SUPPORTED_VERSION}",
+            a0 = file.version,
+            SUPPORTED_VERSION = SUPPORTED_VERSION
         )));
     }
     let legacy = file.version < 2;
@@ -180,12 +183,13 @@ impl RuleSet {
     }
 
     pub fn from_file(mut file: RuleFile) -> Result<Self> {
-        let config_err = |msg: String| Error::Other(format!("配置无效: {msg}"));
+        let config_err = |msg: String| Error::Other(crate::t!("配置无效: {msg}", msg = msg));
         migrate(&mut file)?;
 
-        let categories =
+        let categories = std::sync::Arc::new(
             crate::categories::CategoryMap::compile(&file.settings.category_extensions)
-                .map_err(config_err)?;
+                .map_err(config_err)?,
+        );
 
         let protect = Protect::compile(&file.protect).map_err(config_err)?;
         let buffer = file.settings.buffer.map(|s| s.0).unwrap_or_default();
@@ -197,7 +201,7 @@ impl RuleSet {
             if index.insert(rule.name.clone(), rules.len()).is_some() {
                 return Err(Error::InvalidRule {
                     rule: rule.name,
-                    msg: "规则名称重复".into(),
+                    msg: crate::t!("规则名称重复"),
                 });
             }
             rules.push(rule);
@@ -211,9 +215,10 @@ impl RuleSet {
             let mut used = Vec::new();
             for name in f.rules.iter().flatten() {
                 let i = *index.get(name.trim()).ok_or_else(|| {
-                    config_err(format!(
-                        "文件夹 {} 使用了不存在的规则「{name}」",
-                        crate::paths::display(&path)
+                    config_err(crate::t!(
+                        "文件夹 {a0} 使用了不存在的规则「{name}」",
+                        a0 = crate::paths::display(&path),
+                        name = name
                     ))
                 })?;
                 used.push(i);
@@ -273,14 +278,14 @@ impl Rule {
         let name = def.name.trim().to_string();
         let invalid = |msg: String| Error::InvalidRule {
             rule: if name.is_empty() {
-                "(未命名)".into()
+                crate::t!("(未命名)")
             } else {
                 name.clone()
             },
             msg,
         };
         if name.is_empty() {
-            return Err(invalid("name 不能为空".into()));
+            return Err(invalid(crate::t!("name 不能为空")));
         }
 
         let compile_list = |list: &[crate::config::ConditionDef]| {
@@ -311,7 +316,7 @@ impl Rule {
         let exception = (!exceptions.is_empty()).then_some(Condition::Any(exceptions));
 
         if def.actions.is_empty() {
-            return Err(invalid("actions 至少需要一个动作".into()));
+            return Err(invalid(crate::t!("actions 至少需要一个动作")));
         }
         let last = def.actions.len() - 1;
         let mut actions = Vec::with_capacity(def.actions.len());
@@ -339,6 +344,9 @@ impl Rule {
                         on_conflict,
                     }
                 }
+                ActionDef::Extract(_) if def.target == Target::Folder => {
+                    return Err(invalid(crate::t!("解压只能用于文件，不能用于文件夹")));
+                }
                 ActionDef::Extract(d) => {
                     let (to, on_conflict) = d.into_parts();
                     Action::Extract {
@@ -362,13 +370,13 @@ impl Rule {
                 }
                 ActionDef::Trash => {
                     if i != last {
-                        return Err(invalid("trash 必须是最后一个动作".into()));
+                        return Err(invalid(crate::t!("trash 必须是最后一个动作")));
                     }
                     Action::Trash
                 }
                 ActionDef::Keep => {
                     if last != 0 {
-                        return Err(invalid("keep（保持原位）不能和其他动作一起使用".into()));
+                        return Err(invalid(crate::t!("keep（保持原位）不能和其他动作一起使用")));
                     }
                     Action::Keep
                 }
@@ -376,9 +384,10 @@ impl Rule {
         }
 
         Ok(Self {
-            reason: format!("规则「{name}」"),
+            reason: crate::t!("规则「{name}」", name = name),
             name,
             enabled: def.enabled,
+            target: def.target,
             condition,
             exception,
             actions,

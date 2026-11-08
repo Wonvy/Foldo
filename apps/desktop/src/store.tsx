@@ -2,6 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, errorText, type Category, type ConfigView, type FieldDef, type RuleFile, type VarDef } from "./api";
 import { pruneFolderRules, setHome, type FieldMap } from "./rules";
+import { t } from "./i18n";
 
 type Store = {
   view: ConfigView | null;
@@ -47,8 +48,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     api
       .fields()
       .then((f) => {
-        setFields(f.fields);
-        setVars(f.vars);
+        // 字段名称和说明来自后端（简体中文），这里换成界面语言；分组和可选值保持原样（它们也用于查找和保存）
+        setFields(f.fields.map((x) => ({ ...x, label: t(x.label), desc: t(x.desc), unit: x.unit && t(x.unit) })));
+        setVars(f.vars.map((x) => ({ ...x, label: t(x.label), desc: t(x.desc) })));
       })
       .catch(() => setFields([]));
   }, [reload]);
@@ -72,7 +74,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
 export function useStore(): Store {
   const s = useContext(Ctx);
-  if (!s) throw new Error("StoreProvider 缺失");
+  if (!s) throw new Error(t("StoreProvider 缺失"));
   return s;
 }
 
@@ -87,14 +89,14 @@ export async function pickFolder(title: string): Promise<string | null> {
 /** 选择规则文件（YAML）。 */
 export async function pickRulesFile(title: string): Promise<string | null> {
   const { open } = await import("@tauri-apps/plugin-dialog");
-  const r = await open({ directory: false, multiple: false, title, filters: [{ name: "Foldo 规则", extensions: ["yaml", "yml"] }] });
+  const r = await open({ directory: false, multiple: false, title, filters: [{ name: t("Foldo 规则"), extensions: ["yaml", "yml"] }] });
   return typeof r === "string" ? r : null;
 }
 
 /** 选择保存位置。取消时返回 null。 */
 export async function pickSavePath(title: string, defaultPath: string): Promise<string | null> {
   const { save } = await import("@tauri-apps/plugin-dialog");
-  const r = await save({ title, defaultPath, filters: [{ name: "Foldo 规则", extensions: ["yaml"] }] });
+  const r = await save({ title, defaultPath, filters: [{ name: t("Foldo 规则"), extensions: ["yaml"] }] });
   return r ?? null;
 }
 

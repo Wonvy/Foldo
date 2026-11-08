@@ -21,6 +21,7 @@ fn main() {
         .manage(commands::AppState::default())
         .manage(watch::WatchState::default())
         .setup(|app| {
+            commands::load_locale();
             tray::build(app.handle())?;
             // 点系统通知：打开主窗口，显示待确认的文件或刚才的整理记录
             {
@@ -77,6 +78,7 @@ fn main() {
             commands::autostart_enabled,
             commands::set_autostart,
             commands::check_update,
+            commands::set_locale,
             commands::open_releases,
             commands::export_rules,
             commands::read_rules_file,

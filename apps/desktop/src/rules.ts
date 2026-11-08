@@ -1,5 +1,6 @@
 // 规则的编辑模型（条件树）、与配置的互相转换、以及把规则翻译成一句话。
-import { type ActionDef, type ConditionDef, type DestDef, type FieldDef, type FieldType, type FolderDef, type RuleDef, type RuleFile } from "./api";
+import { type ActionDef, type ConditionDef, type DestDef, type FieldDef, type FieldType, type FolderDef, type RuleDef, type RuleFile, type RuleTarget } from "./api";
+import { t, tv } from "./i18n";
 
 // ---------- 路径显示 ----------
 
@@ -31,25 +32,25 @@ export function formatBytes(n: number): string {
 
 export const OPS: Record<FieldType, { op: string; label: string }[]> = {
   text: [
-    { op: "contains", label: "包含" },
-    { op: "eq", label: "等于" },
-    { op: "ne", label: "不等于" },
-    { op: "not_contains", label: "不包含" },
-    { op: "starts_with", label: "开头是" },
-    { op: "ends_with", label: "结尾是" },
-    { op: "in", label: "是其中之一" },
-    { op: "not_in", label: "不是其中之一" },
-    { op: "glob", label: "符合通配符" },
-    { op: "matches", label: "匹配正则" },
-    { op: "empty", label: "为空" },
-    { op: "exists", label: "有这个属性" },
+    { op: "contains", label: t("包含") },
+    { op: "eq", label: t("等于") },
+    { op: "ne", label: t("不等于") },
+    { op: "not_contains", label: t("不包含") },
+    { op: "starts_with", label: t("开头是") },
+    { op: "ends_with", label: t("结尾是") },
+    { op: "in", label: t("是其中之一") },
+    { op: "not_in", label: t("不是其中之一") },
+    { op: "glob", label: t("符合通配符") },
+    { op: "matches", label: t("匹配正则") },
+    { op: "empty", label: t("为空") },
+    { op: "exists", label: t("有这个属性") },
   ],
   enum: [
-    { op: "eq", label: "是" },
-    { op: "ne", label: "不是" },
-    { op: "in", label: "是其中之一" },
-    { op: "not_in", label: "不是其中之一" },
-    { op: "exists", label: "有这个属性" },
+    { op: "eq", label: t("是") },
+    { op: "ne", label: t("不是") },
+    { op: "in", label: t("是其中之一") },
+    { op: "not_in", label: t("不是其中之一") },
+    { op: "exists", label: t("有这个属性") },
   ],
   number: [
     { op: "gte", label: "≥" },
@@ -58,32 +59,48 @@ export const OPS: Record<FieldType, { op: string; label: string }[]> = {
     { op: "lt", label: "<" },
     { op: "eq", label: "=" },
     { op: "ne", label: "≠" },
-    { op: "between", label: "介于" },
-    { op: "exists", label: "有这个属性" },
+    { op: "between", label: t("介于") },
+    { op: "exists", label: t("有这个属性") },
   ],
   size: [
-    { op: "gt", label: "大于" },
-    { op: "lt", label: "小于" },
+    { op: "gt", label: t("大于") },
+    { op: "lt", label: t("小于") },
     { op: "gte", label: "≥" },
     { op: "lte", label: "≤" },
-    { op: "between", label: "介于" },
-    { op: "eq", label: "等于" },
+    { op: "between", label: t("介于") },
+    { op: "eq", label: t("等于") },
   ],
   date: [
-    { op: "older_than", label: "早于…之前" },
-    { op: "newer_than", label: "在最近…之内" },
-    { op: "within", label: "在时间段" },
-    { op: "before", label: "早于日期" },
-    { op: "after", label: "晚于日期" },
-    { op: "on", label: "在这一天" },
-    { op: "between", label: "在日期之间" },
-    { op: "exists", label: "有这个属性" },
+    { op: "older_than", label: t("早于…之前") },
+    { op: "newer_than", label: t("在最近…之内") },
+    { op: "within", label: t("在时间段") },
+    { op: "before", label: t("早于日期") },
+    { op: "after", label: t("晚于日期") },
+    { op: "on", label: t("在这一天") },
+    { op: "between", label: t("在日期之间") },
+    { op: "exists", label: t("有这个属性") },
   ],
   bool: [
-    { op: "eq", label: "是" },
-    { op: "exists", label: "有这个属性" },
+    { op: "eq", label: t("是") },
+    { op: "exists", label: t("有这个属性") },
+  ],
+  // 一组名称：任意一项满足即可；“没有…”表示一项都不满足
+  list: [
+    { op: "contains", label: t("有项目包含") },
+    { op: "eq", label: t("有项目名为") },
+    { op: "glob", label: t("有项目符合通配符") },
+    { op: "matches", label: t("有项目匹配正则") },
+    { op: "not_contains", label: t("没有项目包含") },
+    { op: "ne", label: t("没有项目名为") },
+    { op: "empty", label: t("为空") },
   ],
 };
+
+/** 字段能否用于这类处理对象。 */
+export const fieldFits = (f: FieldDef | undefined, target: RuleTarget) => !!f && (f.applies === "both" || f.applies === target);
+
+/** 新条件默认用的字段。 */
+export const DEFAULT_FIELD: Record<RuleTarget, string> = { file: "category", folder: "folder.content" };
 
 const ALIASES: Record<string, string> = {
   "=": "eq",
@@ -106,14 +123,14 @@ const ALIASES: Record<string, string> = {
 const canon = (op: string) => ALIASES[op] ?? op;
 
 export const PERIODS: { value: string; label: string }[] = [
-  { value: "today", label: "今天" },
-  { value: "yesterday", label: "昨天" },
-  { value: "this_week", label: "本周" },
-  { value: "last_week", label: "上周" },
-  { value: "this_month", label: "本月" },
-  { value: "last_month", label: "上个月" },
-  { value: "this_year", label: "今年" },
-  { value: "last_year", label: "去年" },
+  { value: "today", label: t("今天") },
+  { value: "yesterday", label: t("昨天") },
+  { value: "this_week", label: t("本周") },
+  { value: "last_week", label: t("上周") },
+  { value: "this_month", label: t("本月") },
+  { value: "last_month", label: t("上个月") },
+  { value: "this_year", label: t("今年") },
+  { value: "last_year", label: t("去年") },
 ];
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -124,7 +141,7 @@ export function defaultValue(f: FieldDef | undefined, op: string): unknown {
   if (op === "exists" || op === "empty") return true;
   if (ty === "bool") return true;
   if (ty === "enum") return op === "in" || op === "not_in" ? [f?.options[0] ?? ""] : (f?.options[0] ?? "");
-  if (ty === "text") return op === "in" || op === "not_in" ? [] : op === "glob" ? "*" : "";
+  if (ty === "text" || ty === "list") return op === "in" || op === "not_in" ? [] : op === "glob" ? "*" : "";
   if (ty === "size") return op === "between" ? ["1MB", "10MB"] : "10MB";
   if (ty === "number") return op === "between" ? [0, 100] : 0;
   // date
@@ -198,12 +215,12 @@ const DEST_KINDS: DestKind[] = ["move", "copy", "rename", "extract", "compress",
 
 /** 动作的动词（“移到 …”）。 */
 export const ACTION_VERB: Record<DestKind, string> = {
-  move: "移到",
-  copy: "复制到",
-  rename: "改名为",
-  extract: "解压到",
-  compress: "压缩为",
-  shortcut: "快捷方式放到",
+  move: t("移到"),
+  copy: t("复制到"),
+  rename: t("改名为"),
+  extract: t("解压到"),
+  compress: t("压缩为"),
+  shortcut: t("快捷方式放到"),
 };
 
 /** 切换成这种动作时的默认目标。 */
@@ -227,6 +244,8 @@ function rowFromAction(a: ActionDef): ActionRow {
 export type RuleForm = {
   name: string;
   enabled: boolean;
+  /** 处理文件还是文件夹 */
+  target: RuleTarget;
   root: GroupNode;
   /** 例外：命中任意一条就不处理（mode 固定为 any）。 */
   exceptions: GroupNode;
@@ -235,11 +254,12 @@ export type RuleForm = {
   advanced: boolean;
 };
 
-export function emptyForm(fields: FieldMap): RuleForm {
+export function emptyForm(fields: FieldMap, target: RuleTarget = "file"): RuleForm {
   return {
     name: "",
     enabled: true,
-    root: group("all", [newTest(fields, "category")]),
+    target,
+    root: group("all", [newTest(fields, DEFAULT_FIELD[target])]),
     exceptions: group("any"),
     actions: [{ kind: "move", to: "", onConflict: "rename" }],
     advanced: false,
@@ -262,6 +282,7 @@ export function ruleToForm(rule: RuleDef, fields: FieldMap): RuleForm {
   return {
     name: rule.name,
     enabled: rule.enabled !== false,
+    target: rule.target === "folder" ? "folder" : "file",
     root,
     exceptions: group("any", (rule.except ?? []).map((c) => defToNode(c, fields))),
     actions: rule.actions.map(rowFromAction),
@@ -279,28 +300,28 @@ function checkValues(n: CondNode, fields: FieldMap): string | null {
   }
   const label = fields.get(n.field)?.label ?? n.field;
   const empty = (v: unknown) => v === "" || v === null || v === undefined || (Array.isArray(v) && (v.length === 0 || v.some((x) => x === "")));
-  if (!fields.has(n.field)) return `未知字段「${n.field}」`;
-  if (empty(n.value) && n.op !== "empty") return `请填写“${label}”的值`;
+  if (!fields.has(n.field)) return t("未知字段「{0}」", [n.field]);
+  if (empty(n.value) && n.op !== "empty") return t("请填写“{0}”的值", [label]);
   return null;
 }
 
 /** 表单 → 配置里的规则；有问题时返回说明。 */
 export function formToRule(f: RuleForm, fields: FieldMap): { rule: RuleDef } | { error: string } {
   const name = f.name.trim();
-  if (!name) return { error: "请填写规则名称" };
+  if (!name) return { error: t("请填写规则名称") };
   const e = checkValues(f.root, fields) ?? checkValues(f.exceptions, fields);
   if (e) return { error: e };
-  if (f.actions.length === 0) return { error: "请至少添加一个动作" };
+  if (f.actions.length === 0) return { error: t("请至少添加一个动作") };
   const actions: ActionDef[] = [];
   for (const [i, a] of f.actions.entries()) {
     if (a.kind === "trash" || a.kind === "keep") {
-      if (i !== f.actions.length - 1) return { error: "“移到回收站”和“保持原位”只能放在最后" };
-      if (a.kind === "keep" && f.actions.length > 1) return { error: "“保持原位”不能和其他动作一起使用" };
+      if (i !== f.actions.length - 1) return { error: t("“移到回收站”和“保持原位”只能放在最后") };
+      if (a.kind === "keep" && f.actions.length > 1) return { error: t("“保持原位”不能和其他动作一起使用") };
       actions.push(a.kind);
       continue;
     }
     const to = a.to.trim();
-    if (!to) return { error: a.kind === "rename" ? "请填写新文件名" : a.kind === "compress" ? "请填写压缩包名称" : "请选择目标文件夹" };
+    if (!to) return { error: a.kind === "rename" ? t("请填写新文件名") : a.kind === "compress" ? t("请填写压缩包名称") : t("请选择目标文件夹") };
     const dest: DestDef = a.onConflict === "skip" ? { to, on_conflict: "skip" } : to;
     actions.push({ [a.kind]: dest } as ActionDef);
   }
@@ -308,22 +329,24 @@ export function formToRule(f: RuleForm, fields: FieldMap): { rule: RuleDef } | {
   if (f.root.children.length > 0 || f.root.not) rule.when = nodeToDef(f.root);
   if (f.exceptions.children.length) rule.except = f.exceptions.children.map(nodeToDef);
   if (!f.enabled) rule.enabled = false;
+  if (f.target === "folder") rule.target = "folder";
   return { rule };
 }
 
 // ---------- 一句话描述 ----------
 
 function valueText(f: FieldDef | undefined, op: string, v: unknown): string {
-  if (op === "exists") return v === false ? "没有" : "有";
-  if (op === "empty") return v === false ? "不为空" : "为空";
+  if (op === "exists") return v === false ? t("没有") : t("有");
+  if (op === "empty") return v === false ? t("不为空") : t("为空");
   if (op === "within") return PERIODS.find((p) => p.value === v)?.label ?? String(v);
   if (op === "older_than" || op === "newer_than") {
-    const units: Record<string, string> = { s: "秒", m: "分钟", h: "小时", d: "天", w: "周", mo: "个月", y: "年" };
+    const units: Record<string, string> = { s: t("秒"), m: t("分钟"), h: t("小时"), d: t("天"), w: t("周"), mo: t("个月"), y: t("年") };
     return String(v).replace(/(\d+)\s*([a-z]+)/gi, (_, n, u) => `${n} ${units[u.toLowerCase()] ?? u}`);
   }
-  if (f?.type === "bool") return v === false ? "否" : "是";
-  if (Array.isArray(v)) return op === "between" ? `${v[0]} ~ ${v[1]}` : v.join(" / ");
-  const s = String(v);
+  if (f?.type === "bool") return v === false ? tv("否") : tv("是");
+  const show = (x: unknown) => (f?.type === "enum" ? t(String(x)) : String(x));
+  if (Array.isArray(v)) return op === "between" ? `${v[0]} ~ ${v[1]}` : v.map(show).join(" / ");
+  const s = show(v);
   return f?.unit && f.type === "number" ? `${s} ${f.unit}` : s;
 }
 
@@ -335,21 +358,21 @@ export function describeNode(n: CondNode, fields: FieldMap, top = true): string 
   let s: string;
   if (n.kind === "group") {
     const parts = n.children.map((c) => describeNode(c, fields, false));
-    if (parts.length === 0) s = "所有文件";
-    else if (n.mode === "none") s = `都不是（${parts.join("、")}）`;
+    if (parts.length === 0) s = t("所有文件");
+    else if (n.mode === "none") s = t("都不是（{0}）", [parts.join("、")]);
     else {
-      s = parts.join(n.mode === "all" ? " 且 " : " 或 ");
-      if (!top && parts.length > 1) s = `（${s}）`;
+      s = parts.join(n.mode === "all" ? t(" 且 ") : t(" 或 "));
+      if (!top && parts.length > 1) s = t("（{0}）", [s]);
     }
   } else {
     const f = fields.get(n.field);
     const label = f?.label ?? n.field;
-    if (n.op === "exists" || n.op === "empty" || f?.type === "bool") s = `${label}${n.op === "exists" ? "：" : " "}${valueText(f, n.op, n.value)}`;
-    else if (n.op === "older_than") s = `${label}在 ${valueText(f, n.op, n.value)}之前`;
-    else if (n.op === "newer_than") s = `${label}在最近 ${valueText(f, n.op, n.value)}内`;
+    if (n.op === "exists" || n.op === "empty" || f?.type === "bool") s = `${label}${n.op === "exists" ? t("：") : " "}${valueText(f, n.op, n.value)}`;
+    else if (n.op === "older_than") s = t("{0}在 {1}之前", [label, valueText(f, n.op, n.value)]);
+    else if (n.op === "newer_than") s = t("{0}在最近 {1}内", [label, valueText(f, n.op, n.value)]);
     else s = `${label} ${opLabel(f, n.op)} ${valueText(f, n.op, n.value)}`;
   }
-  return n.not ? `不满足（${s}）` : s;
+  return n.not ? t("不满足（{0}）", [s]) : s;
 }
 
 export function describeConditions(rule: RuleDef, fields: FieldMap): string {
@@ -358,7 +381,7 @@ export function describeConditions(rule: RuleDef, fields: FieldMap): string {
 
 export function describeExceptions(rule: RuleDef, fields: FieldMap): string | null {
   const ex = ruleToForm(rule, fields).exceptions;
-  return ex.children.length ? ex.children.map((c) => describeNode(c, fields, false)).join("、") : null;
+  return ex.children.length ? ex.children.map((c) => describeNode(c, fields, false)).join(t("、")) : null;
 }
 
 function destText(d: DestDef): string {
@@ -366,14 +389,14 @@ function destText(d: DestDef): string {
 }
 
 export function describeAction(a: ActionDef): string {
-  if (a === "trash") return "移到回收站";
-  if (a === "keep") return "保持原位";
+  if (a === "trash") return t("移到回收站");
+  if (a === "keep") return t("保持原位");
   const kind = DEST_KINDS.find((k) => k in a) ?? "move";
   return `${ACTION_VERB[kind]} ${destText((a as Record<string, DestDef>)[kind])}`;
 }
 
 export function describeActions(rule: RuleDef): string {
-  return rule.actions.map(describeAction).join("，再");
+  return rule.actions.map(describeAction).join(t("，再"));
 }
 
 // ---------- 文件夹使用的规则 ----------
@@ -404,26 +427,26 @@ export type ActionChip = { kind: ActionKind; text: string; title: string };
 
 /** 长路径只保留最后两级：~/Documents/工作/2026/发票 → …/2026/发票 */
 export function shortPath(p: string): string {
-  const t = tilde(p).replace(/[\\/]+$/, "");
-  if (t.length <= 26) return t;
-  const parts = t.split(/[\\/]/);
-  return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : t;
+  const full = tilde(p).replace(/[\\/]+$/, "");
+  if (full.length <= 26) return full;
+  const parts = full.split(/[\\/]/);
+  return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : full;
 }
 
-const MODE_LABEL: Record<GroupMode, string> = { all: "全部", any: "任一", none: "都不" };
+const MODE_LABEL: Record<GroupMode, string> = { all: t("全部"), any: t("任一"), none: t("都不") };
 
 export function ruleChips(rule: RuleDef, fields: FieldMap): { mode: GroupMode; conds: CondChip[]; actions: ActionChip[]; exceptions: number } {
   const form = ruleToForm(rule, fields);
   const conds: CondChip[] = form.root.children.map((n) => {
     if (n.kind === "test") {
       const text = describeNode({ ...n, not: false }, fields);
-      return { kind: "test", group: fields.get(n.field)?.group ?? "基本", text, title: describeNode(n, fields), not: n.not };
+      return { kind: "test", group: fields.get(n.field)?.group ?? t("基本"), text, title: describeNode(n, fields), not: n.not };
     }
-    return { kind: "group", group: "", text: `${MODE_LABEL[n.mode]}满足 ${n.children.length} 项`, title: describeNode(n, fields), not: n.not };
+    return { kind: "group", group: "", text: t("{0}满足 {1} 项", [MODE_LABEL[n.mode], n.children.length]), title: describeNode(n, fields), not: n.not };
   });
   const actions: ActionChip[] = form.actions.map((a) => {
-    if (a.kind === "trash") return { kind: a.kind, text: "回收站", title: "移到回收站" };
-    if (a.kind === "keep") return { kind: a.kind, text: "保持原位", title: "保持原位" };
+    if (a.kind === "trash") return { kind: a.kind, text: t("回收站"), title: t("移到回收站") };
+    if (a.kind === "keep") return { kind: a.kind, text: t("保持原位"), title: t("保持原位") };
     const verb = ACTION_VERB[a.kind];
     const named = a.kind === "rename" || a.kind === "compress" || a.kind === "extract";
     return { kind: a.kind, text: named ? a.to : shortPath(a.to), title: `${verb} ${tilde(a.to)}` };

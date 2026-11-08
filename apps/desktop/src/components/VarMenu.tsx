@@ -3,6 +3,7 @@ import { Braces } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useStore } from "../store";
+import { t } from "../i18n";
 
 type Item = { key: string; label: string; group: string; desc: string; insert: string };
 
@@ -50,18 +51,18 @@ export default function VarMenu({ onInsert }: { onInsert: (text: string) => void
 
   return (
     <>
-      <button ref={btn} className="icon-btn" title="插入变量（文件属性、拍摄时间、系统文件夹……）" aria-label="插入变量" onClick={() => setOpen(!open)}>
+      <button ref={btn} className="icon-btn" title={t("插入变量（文件属性、拍摄时间、系统文件夹……）")} aria-label={t("插入变量")} onClick={() => setOpen(!open)}>
         <Braces size={16} />
       </button>
       {open &&
         createPortal(
           <div className="menu var-menu" ref={pop} style={pos}>
-            <input className="input" autoFocus placeholder="搜索变量，如 拍摄、宽度、桌面" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input className="input" autoFocus placeholder={t("搜索变量，如 拍摄、宽度、桌面")} value={q} onChange={(e) => setQ(e.target.value)} />
             <div className="var-list">
               {groups.map((g) => (
                 <div key={g}>
                   <div className="section-title" style={{ padding: "8px 8px 2px" }}>
-                    {g}
+                    {t(g)}
                   </div>
                   {shown
                     .filter((i) => i.group === g)
@@ -82,7 +83,7 @@ export default function VarMenu({ onInsert }: { onInsert: (text: string) => void
                     ))}
                 </div>
               ))}
-              {shown.length === 0 && <div className="muted" style={{ padding: 10 }}>没有匹配的变量</div>}
+              {shown.length === 0 && <div className="muted" style={{ padding: 10 }}>{t("没有匹配的变量")}</div>}
             </div>
           </div>,
           document.body,

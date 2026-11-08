@@ -5,6 +5,7 @@
 
 mod docs;
 mod dup;
+mod folder;
 mod media;
 
 use crate::categories;
@@ -13,15 +14,20 @@ use std::cell::{Cell, OnceCell};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Arc;
 
 pub use docs::{AudioMeta, OfficeMeta, PdfMeta, domain};
 pub use dup::Peers;
+pub use folder::{FOLDER_KINDS, FolderMeta, MIXED};
 pub use media::MediaMeta;
 
 #[derive(Debug)]
 pub struct FileCtx {
-    category_override: Option<Option<&'static categories::Category>>,
+    /// 这份配置的文件类型表（含用户自定义的扩展名）；没有时用内置的
+    categories: Option<Arc<categories::CategoryMap>>,
     info: FileInfo,
+    folder: OnceCell<Option<FolderMeta>>,
+    total_size: OnceCell<u64>,
     image_size: OnceCell<Option<(u32, u32)>>,
     media: OnceCell<Option<MediaMeta>>,
     mime: OnceCell<Option<String>>,
@@ -47,8 +53,10 @@ impl Deref for FileCtx {
 impl From<FileInfo> for FileCtx {
     fn from(info: FileInfo) -> Self {
         Self {
-            category_override: None,
+            categories: None,
             info,
+            folder: OnceCell::new(),
+            total_size: OnceCell::new(),
             image_size: OnceCell::new(),
             media: OnceCell::new(),
             mime: OnceCell::new(),
@@ -75,12 +83,46 @@ impl FileCtx {
 
     /// 按扩展名判断的内置类型（只是判断依据，不会据此自动整理）。
     pub fn category(&self) -> Option<&'static categories::Category> {
-        self.category_override
-            .unwrap_or_else(|| categories::by_extension(&self.ext))
+        if self.is_dir {
+            return None;
+        }
+        match &self.categories {
+            Some(m) => m.get(&self.ext),
+            None => categories::by_extension(&self.ext),
+        }
     }
 
-    pub fn set_categories(&mut self, categories: &categories::CategoryMap) {
-        self.category_override = Some(categories.get(&self.ext));
+    pub fn set_categories(&mut self, categories: &Arc<categories::CategoryMap>) {
+        self.categories = Some(categories.clone());
+    }
+
+    /// 文件夹第一层的内容；不是文件夹时为 None。
+    pub fn folder(&self) -> Option<&FolderMeta> {
+        self.folder
+            .get_or_init(|| {
+                if !self.is_dir {
+                    return None;
+                }
+                self.count_read();
+                FolderMeta::read(&self.path)
+            })
+            .as_ref()
+    }
+
+    /// 文件夹的内容类型（第一层文件里占多数的类型，或“混合”）。
+    pub fn folder_content(&self) -> Option<String> {
+        self.folder()?.content(self.categories.as_deref())
+    }
+
+    /// 大小：文件为文件大小，文件夹为里面所有文件的总大小。
+    pub fn total_size(&self) -> u64 {
+        if !self.is_dir {
+            return self.size;
+        }
+        *self.total_size.get_or_init(|| {
+            self.count_read();
+            folder::total_size(&self.path)
+        })
     }
 
     fn is_category(&self, id: &str) -> bool {

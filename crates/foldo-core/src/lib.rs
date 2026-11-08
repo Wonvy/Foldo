@@ -10,6 +10,7 @@ pub mod exec;
 pub mod fields;
 pub mod fileinfo;
 pub mod fsops;
+pub mod i18n;
 pub mod journal;
 pub mod meta;
 pub mod paths;

@@ -10,16 +10,51 @@ pub fn exists(p: &Path) -> bool {
     p.symlink_metadata().is_ok()
 }
 
-/// 移动文件。同一磁盘内直接 rename；跨磁盘时退回到“复制 → 校验 → 删除源文件”。
+/// 移动文件或文件夹。同一磁盘内直接 rename；跨磁盘时退回到“复制 → 校验 → 删除源”。
 pub fn move_file(src: &Path, dst: &Path) -> io::Result<()> {
     match fs::rename(src, dst) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == io::ErrorKind::CrossesDevices => {
-            copy_file(src, dst)?;
-            fs::remove_file(src)
+            if src.is_dir() {
+                // 整个文件夹复制完成后才删除源文件夹；复制失败时删掉复制了一半的目标
+                if let Err(e) = copy_tree(src, dst) {
+                    let _ = fs::remove_dir_all(dst);
+                    return Err(e);
+                }
+                fs::remove_dir_all(src)
+            } else {
+                copy_file(src, dst)?;
+                fs::remove_file(src)
+            }
         }
         Err(e) => Err(e),
     }
+}
+
+/// 复制整个文件夹（不跟随符号链接，链接本身照样复制）。`dst` 不能已存在。
+pub fn copy_tree(src: &Path, dst: &Path) -> io::Result<()> {
+    fs::create_dir(dst)?;
+    for entry in walkdir::WalkDir::new(src).min_depth(1).follow_links(false) {
+        let entry = entry.map_err(io::Error::other)?;
+        let rel = entry.path().strip_prefix(src).map_err(io::Error::other)?;
+        let target = dst.join(rel);
+        let ft = entry.file_type();
+        if ft.is_dir() {
+            fs::create_dir_all(&target)?;
+        } else if ft.is_symlink() {
+            let link = fs::read_link(entry.path())?;
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(link, &target)?;
+            #[cfg(windows)]
+            {
+                let _ = link;
+                fs::copy(entry.path(), &target)?;
+            }
+        } else {
+            copy_file(entry.path(), &target)?;
+        }
+    }
+    Ok(())
 }
 
 /// 复制文件并校验大小，保留修改时间。
@@ -28,9 +63,10 @@ pub fn copy_file(src: &Path, dst: &Path) -> io::Result<()> {
     let written = fs::copy(src, dst)?;
     if written != md.len() {
         let _ = fs::remove_file(dst);
-        return Err(io::Error::other(format!(
-            "复制不完整：写入 {written} 字节，源文件 {} 字节",
-            md.len()
+        return Err(io::Error::other(crate::t!(
+            "复制不完整：写入 {written} 字节，源文件 {a0} 字节",
+            written = written,
+            a0 = md.len()
         )));
     }
     let _ = filetime::set_file_mtime(dst, FileTime::from_last_modification_time(&md));
@@ -79,7 +115,7 @@ pub fn extract_zip(archive: &Path, dir: &Path) -> io::Result<()> {
     if exists(dir) {
         return Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
-            "目标文件夹已存在",
+            crate::t!("目标文件夹已存在"),
         ));
     }
     let file = fs::File::open(archive)?;
@@ -92,12 +128,89 @@ pub fn extract_zip(archive: &Path, dir: &Path) -> io::Result<()> {
     })
 }
 
+/// 把整个文件夹压缩成 zip，压缩包里保留文件夹本身这一层（`dst` 不能已存在）。
+fn compress_dir(src: &Path, dst: &Path) -> io::Result<()> {
+    use std::io::Write;
+    let root = src
+        .file_name()
+        .ok_or_else(|| io::Error::other(crate::t!("无法获取文件夹名")))?
+        .to_string_lossy()
+        .into_owned();
+    let out = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dst)?;
+    let result = (|| {
+        let mut zip = zip::ZipWriter::new(io::BufWriter::new(out));
+        for entry in walkdir::WalkDir::new(src)
+            .follow_links(false)
+            .sort_by_file_name()
+        {
+            let entry = entry.map_err(io::Error::other)?;
+            let rel = entry.path().strip_prefix(src).map_err(io::Error::other)?;
+            let mut name = root.clone();
+            for c in rel.components() {
+                name.push('/');
+                name.push_str(&c.as_os_str().to_string_lossy());
+            }
+            let md = entry.metadata().map_err(io::Error::other)?;
+            let opts = zip_options(&md);
+            if entry.file_type().is_dir() {
+                zip.add_directory(format!("{name}/"), opts)
+                    .map_err(io::Error::other)?;
+            } else if entry.file_type().is_file() {
+                zip.start_file(name, opts.large_file(md.len() >= u32::MAX as u64))
+                    .map_err(io::Error::other)?;
+                io::copy(
+                    &mut io::BufReader::new(fs::File::open(entry.path())?),
+                    &mut zip,
+                )?;
+            }
+        }
+        zip.finish().map_err(io::Error::other)?.flush()
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(dst);
+    }
+    result
+}
+
+/// 压缩选项：Deflate，并保留修改时间（zip 用本地时间）。
+fn zip_options(md: &fs::Metadata) -> zip::write::SimpleFileOptions {
+    let mut opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    if let Ok(t) = md.modified() {
+        use chrono::{Datelike, Timelike};
+        let t: chrono::DateTime<chrono::Local> = t.into();
+        if let Ok(dt) = zip::DateTime::from_date_and_time(
+            t.year().clamp(1980, 2107) as u16,
+            t.month() as u8,
+            t.day() as u8,
+            t.hour() as u8,
+            t.minute() as u8,
+            t.second() as u8,
+        ) {
+            opts = opts.last_modified_time(dt);
+        }
+    }
+    opts
+}
+
+/// 把文件或文件夹压缩成 zip（`dst` 不能已存在）。
+pub fn compress(src: &Path, dst: &Path) -> io::Result<()> {
+    if src.is_dir() {
+        compress_dir(src, dst)
+    } else {
+        compress_file(src, dst)
+    }
+}
+
 /// 把单个文件压缩成 zip（`dst` 不能已存在）。
-pub fn compress_file(src: &Path, dst: &Path) -> io::Result<()> {
+fn compress_file(src: &Path, dst: &Path) -> io::Result<()> {
     use std::io::Write;
     let name = src
         .file_name()
-        .ok_or_else(|| io::Error::other("无法获取文件名"))?
+        .ok_or_else(|| io::Error::other(crate::t!("无法获取文件名")))?
         .to_string_lossy()
         .into_owned();
     let out = fs::OpenOptions::new()
@@ -107,24 +220,7 @@ pub fn compress_file(src: &Path, dst: &Path) -> io::Result<()> {
     let result = (|| {
         let mut zip = zip::ZipWriter::new(io::BufWriter::new(out));
         let md = fs::metadata(src)?;
-        let mut opts = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated)
-            .large_file(md.len() >= u32::MAX as u64);
-        // 压缩包里保留文件原来的修改时间（zip 用本地时间）
-        if let Ok(t) = md.modified() {
-            use chrono::{Datelike, Timelike};
-            let t: chrono::DateTime<chrono::Local> = t.into();
-            if let Ok(dt) = zip::DateTime::from_date_and_time(
-                t.year().clamp(1980, 2107) as u16,
-                t.month() as u8,
-                t.day() as u8,
-                t.hour() as u8,
-                t.minute() as u8,
-                t.second() as u8,
-            ) {
-                opts = opts.last_modified_time(dt);
-            }
-        }
+        let opts = zip_options(&md).large_file(md.len() >= u32::MAX as u64);
         zip.start_file(name, opts).map_err(io::Error::other)?;
         io::copy(&mut io::BufReader::new(fs::File::open(src)?), &mut zip)?;
         zip.finish().map_err(io::Error::other)?.flush()
@@ -138,7 +234,10 @@ pub fn compress_file(src: &Path, dst: &Path) -> io::Result<()> {
 /// 创建指向 `target` 的快捷方式：Windows 为 .lnk，其他系统为符号链接。
 pub fn create_shortcut(target: &Path, link: &Path) -> io::Result<()> {
     if exists(link) {
-        return Err(io::Error::new(io::ErrorKind::AlreadyExists, "已有同名文件"));
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            crate::t!("已有同名文件"),
+        ));
     }
     #[cfg(windows)]
     {

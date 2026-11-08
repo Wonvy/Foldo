@@ -11,6 +11,9 @@ use walkdir::WalkDir;
 #[derive(Debug, Default)]
 pub struct ScanResult {
     pub files: Vec<FileCtx>,
+    /// 第一层的子文件夹（固定保留、隐藏、系统和下载中的除外），供文件夹规则判断。
+    /// 没有文件夹规则处理的，由调用方记为“作为整体保留”。
+    pub folders: Vec<FileCtx>,
     pub skipped: Vec<(PathBuf, SkipKind, String)>,
     pub warnings: Vec<String>,
 }
@@ -30,7 +33,7 @@ pub fn classify_file(
         return Some(hit);
     }
     if !include_hidden && is_hidden(name, md) {
-        return Some((SkipKind::Hidden, "隐藏文件".into()));
+        return Some((SkipKind::Hidden, crate::t!("隐藏文件")));
     }
     None
 }
@@ -51,15 +54,16 @@ pub fn scan(root: &Path, recursive: bool, include_hidden: bool, protect: &Protec
             Ok(e) => e,
             Err(err) => {
                 let at = err.path().map(display).unwrap_or_default();
-                res.warnings.push(format!("无法读取 {at}: {err}"));
+                res.warnings
+                    .push(crate::t!("无法读取 {at}: {err}", at = at, err = err));
                 continue;
             }
         };
         let path = entry.path();
         if path.to_str().is_none() {
-            res.warnings.push(format!(
-                "跳过文件名不是 UTF-8 编码的项目: {}",
-                path.display()
+            res.warnings.push(crate::t!(
+                "跳过文件名不是 UTF-8 编码的项目: {a0}",
+                a0 = path.display()
             ));
             if entry.file_type().is_dir() {
                 it.skip_current_dir();
@@ -70,8 +74,11 @@ pub fn scan(root: &Path, recursive: bool, include_hidden: bool, protect: &Protec
         let md = match entry.metadata() {
             Ok(m) => m,
             Err(err) => {
-                res.warnings
-                    .push(format!("无法读取 {}: {err}", display(path)));
+                res.warnings.push(crate::t!(
+                    "无法读取 {a0}: {err}",
+                    a0 = display(path),
+                    err = err
+                ));
                 continue;
             }
         };
@@ -80,14 +87,9 @@ pub fn scan(root: &Path, recursive: bool, include_hidden: bool, protect: &Protec
             let skip = if let Some(reason) = protect.check(path, &name) {
                 Some((SkipKind::Protected, reason))
             } else if let Some(kind) = is_partial_or_system_dir(&name) {
-                Some((kind, kind.label().to_string()))
+                Some((kind, crate::i18n::tr(kind.label())))
             } else if !include_hidden && is_hidden(&name, &md) {
-                Some((SkipKind::Hidden, "隐藏文件夹".into()))
-            } else if !recursive {
-                Some((
-                    SkipKind::Folder,
-                    "已有文件夹作为整体保留，不拆分内部文件".into(),
-                ))
+                Some((SkipKind::Hidden, crate::t!("隐藏文件夹")))
             } else {
                 None
             };
@@ -96,6 +98,17 @@ pub fn scan(root: &Path, recursive: bool, include_hidden: bool, protect: &Protec
                 if recursive {
                     it.skip_current_dir();
                 }
+                continue;
+            }
+            // 应用程序包（macOS 的 .app）看起来是文件夹，但不能拆开
+            let bundle = name.to_lowercase().ends_with(".app");
+            if entry.depth() == 1 {
+                let hidden = is_hidden(&name, &md);
+                res.folders
+                    .push(FileInfo::new(path.to_path_buf(), &md, hidden).into());
+            }
+            if recursive && bundle {
+                it.skip_current_dir();
             }
             continue;
         }

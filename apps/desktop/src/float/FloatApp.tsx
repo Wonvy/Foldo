@@ -5,6 +5,7 @@ import { AppWindow, ArrowRight, CircleCheck, FolderTree, RotateCcw, Trash, Trian
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { api, baseName, errorText, type ExecView, type PlanView } from "../api";
 import { FileIcon, Spinner } from "../components/ui";
+import { t } from "../i18n";
 
 type Phase = "idle" | "busy" | "plan" | "done";
 
@@ -112,7 +113,7 @@ export default function FloatApp() {
   const pickAndHandle = async () => {
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
-      const r = await open({ multiple: true, directory: false, title: "选择要整理的文件" });
+      const r = await open({ multiple: true, directory: false, title: t("选择要整理的文件") });
       const paths = Array.isArray(r) ? r : typeof r === "string" ? [r] : [];
       if (paths.length) await handle(paths);
     } catch (e) {
@@ -128,13 +129,13 @@ export default function FloatApp() {
       const sep = () => PredefinedMenuItem.new({ item: "Separator" });
       const menu = await Menu.new({
         items: [
-          await MenuItem.new({ text: "打开主窗口", action: () => void api.showMain() }),
-          await MenuItem.new({ text: "选择文件整理…", action: () => void pickAndHandle() }),
-          await MenuItem.new({ text: "撤销上次整理", enabled: canUndo, action: () => void undo() }),
+          await MenuItem.new({ text: t("打开主窗口"), action: () => void api.showMain() }),
+          await MenuItem.new({ text: t("选择文件整理…"), action: () => void pickAndHandle() }),
+          await MenuItem.new({ text: t("撤销上次整理"), enabled: canUndo, action: () => void undo() }),
           await sep(),
-          await MenuItem.new({ text: expanded ? "收起面板" : "展开上次结果", enabled: expanded || !!plan, action: () => setPhase(expanded ? "idle" : result ? "done" : "plan") }),
+          await MenuItem.new({ text: expanded ? t("收起面板") : t("展开上次结果"), enabled: expanded || !!plan, action: () => setPhase(expanded ? "idle" : result ? "done" : "plan") }),
           await CheckMenuItem.new({
-            text: "始终置顶",
+            text: t("始终置顶"),
             checked: onTop,
             action: () => {
               const v = !onTop;
@@ -145,7 +146,7 @@ export default function FloatApp() {
             },
           }),
           await sep(),
-          await MenuItem.new({ text: "关闭悬浮窗", action: () => void api.toggleFloat() }),
+          await MenuItem.new({ text: t("关闭悬浮窗"), action: () => void api.toggleFloat() }),
         ],
       });
       await menu.popup();
@@ -164,7 +165,7 @@ export default function FloatApp() {
       onMouseDown={drag}
       onDoubleClick={() => void api.showMain()}
       onContextMenu={openMenu}
-      title="把文件拖到这里整理 · 双击打开主窗口 · 右键更多操作"
+      title={t("把文件拖到这里整理 · 双击打开主窗口 · 右键更多操作")}
     >
       {hover ? <Upload size={small ? 16 : 26} /> : <FolderTree size={small ? 16 : 26} />}
     </div>
@@ -178,18 +179,18 @@ export default function FloatApp() {
         {target(true)}
         <strong className="ellipsis">
           {phase === "busy"
-            ? "正在分析…"
+            ? t("正在分析…")
             : phase === "done"
               ? undone
-                ? "已撤销"
-                : `已整理 ${result?.done ?? 0} 项`
-              : `${items.length} 个文件可以整理`}
+                ? t("已撤销")
+                : t("已整理 {0} 项", [result?.done ?? 0])
+              : t("{0} 个文件可以整理", [items.length])}
         </strong>
         <span className="spacer" />
-        <button className="icon-btn" title="打开主窗口" onClick={() => void api.showMain()}>
+        <button className="icon-btn" title={t("打开主窗口")} onClick={() => void api.showMain()}>
           <AppWindow size={15} />
         </button>
-        <button className="icon-btn" title="收起" onClick={() => setPhase("idle")}>
+        <button className="icon-btn" title={t("收起")} onClick={() => setPhase("idle")}>
           <X size={15} />
         </button>
       </div>
@@ -208,13 +209,13 @@ export default function FloatApp() {
         )}
         {phase === "plan" &&
           items.map((it) => (
-            <div key={it.group} className="float-item" title={`规则「${it.rule}」`}>
+            <div key={it.group} className="float-item" title={t("规则「{0}」", [it.rule])}>
               <FileIcon category={it.category} size={26} />
               <span className="ellipsis name">{it.name}</span>
               <span className="float-to ellipsis">
                 {it.kind === "trash" ? (
                   <>
-                    <Trash size={12} /> 回收站
+                    <Trash size={12} /> {t("回收站")}
                   </>
                 ) : (
                   <>
@@ -237,9 +238,9 @@ export default function FloatApp() {
             <CircleCheck size={30} color="var(--ok)" />
             <div className="muted" style={{ fontSize: 12.5 }}>
               {undone
-                ? "文件已放回原处"
-                : [result.skipped.length && `跳过 ${result.skipped.length} 项`, result.failed.length && `失败 ${result.failed.length} 项`].filter(Boolean).join("，") ||
-                  "全部完成"}
+                ? t("文件已放回原处")
+                : [result.skipped.length && t("跳过 {0} 项", [result.skipped.length]), result.failed.length && t("失败 {0} 项", [result.failed.length])].filter(Boolean).join(t("，")) ||
+                  t("全部完成")}
             </div>
           </div>
         )}
@@ -249,12 +250,12 @@ export default function FloatApp() {
         {phase === "plan" && (
           <button className="btn primary" style={{ flex: 1 }} disabled={items.length === 0 || running} onClick={execute}>
             {running ? <Spinner size={14} /> : null}
-            {items.length ? `整理 ${items.length} 个文件` : "没有可整理的文件"}
+            {items.length ? t("整理 {0} 个文件", [items.length]) : t("没有可整理的文件")}
           </button>
         )}
         {phase === "done" && !undone && result && result.done > 0 && (
           <button className="btn" style={{ flex: 1 }} onClick={undo}>
-            <RotateCcw size={14} /> 撤销
+            <RotateCcw size={14} /> {t("撤销")}
           </button>
         )}
       </div>

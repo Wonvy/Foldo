@@ -11,27 +11,46 @@ use tauri::{AppHandle, Emitter, Manager, Wry};
 pub struct TrayItems {
     status: MenuItem<Wry>,
     modes: [CheckMenuItem<Wry>; 3],
+    /// 文字固定的菜单项：(菜单项, 原文)，切换语言时重新翻译
+    fixed: Vec<(MenuItem<Wry>, &'static str)>,
 }
+
+const MODE_LABELS: [&str; 3] = ["不自动整理", "发现文件时提醒我", "自动整理…"];
 
 const MODES: [AutoMode; 3] = [AutoMode::Off, AutoMode::Notify, AutoMode::Run];
 
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     // 有待确认的文件时可以点，点了打开主窗口并扫描
-    let status = MenuItem::with_id(app, "status", "自动整理：关闭", false, None::<&str>)?;
-    let run_now = MenuItem::with_id(app, "run_now", "立即整理", true, None::<&str>)?;
-    let m_off = CheckMenuItem::with_id(app, "mode_off", "不自动整理", true, true, None::<&str>)?;
+    use foldo_core::i18n::tr;
+    let status = MenuItem::with_id(app, "status", tr("自动整理：关闭"), false, None::<&str>)?;
+    let run_now = MenuItem::with_id(app, "run_now", tr("立即整理"), true, None::<&str>)?;
+    let m_off = CheckMenuItem::with_id(
+        app,
+        "mode_off",
+        tr(MODE_LABELS[0]),
+        true,
+        true,
+        None::<&str>,
+    )?;
     let m_notify = CheckMenuItem::with_id(
         app,
         "mode_notify",
-        "发现文件时提醒我",
+        tr(MODE_LABELS[1]),
         true,
         false,
         None::<&str>,
     )?;
-    let m_run = CheckMenuItem::with_id(app, "mode_run", "自动整理…", true, false, None::<&str>)?;
-    let open = MenuItem::with_id(app, "open", "打开 Foldo", true, None::<&str>)?;
-    let float = MenuItem::with_id(app, "float", "悬浮窗", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "退出 Foldo", true, None::<&str>)?;
+    let m_run = CheckMenuItem::with_id(
+        app,
+        "mode_run",
+        tr(MODE_LABELS[2]),
+        true,
+        false,
+        None::<&str>,
+    )?;
+    let open = MenuItem::with_id(app, "open", tr("打开 Foldo"), true, None::<&str>)?;
+    let float = MenuItem::with_id(app, "float", tr("悬浮窗"), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", tr("退出 Foldo"), true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
@@ -92,8 +111,34 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     app.manage(TrayItems {
         status,
         modes: [m_off, m_notify, m_run],
+        fixed: vec![
+            (run_now, "立即整理"),
+            (open, "打开 Foldo"),
+            (float, "悬浮窗"),
+            (quit, "退出 Foldo"),
+        ],
     });
     Ok(())
+}
+
+/// 切换语言后重新设置菜单文字。
+pub fn relabel(app: &AppHandle) {
+    let Some(t) = app.try_state::<TrayItems>() else {
+        return;
+    };
+    for (item, zh) in &t.fixed {
+        let _ = item.set_text(foldo_core::i18n::tr(zh));
+    }
+    for (item, zh) in t.modes.iter().zip(MODE_LABELS) {
+        let _ = item.set_text(foldo_core::i18n::tr(zh));
+    }
+    let status = app
+        .state::<crate::watch::WatchState>()
+        .status
+        .lock()
+        .map(|s| s.clone())
+        .unwrap_or_default();
+    refresh(app, &status);
 }
 
 pub fn show_main(app: &AppHandle) {
@@ -118,14 +163,14 @@ pub fn refresh(app: &AppHandle, st: &WatchStatus) {
         return;
     };
     let text = match st.mode {
-        "notify" if st.pending > 0 => format!("有 {} 个文件可以整理", st.pending),
-        "notify" => "自动整理：发现文件时提醒".to_string(),
-        "run" if st.pending > 0 => format!("自动整理中 · {} 个待确认", st.pending),
+        "notify" if st.pending > 0 => foldo_core::t!("有 {a0} 个文件可以整理", a0 = st.pending),
+        "notify" => foldo_core::t!("自动整理：发现文件时提醒"),
+        "run" if st.pending > 0 => foldo_core::t!("自动整理中 · {a0} 个待确认", a0 = st.pending),
         "run" => match &st.last_check {
-            Some(t) => format!("自动整理中 · {t} 检查过"),
-            None => "自动整理中".to_string(),
+            Some(t) => foldo_core::t!("自动整理中 · {t} 检查过", t = t),
+            None => foldo_core::t!("自动整理中"),
         },
-        _ => "自动整理：关闭".to_string(),
+        _ => foldo_core::t!("自动整理：关闭"),
     };
     let _ = t.status.set_text(text);
     let _ = t.status.set_enabled(st.pending > 0);

@@ -17,12 +17,21 @@ pub struct FileInfo {
     pub accessed: Option<DateTime<Local>>,
     pub hidden: bool,
     pub readonly: bool,
+    /// 是文件夹（文件夹规则处理的对象）。
+    pub is_dir: bool,
 }
 
 impl FileInfo {
     pub fn new(path: PathBuf, md: &Metadata, hidden: bool) -> Self {
-        let (name, stem, ext) = split_name(&path);
+        let is_dir = md.is_dir();
+        let (name, mut stem, mut ext) = split_name(&path);
+        if is_dir {
+            // 文件夹名里的点不当作扩展名（“项目.v2” 的主名就是 “项目.v2”）
+            stem = name.clone();
+            ext = String::new();
+        }
         Self {
+            is_dir,
             name,
             stem,
             ext,

@@ -8,6 +8,7 @@ import {
   FileSpreadsheet,
   FileText,
   Film,
+  Folder,
   Globe,
   Image,
   Search,
@@ -17,6 +18,7 @@ import {
 import { useRef, useState } from "react";
 import type { FieldDef } from "../api";
 import Popover from "./Popover";
+import { t } from "../i18n";
 
 export const GROUP_ICON: Record<string, LucideIcon> = {
   基本: File,
@@ -29,6 +31,7 @@ export const GROUP_ICON: Record<string, LucideIcon> = {
   "Office 文档": FileSpreadsheet,
   内容: Type,
   下载来源: Globe,
+  文件夹: Folder,
 };
 
 export function GroupIcon({ group, size = 14 }: { group: string; size?: number }) {
@@ -55,7 +58,7 @@ export default function FieldPicker({
   return (
     <>
       <button ref={btn} className="field-pill" title={current?.desc || current?.key} onClick={() => setOpen(!open)}>
-        <GroupIcon group={current?.group ?? "基本"} />
+        <GroupIcon group={current?.group ?? t("基本")} />
         <span>{current?.label ?? value}</span>
         <ChevronDown size={13} className="chev" />
       </button>
@@ -63,14 +66,14 @@ export default function FieldPicker({
         <Popover anchor={btn} onClose={() => setOpen(false)} width={320}>
           <div className="search-box">
             <Search size={14} />
-            <input autoFocus placeholder="搜索属性" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input autoFocus placeholder={t("搜索属性")} value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
           <div className="pick-list">
             {groups.map((g) => (
               <div key={g}>
                 <div className="pick-group">
                   <GroupIcon group={g} size={13} />
-                  {g}
+                  {t(g)}
                 </div>
                 {shown
                   .filter((f) => f.group === g)
@@ -91,7 +94,7 @@ export default function FieldPicker({
                   ))}
               </div>
             ))}
-            {shown.length === 0 && <div className="muted" style={{ padding: 12 }}>没有匹配的属性</div>}
+            {shown.length === 0 && <div className="muted" style={{ padding: 12 }}>{t("没有匹配的属性")}</div>}
           </div>
         </Popover>
       )}

@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, Clock, RefreshCw, RotateCcw, TriangleAlert }
 import { useCallback, useEffect, useState } from "react";
 import { api, errorText, KIND_LABEL, STATUS_LABEL, type Batch, type OpRecord, type UndoView } from "../api";
 import UndoDialog from "../components/UndoDialog";
+import { t } from "../i18n";
 
 const STATUS_CHIP: Record<string, string> = {
   done: "ok",
@@ -49,11 +50,11 @@ export default function HistoryPage({ active }: { active: boolean }) {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1>历史</h1>
-          <p className="sub">每次整理都会记录下来，可以查看明细或撤销。</p>
+          <h1>{t("历史")}</h1>
+          <p className="sub">{t("每次整理都会记录下来，可以查看明细或撤销。")}</p>
         </div>
         <button className="btn" onClick={refresh}>
-          <RefreshCw size={15} /> 刷新
+          <RefreshCw size={15} /> {t("刷新")}
         </button>
       </div>
 
@@ -68,9 +69,9 @@ export default function HistoryPage({ active }: { active: boolean }) {
         <div className={`banner ${lastUndo.failed.length ? "warn" : "info"}`}>
           <RotateCcw size={16} />
           <span>
-            已撤销第 {lastUndo.batch_id} 次整理，恢复 {lastUndo.restored} 项
-            {lastUndo.in_trash.length > 0 && `；${lastUndo.in_trash.length} 项需要到回收站手动还原`}
-            {lastUndo.failed.length > 0 && `；${lastUndo.failed.length} 项无法恢复`}。
+            {t("已撤销第 {0} 次整理，恢复 {1} 项", [lastUndo.batch_id, lastUndo.restored])}
+            {lastUndo.in_trash.length > 0 && t("；{0} 项需要到回收站手动还原", [lastUndo.in_trash.length])}
+            {lastUndo.failed.length > 0 && t("；{0} 项无法恢复", [lastUndo.failed.length])}{t("。")}
           </span>
         </div>
       )}
@@ -80,8 +81,8 @@ export default function HistoryPage({ active }: { active: boolean }) {
           <div className="art">
             <Clock size={24} />
           </div>
-          <h2>还没有整理记录</h2>
-          <p className="muted">执行整理后，记录会出现在这里。</p>
+          <h2>{t("还没有整理记录")}</h2>
+          <p className="muted">{t("执行整理后，记录会出现在这里。")}</p>
         </div>
       )}
 
@@ -95,10 +96,10 @@ export default function HistoryPage({ active }: { active: boolean }) {
                   <div className="row-title">
                     {b.started_at.slice(0, 16)}
                     <span className="muted" style={{ fontWeight: 400 }}>
-                      {"  "}#{b.id} · {b.source === "gui" ? "图形界面" : b.source === "cli" ? "命令行" : b.source}
+                      {"  "}#{b.id} · {b.source === "gui" ? t("图形界面") : b.source === "cli" ? t("命令行") : b.source}
                     </span>
                   </div>
-                  <div className="row-sub">{b.op_count} 项操作</div>
+                  <div className="row-sub">{t("{0} 项操作", [b.op_count])}</div>
                 </div>
                 <span className={`chip ${STATUS_CHIP[b.status] ?? ""}`}>{STATUS_LABEL[b.status] ?? b.status}</span>
                 {b.status !== "undone" && b.op_count > 0 && (
@@ -109,7 +110,7 @@ export default function HistoryPage({ active }: { active: boolean }) {
                       setUndoFor(b.id);
                     }}
                   >
-                    <RotateCcw size={14} /> 撤销
+                    <RotateCcw size={14} /> {t("撤销")}
                   </button>
                 )}
               </div>
