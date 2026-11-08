@@ -21,6 +21,8 @@ export default function FloatApp() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [plan, setPlan] = useState<PlanView | null>(null);
   const [result, setResult] = useState<ExecView | null>(null);
+  const resultRef = useRef(result);
+  resultRef.current = result;
   const [error, setError] = useState<string | null>(null);
   const [undone, setUndone] = useState(false);
   const [running, setRunning] = useState(false);
@@ -139,7 +141,7 @@ export default function FloatApp() {
             if (paths.length) void handleRef.current(paths);
             else {
               setError(t("未能读取拖入的文件，请重新拖入或点击添加文件"));
-              if (phaseRef.current === "idle") setPhase("plan");
+              if (phaseRef.current === "idle") setPhase(resultRef.current ? "done" : "plan");
             }
           }
         });

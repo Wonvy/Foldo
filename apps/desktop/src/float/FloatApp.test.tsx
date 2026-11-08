@@ -117,6 +117,18 @@ describe("悬浮窗文件列表", () => {
     expect(mocks.scan).toHaveBeenLastCalledWith(["D:/files/old.pdf", "D:/files/next.png"]);
   });
 
+  it("完成后收起再遇到无效拖入，不会重新启用上一批整理按钮", async () => {
+    render(<FloatApp />);
+    await drop(["D:/files/old.pdf"]);
+    fireEvent.click(screen.getByRole("button", { name: "整理 1 个文件" }));
+    await screen.findByText("已整理 1 项");
+    fireEvent.click(screen.getByTitle("收起面板"));
+    await dragEvent("drop");
+    expect(screen.queryByRole("button", { name: "整理 1 个文件" })).toBeNull();
+    expect(screen.getByText("已整理 1 项")).toBeTruthy();
+    expect(mocks.execute).toHaveBeenCalledTimes(1);
+  });
+
   it("整理期间拖入的新文件会排队，完成后刷新成下一批且不会自动执行", async () => {
     let complete!: (result: { batch_id: number; done: number; skipped: []; failed: [] }) => void;
     mocks.execute.mockImplementationOnce(
