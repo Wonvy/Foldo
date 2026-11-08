@@ -41,7 +41,10 @@ pub struct AppState {
 }
 
 impl AppState {
-    fn with_journal<T>(&self, f: impl FnOnce(&Journal) -> foldo_core::Result<T>) -> CmdResult<T> {
+    pub(crate) fn with_journal<T>(
+        &self,
+        f: impl FnOnce(&Journal) -> foldo_core::Result<T>,
+    ) -> CmdResult<T> {
         let mut guard = self.journal.lock().map_err(err)?;
         if guard.is_none() {
             *guard = Some(Journal::open_in(&default_data_dir()).map_err(err)?);
@@ -114,7 +117,7 @@ fn read_config() -> ConfigView {
     view
 }
 
-fn write_config(file: &RuleFile) -> CmdResult<()> {
+pub(crate) fn write_config(file: &RuleFile) -> CmdResult<()> {
     RuleSet::from_file(file.clone()).map_err(err)?;
     let yaml = file.to_yaml().map_err(err)?;
     let path = default_rules_path();
@@ -124,7 +127,7 @@ fn write_config(file: &RuleFile) -> CmdResult<()> {
     std::fs::write(&path, format!("{HEADER}{yaml}")).map_err(err)
 }
 
-fn current_config() -> CmdResult<RuleFile> {
+pub(crate) fn current_config() -> CmdResult<RuleFile> {
     let view = read_config();
     match (view.config, view.error) {
         (Some(c), None) => Ok(c),
@@ -135,10 +138,17 @@ fn current_config() -> CmdResult<RuleFile> {
             protect: vec![],
             settings: SettingsDef {
                 buffer: Some(Span(Duration::from_secs(600))),
+                ..Default::default()
             },
             rules: vec![],
         }),
     }
+}
+
+/// 配置改变后：让后台立即按新配置检查，失败记录清零。
+fn config_changed(app: &tauri::AppHandle) {
+    crate::watch::reset_failures(app);
+    crate::watch::wake();
 }
 
 #[tauri::command]
@@ -148,19 +158,21 @@ pub async fn get_config() -> CmdResult<ConfigView> {
 
 /// 保存整份配置（先校验，通过才写入）。
 #[tauri::command]
-pub async fn save_config(config: RuleFile) -> CmdResult<ConfigView> {
+pub async fn save_config(app: tauri::AppHandle, config: RuleFile) -> CmdResult<ConfigView> {
     write_config(&config)?;
+    config_changed(&app);
     Ok(read_config())
 }
 
 /// 把一个文件、文件夹或通配符加入固定保留。
 #[tauri::command]
-pub async fn add_protect(entry: String) -> CmdResult<ConfigView> {
+pub async fn add_protect(app: tauri::AppHandle, entry: String) -> CmdResult<ConfigView> {
     let mut config = current_config()?;
     if !config.protect.iter().any(|p| p == &entry) {
         config.protect.push(entry);
     }
     write_config(&config)?;
+    config_changed(&app);
     Ok(read_config())
 }
 
@@ -175,13 +187,14 @@ pub async fn get_yaml() -> CmdResult<String> {
 
 /// 高级模式：直接保存 YAML 源码（通过校验才写入）。
 #[tauri::command]
-pub async fn save_yaml(text: String) -> CmdResult<ConfigView> {
+pub async fn save_yaml(app: tauri::AppHandle, text: String) -> CmdResult<ConfigView> {
     RuleSet::from_yaml(&text).map_err(|e| format!("有错误，未保存：{e}"))?;
     let path = default_rules_path();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(err)?;
     }
     std::fs::write(&path, text).map_err(err)?;
+    config_changed(&app);
     Ok(read_config())
 }
 
@@ -744,13 +757,17 @@ const FLOAT: &str = "float";
 /// 打开或关闭悬浮窗，返回操作后是否显示。
 #[tauri::command]
 pub async fn toggle_float(app: tauri::AppHandle) -> CmdResult<bool> {
+    toggle_float_window(&app)
+}
+
+pub(crate) fn toggle_float_window(app: &tauri::AppHandle) -> CmdResult<bool> {
     use tauri::Manager;
     if let Some(w) = app.get_webview_window(FLOAT) {
         w.close().map_err(err)?;
         return Ok(false);
     }
     tauri::WebviewWindowBuilder::new(
-        &app,
+        app,
         FLOAT,
         tauri::WebviewUrl::App("index.html#float".into()),
     )
@@ -808,4 +825,35 @@ pub async fn reveal(path: String) -> CmdResult<()> {
         }
     }
     tauri_plugin_opener::reveal_item_in_dir(&p).map_err(err)
+}
+
+// ---------- 自动整理与开机自启 ----------
+
+#[tauri::command]
+pub async fn watch_status(app: tauri::AppHandle) -> CmdResult<crate::watch::WatchStatus> {
+    use tauri::Manager;
+    let st = app.state::<crate::watch::WatchState>();
+    let s = st.status.lock().map_err(err)?.clone();
+    Ok(s)
+}
+
+/// 立即检查一次。
+#[tauri::command]
+pub async fn watch_now() -> CmdResult<()> {
+    crate::watch::wake();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn autostart_enabled(app: tauri::AppHandle) -> CmdResult<bool> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(err)
+}
+
+#[tauri::command]
+pub async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> CmdResult<bool> {
+    use tauri_plugin_autostart::ManagerExt;
+    let al = app.autolaunch();
+    if enabled { al.enable() } else { al.disable() }.map_err(err)?;
+    al.is_enabled().map_err(err)
 }

@@ -2,12 +2,42 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod tray;
+mod watch;
+
+use tauri::{Manager, RunEvent, WindowEvent};
 
 fn main() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            // 开机自启时只留在托盘里，不弹出主窗口
+            Some(vec!["--hidden"]),
+        ))
         .manage(commands::AppState::default())
+        .manage(watch::WatchState::default())
+        .setup(|app| {
+            tray::build(app.handle())?;
+            watch::spawn(app.handle().clone());
+            if std::env::args().any(|a| a == "--hidden")
+                && let Some(w) = app.get_webview_window("main")
+            {
+                let _ = w.hide();
+            }
+            Ok(())
+        })
+        // 关闭主窗口时收到托盘里继续运行；从托盘菜单“退出 Foldo”才真正退出
+        .on_window_event(|window, event| {
+            if window.label() == "main"
+                && let WindowEvent::CloseRequested { api, .. } = event
+            {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::save_config,
@@ -33,8 +63,21 @@ fn main() {
             commands::float_visible,
             commands::float_resize,
             commands::show_main,
+            commands::watch_status,
+            commands::watch_now,
+            commands::autostart_enabled,
+            commands::set_autostart,
             commands::reveal,
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("Foldo 启动失败");
+
+    app.run(|app, event| {
+        // macOS：点击程序坞图标时重新显示主窗口
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Reopen { .. } = event {
+            tray::show_main(app);
+        }
+        let _ = (app, event);
+    });
 }

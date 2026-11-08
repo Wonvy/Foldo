@@ -151,6 +151,7 @@ protect:                     # 固定保留：路径或文件名通配符
   - "*.lic"
 settings:
   buffer: 10m                # 新文件缓冲期
+  auto: notify               # 后台自动整理：off（默认）/ notify 发现文件时提醒 / run 直接整理（移到回收站仍需确认）
 rules:
   - name: 规则名（唯一）
     enabled: true            # 默认 true

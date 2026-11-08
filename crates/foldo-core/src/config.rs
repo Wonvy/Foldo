@@ -69,11 +69,33 @@ pub struct SettingsDef {
     /// 新文件缓冲期：最近这段时间内新增或修改的文件暂不整理。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub buffer: Option<Span>,
+    /// 自动整理：off（默认）/ notify（发现可整理的文件时提醒）/ run（直接整理）。
+    #[serde(default, skip_serializing_if = "AutoMode::is_off")]
+    pub auto: AutoMode,
 }
 
 impl SettingsDef {
     fn is_default(&self) -> bool {
         *self == Self::default()
+    }
+}
+
+/// 后台自动整理的方式。
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoMode {
+    /// 不自动整理
+    #[default]
+    Off,
+    /// 发现可以整理的文件时提醒，由用户确认
+    Notify,
+    /// 直接整理（不可撤销的“移到回收站”除外，仍需确认）
+    Run,
+}
+
+impl AutoMode {
+    fn is_off(&self) -> bool {
+        *self == AutoMode::Off
     }
 }
 

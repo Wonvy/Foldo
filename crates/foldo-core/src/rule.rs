@@ -22,6 +22,8 @@ pub struct RuleSet {
     pub protect: Protect,
     /// 新文件缓冲期。
     pub buffer: Duration,
+    /// 后台自动整理的方式。
+    pub auto: crate::config::AutoMode,
 }
 
 #[derive(Debug)]
@@ -122,6 +124,7 @@ impl RuleSet {
             folders,
             protect,
             buffer,
+            auto: file.settings.auto,
         })
     }
 

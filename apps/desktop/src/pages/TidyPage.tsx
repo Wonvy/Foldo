@@ -79,9 +79,12 @@ function toItems(ops: OpView[]): Item[] {
 
 export default function TidyPage({
   dropped,
+  scanRequest,
   onNewRule,
 }: {
   dropped: { paths: string[]; n: number } | null;
+  /** 每次变化都重新扫描（托盘“立即整理”）。 */
+  scanRequest: number;
   /** 跳到规则页并打开“新建规则”。 */
   onNewRule: () => void;
 }) {
@@ -133,6 +136,12 @@ export default function TidyPage({
       void run(null);
     }
   }, [configured, run]);
+
+  // 托盘里点了“立即整理”
+  useEffect(() => {
+    if (scanRequest && configured) void run(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanRequest]);
 
   // 拖入文件
   useEffect(() => {

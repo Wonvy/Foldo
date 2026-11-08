@@ -1,6 +1,7 @@
 import { Clock, FolderTree, Monitor, Moon, PictureInPicture2, Settings, ShieldCheck, Sparkles, Sun, Upload, WandSparkles } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { api } from "./api";
+import { api, type WatchStatus } from "./api";
 import HistoryPage from "./pages/HistoryPage";
 import RulesPage from "./pages/RulesPage";
 import ScopePage from "./pages/ScopePage";
@@ -55,7 +56,7 @@ function saveSide(s: Side) {
 }
 
 function Shell() {
-  const { config, loadError } = useStore();
+  const { config, loadError, reload } = useStore();
   const [page, setPage] = useState<Page>("tidy");
   const [theme, setTheme] = useState<ThemePref>(loadTheme);
   const [dragging, setDragging] = useState(false);
@@ -68,6 +69,8 @@ function Shell() {
   pageRef.current = page;
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [newRule, setNewRule] = useState(0);
+  const [scanRequest, setScanRequest] = useState(0);
+  const [watch, setWatch] = useState<WatchStatus | null>(null);
 
   useEffect(() => applyTheme(theme), [theme]);
 
@@ -78,6 +81,32 @@ function Shell() {
     const t = setInterval(check, 2000);
     return () => clearInterval(t);
   }, []);
+
+  // 后台自动整理的状态，以及托盘发来的事件
+  useEffect(() => {
+    api.watchStatus().then(setWatch).catch(() => {});
+    const uns: (() => void)[] = [];
+    let disposed = false;
+    (async () => {
+      try {
+        const add = (u: () => void) => (disposed ? u() : uns.push(u));
+        add(await listen<WatchStatus>("watch-status", (e) => setWatch(e.payload)));
+        add(await listen("config-changed", () => void reload()));
+        add(
+          await listen("tidy-scan", () => {
+            setPage("tidy");
+            setScanRequest((n) => n + 1);
+          }),
+        );
+      } catch {
+        /* 浏览器预览中没有事件 */
+      }
+    })();
+    return () => {
+      disposed = true;
+      uns.forEach((u) => u());
+    };
+  }, [reload]);
 
   // 把文件拖进窗口：像 DropIt 一样，按规则处理这些文件
   useEffect(() => {
@@ -136,7 +165,7 @@ function Shell() {
 
   const ruleCount = config.rules?.length ?? 0;
   const nav: { id: Page; label: string; icon: ReactNode; count?: number }[] = [
-    { id: "tidy", label: "整理", icon: <Sparkles size={17} /> },
+    { id: "tidy", label: "整理", icon: <Sparkles size={17} />, count: watch?.pending || undefined },
     { id: "rules", label: "规则", icon: <WandSparkles size={17} />, count: ruleCount || undefined },
     { id: "scope", label: "范围与保护", icon: <ShieldCheck size={17} /> },
     { id: "history", label: "历史", icon: <Clock size={17} /> },
@@ -200,6 +229,7 @@ function Shell() {
         <div hidden={page !== "tidy"}>
           <TidyPage
             dropped={dropped}
+            scanRequest={scanRequest}
             onNewRule={() => {
               setPage("rules");
               setNewRule((n) => n + 1);
@@ -223,7 +253,7 @@ function Shell() {
           <HistoryPage active={page === "history"} />
         </div>
         <div hidden={page !== "settings"}>
-          <SettingsPage theme={theme} onTheme={setTheme} showAdvanced={showAdvanced} onShowAdvanced={setShowAdvanced} />
+          <SettingsPage watch={watch} theme={theme} onTheme={setTheme} showAdvanced={showAdvanced} onShowAdvanced={setShowAdvanced} />
         </div>
       </main>
 

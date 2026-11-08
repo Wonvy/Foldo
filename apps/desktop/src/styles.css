@@ -2255,3 +2255,13 @@ html.float #root {
     display: none;
   }
 }
+
+/* 后台自动整理正在运行的小绿点 */
+.dot-live {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent);
+  flex: none;
+}

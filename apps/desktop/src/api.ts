@@ -33,11 +33,24 @@ export type RuleDef = {
 
 export type FolderDef = { path: string };
 
+/** 后台自动整理：关闭 / 发现文件时提醒 / 直接整理（移到回收站仍需确认）。 */
+export type AutoMode = "off" | "notify" | "run";
+
+export type WatchStatus = {
+  mode: AutoMode;
+  last_check: string | null;
+  /** 待确认的文件数 */
+  pending: number;
+  last_batch: number | null;
+  last_done: number;
+  error: string | null;
+};
+
 export type RuleFile = {
   version: number;
   folders?: FolderDef[];
   protect?: string[];
-  settings?: { buffer?: string };
+  settings?: { buffer?: string; auto?: AutoMode };
   rules?: RuleDef[];
 };
 
@@ -215,6 +228,10 @@ export const api = {
   floatVisible: () => invoke<boolean>("float_visible"),
   floatResize: (width: number, height: number) => invoke<void>("float_resize", { width, height }),
   showMain: () => invoke<void>("show_main"),
+  watchStatus: () => invoke<WatchStatus>("watch_status"),
+  watchNow: () => invoke<void>("watch_now"),
+  autostartEnabled: () => invoke<boolean>("autostart_enabled"),
+  setAutostart: (enabled: boolean) => invoke<boolean>("set_autostart", { enabled }),
   reveal: (path: string) => invoke<void>("reveal", { path }),
 };
 

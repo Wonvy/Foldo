@@ -317,3 +317,24 @@ fn old_category_switches_are_rejected_with_a_clear_error() {
             .to_string();
     assert!(err.contains("categories"), "{err}");
 }
+
+#[test]
+fn auto_mode_holds_back_irreversible_actions() {
+    let (_t, inbox) = setup();
+    touch(&inbox, "a.pdf", "");
+    touch(&inbox, "old.zip", "");
+    let yaml = format!(
+        "version: 1\nfolders:\n  - path: {}\nsettings:\n  auto: run\nrules:\n  - name: 压缩包\n    conditions: [{{ ext: zip }}]\n    actions: [trash]\n  - name: 文档\n    conditions: [{{ ext: pdf }}]\n    actions: [{{ move: '文档/' }}]\n",
+        q(&inbox)
+    );
+    let rs = rules(&yaml);
+    assert_eq!(rs.auto, foldo_core::config::AutoMode::Run);
+    let plan = build_plan(&rs, None).unwrap();
+    let (safe, held) = plan.without_irreversible();
+    assert_eq!(held, 1);
+    assert_eq!(safe.ops.len(), 1);
+    assert_eq!(safe.ops[0].kind, OpKind::Move);
+    // 写回 YAML 时保留设置
+    let file = parse_rule_file(&yaml).unwrap();
+    assert!(file.to_yaml().unwrap().contains("auto: run"));
+}

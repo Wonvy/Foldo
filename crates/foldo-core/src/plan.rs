@@ -112,6 +112,24 @@ impl Plan {
         }
     }
 
+    /// 去掉包含不可撤销操作（移到回收站）的文件，返回 (剩下的计划, 被留下待确认的文件数)。
+    /// 自动整理只执行可以撤销的操作。
+    pub fn without_irreversible(&self) -> (Plan, usize) {
+        let risky: HashSet<usize> = self
+            .ops
+            .iter()
+            .filter(|o| o.kind == OpKind::Trash)
+            .map(|o| o.group)
+            .collect();
+        let keep: HashSet<usize> = self
+            .ops
+            .iter()
+            .map(|o| o.group)
+            .filter(|g| !risky.contains(g))
+            .collect();
+        (self.select_groups(&keep), risky.len())
+    }
+
     /// 按原因统计跳过的项目数。
     pub fn skip_summary(&self) -> Vec<(SkipKind, usize)> {
         let mut m: BTreeMap<SkipKind, usize> = BTreeMap::new();

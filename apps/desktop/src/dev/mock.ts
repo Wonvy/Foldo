@@ -428,7 +428,14 @@ async function handle(cmd: string, args: Record<string, unknown>): Promise<unkno
     }
     case "toggle_float":
     case "float_visible":
+    case "autostart_enabled":
       return false;
+    case "set_autostart":
+      return args.enabled;
+    case "watch_status":
+      return { mode: config?.settings?.auto ?? "off", last_check: "14:32", pending: 2, last_batch: null, last_done: 0, error: null };
+    case "watch_now":
+      return null;
     case "float_resize":
     case "show_main":
     case "plugin:window|start_dragging":
